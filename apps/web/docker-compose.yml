@@ -1,0 +1,44 @@
+services:
+  deva-web:
+    build:
+      # 构建上下文是仓库根：renderer / preload / 主进程都来自同一份源码。
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+    image: deva-web:latest
+    container_name: deva-web
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${DEVA_WEB_PORT:-7080}:7080"
+    environment:
+      # 留空则首次启动随机生成并打印到容器日志
+      DEVA_WEB_ADMIN_USER: ${DEVA_WEB_ADMIN_USER:-admin}
+      DEVA_WEB_ADMIN_PASSWORD: ${DEVA_WEB_ADMIN_PASSWORD:-}
+      DEVA_WEB_SESSION_HOURS: ${DEVA_WEB_SESSION_HOURS:-168}
+      DEVA_WEB_IDLE_MINUTES: ${DEVA_WEB_IDLE_MINUTES:-30}
+      # 走 HTTPS 反代时置 1，Cookie 加 Secure
+      DEVA_WEB_SECURE_COOKIE: ${DEVA_WEB_SECURE_COOKIE:-0}
+      # 「打开文件夹」的可选根目录，多个用 : 分隔（默认 $DEVA_WEB_DATA/workspaces）
+      DEVA_WEB_ROOTS: ${DEVA_WEB_ROOTS:-/projects}
+      # 中文文件名 / git 输出按 UTF-8 处理，避免 ??? 或 \346\226\207 转义
+      LANG: ${LANG:-C.UTF-8}
+      LC_ALL: ${LC_ALL:-C.UTF-8}
+      # 上游更新提示：只检查、不自动更新，变量说明见 README。
+      DEVA_UPDATE_CHECK_MINUTES: ${DEVA_UPDATE_CHECK_MINUTES:-30}
+      DEVA_UPDATE_TOKEN: ${DEVA_UPDATE_TOKEN:-}
+      DEVA_UPDATE_WEBHOOK: ${DEVA_UPDATE_WEBHOOK:-}
+      DEVA_UPDATE_WEBHOOK_KIND: ${DEVA_UPDATE_WEBHOOK_KIND:-json}
+      DEVA_UPDATE_TELEGRAM_CHAT_ID: ${DEVA_UPDATE_TELEGRAM_CHAT_ID:-}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      # 配置目录：用户、会话、审计、每用户 .deva（DEVA_HOME），跟工程目录分开
+      - deva-data:/data
+      # 工程目录：宿主真实目录直接挂进来，同时作为默认工作区
+      - ${DEVA_PROJECTS_DIR:-./projects}:/projects
+    # Chromium 渲染大页面需要更大的 /dev/shm
+    shm_size: "1gb"
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  deva-data:
