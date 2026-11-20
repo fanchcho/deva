@@ -1,0 +1,142 @@
+{
+  "id": "deva",
+  "name": "Deva",
+  "description": "Deva 项目 Agent：读写本仓库代码、跑 pnpm 检查与构建；身份可选（Deva / 小码酱），会话内用 @deva:<id> 或身份设置页切换，插件对外只暴露一个 Deva Agent。",
+  "i18n": {
+    "en": {
+      "name": "Deva",
+      "description": "Deva project agent: chat inside Studio to read/write this repository and run pnpm checks and builds.",
+      "views": {
+        "identity": "Identity",
+        "mcp": "MCP"
+      }
+    },
+    "zh": {
+      "name": "Deva",
+      "description": "Deva 项目 Agent：在 Studio 里直接对话，读写本仓库代码、跑 pnpm 检查与构建。",
+      "views": {
+        "identity": "身份",
+        "mcp": "MCP"
+      }
+    },
+    "zh-TW": {
+      "name": "Deva",
+      "description": "Deva 專案 Agent：在 Studio 裡直接對話，讀寫本儲存庫程式碼、執行 pnpm 檢查與建置。",
+      "views": {
+        "identity": "身分",
+        "mcp": "MCP"
+      }
+    },
+    "ja": {
+      "name": "Deva",
+      "description": "Deva プロジェクト Agent：Studio で対話しながらこのリポジトリを読み書きし、pnpm の検査とビルドを実行します。",
+      "views": {
+        "identity": "アイデンティティ",
+        "mcp": "MCP"
+      }
+    },
+    "ko": {
+      "name": "Deva",
+      "description": "Deva 프로젝트 Agent: Studio에서 대화하며 이 저장소를 읽고 쓰고 pnpm 검사와 빌드를 실행합니다.",
+      "views": {
+        "identity": "아이덴티티",
+        "mcp": "MCP"
+      }
+    },
+    "fr": {
+      "name": "Deva",
+      "description": "Agent du projet Deva : discutez dans Studio, lisez et modifiez ce dépôt, lancez les vérifications et builds pnpm.",
+      "views": {
+        "identity": "Identité",
+        "mcp": "MCP"
+      }
+    },
+    "es": {
+      "name": "Deva",
+      "description": "Agente del proyecto Deva: conversa en Studio, lee y modifica este repositorio y ejecuta las comprobaciones y builds de pnpm.",
+      "views": {
+        "identity": "Identidad",
+        "mcp": "MCP"
+      }
+    },
+    "de": {
+      "name": "Deva",
+      "description": "Deva-Projekt-Agent: im Studio chatten, dieses Repository lesen und ändern, pnpm-Prüfungen und Builds ausführen.",
+      "views": {
+        "identity": "Identität",
+        "mcp": "MCP"
+      }
+    },
+    "pt": {
+      "name": "Deva",
+      "description": "Agente do projeto Deva: converse no Studio, leia e altere este repositório e execute verificações e builds do pnpm.",
+      "views": {
+        "identity": "Identidade",
+        "mcp": "MCP"
+      }
+    },
+    "ru": {
+      "name": "Deva",
+      "description": "Агент проекта Deva: общайтесь в Studio, читайте и изменяйте этот репозиторий, запускайте проверки и сборки pnpm.",
+      "views": {
+        "identity": "Идентичность",
+        "mcp": "MCP"
+      }
+    },
+    "ar": {
+      "name": "Deva",
+      "description": "وكيل مشروع Deva: تحدّث داخل Studio واقرأ هذا المستودع وعدّله وشغّل فحوصات وبناءات pnpm.",
+      "views": {
+        "identity": "الهوية",
+        "mcp": "MCP"
+      }
+    },
+    "tr": {
+      "name": "Deva",
+      "description": "Deva proje ajanı: Studio içinde sohbet edin, bu depoyu okuyup değiştirin, pnpm kontrollerini ve derlemelerini çalıştırın.",
+      "views": {
+        "identity": "Kimlik",
+        "mcp": "MCP"
+      }
+    }
+  },
+  "version": "0.8.0",
+  "apiVersion": 1,
+  "author": {
+    "name": "Deva"
+  },
+  "license": "MIT",
+  "keywords": [
+    "agent",
+    "deva",
+    "coding",
+    "mcp"
+  ],
+  "server": "server.mjs",
+  "permissions": [
+    "agents",
+    "ui",
+    "commands",
+    "browser.cdp",
+    "api.read",
+    "api.write"
+  ],
+  "client": "client.mjs",
+  "views": [
+    {
+      "id": "identity",
+      "title": "身份",
+      "slot": "agent-settings",
+      "icon": "bot",
+      "order": 0
+    },
+    {
+      "id": "mcp",
+      "title": "MCP",
+      "slot": "agent-settings",
+      "icon": "mcp",
+      "order": 1
+    }
+  ],
+  "icon": "icon.png"
+}
