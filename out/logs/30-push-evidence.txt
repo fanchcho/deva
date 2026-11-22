@@ -67,3 +67,22 @@ $ git ls-remote fork 'refs/pull/*/head' | wc -l
 0
 # ci.yml 触发条件：on: pull_request / push: branches: [main]
 # → 功能分支推到 fork 不产生 run；本机也无凭据查询 run。故无可报告的 run id。
+
+## 5. 第三次推送（追加：最终树重跑后的日志；044005b 与 9370c9b 一起上去）
+$ git push fork feat/plugin-deva-agent
+To github.com:fanchcho/deva.git
+   c464ea0..9370c9b  feat/plugin-deva-agent -> feat/plugin-deva-agent
+exit=0
+
+$ git rev-parse HEAD
+9370c9bac60a027c2680a5ad117c3e41888b9a61
+$ git rev-parse fork/feat/plugin-deva-agent
+9370c9bac60a027c2680a5ad117c3e41888b9a61
+$ git ls-remote fork refs/heads/feat/plugin-deva-agent
+9370c9bac60a027c2680a5ad117c3e41888b9a61	refs/heads/feat/plugin-deva-agent
+$ git status -sb
+## feat/plugin-deva-agent...fork/feat/plugin-deva-agent
+$ git rev-list --count fork/main..HEAD
+15
+
+# 说明：本文件与 REPORT 之后仍有修订提交，计数会随之 +1；最终 HEAD 以 fork 上的 ref 为准。

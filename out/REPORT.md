@@ -692,14 +692,17 @@ BASE=http://127.0.0.1:7080 ADMIN_PASSWORD=ci-pass node out/icon-check.mjs
 
 - 当前分支 `feat/plugin-deva-agent`，推送前**没有 upstream**（`git rev-parse --abbrev-ref --symbolic-full-name @{u}` → `fatal: no upstream configured`）。
 - `origin` = `https://github.com/sqfcyily/deva.git`（只读上游，未使用）；`fork` = `git@github.com:fanchcho/deva.git`（SSH，可写）。
-- 主分支基线：`origin/main` 与 `fork/main` 同为 `8997ecb1`；本分支合并基点 = `8997ecb1`，领先 13 个提交（下表 12 个提交 + 本节所在的报告提交；实测 `git rev-list --count fork/main..HEAD` = 13）。
+- 主分支基线：`origin/main` 与 `fork/main` 同为 `8997ecb1`；本分支合并基点 = `8997ecb1`，推送 `9370c9b` 时领先 15 个提交（见下方实测；之后只追加文档修订提交）。
 
-**提交列表（`git log --oneline`，新→旧）**
+**提交列表（`git log --oneline fork/main..HEAD`，新→旧）**
 
 | commit | 主题 |
 |---|---|
+| （本节所在的修订提交） | docs(out): 校正 §8.4 的推送序列与实际一致 —— 本条不写哈希，避免 amend 后自指失效 |
+| `9370c9b` | chore(out): 用收尾提交后的 HEAD 重跑整体复跑 |
+| `044005b` | chore(out): 落盘推送实测日志 |
+| `c464ea0` | docs(out): 补第三轮提交与推送的实测记录 |
 | `bdfe757` | chore(out): 补干净检出验证日志 |
-| （本条提交） | docs(out): 补第三轮提交与推送的实测记录（即本节所在的提交） |
 | `dd8d45f` | chore(out): 补 desktop 源码可导入边界的统计脚本 |
 | `173b174` | chore: 将 out/logs 的回归证据纳入版本管理 |
 | `c6db894` | fix(web): backend 通道超时定时器在 resolve 后未释放 |
@@ -710,11 +713,11 @@ BASE=http://127.0.0.1:7080 ADMIN_PASSWORD=ci-pass node out/icon-check.mjs
 | `0d3b5fc` | chore(lint): 引入 ESLint 工具链并让 Web 层可独立类型检查 |
 | `bf6e43a` | fix: 修复路径闸门误判、静态资源 500/404 与 docker 构建上下文 |
 | `3ddd9dc` | feat(web): 将 apps/web 源码纳入版本管理 |
-| `98c60c5` | feat(plugins): 新增 deva-agent 插件 |
+| `98c60c5` | feat(plugins): 新增 deva-agent 插件，对齐桌面端最新 agent 能力 |
 
-（`556a73b` / `2ced850` / `f1469d8` / `173b174` / `dd8d45f` / `bdfe757` 对应本轮 ②③④⑤ 与收尾；`0d3b5fc`–`bf6e43a` 对应前两轮的修复与工具链。）
+按主题拆分：版本统一 = `2ced850`；desktop 单测 = `556a73b`；CI（docker + web e2e + 插件单测）= `f1469d8` / `3b5e3a5`；gitignore + 日志留档 = `173b174`；前两轮修复与工具链 = `bf6e43a` / `0d3b5fc` / `3ddd9dc`；收尾证据 = `bdfe757` / `dd8d45f` / `c464ea0` / `044005b` / `9370c9b` / 本节所在的修订提交。
 
-**推送（普通 push，未使用 `--force`）**
+**推送（普通 push，全程未使用 `--force`）**
 
 ```
 $ git push -u fork feat/plugin-deva-agent
@@ -722,25 +725,41 @@ To github.com:fanchcho/deva.git
    3ddd9dc..bdfe757  feat/plugin-deva-agent -> feat/plugin-deva-agent
 branch 'feat/plugin-deva-agent' set up to track 'fork/feat/plugin-deva-agent'.
 exit=0
+
+$ git push fork feat/plugin-deva-agent      # 结论提交
+To github.com:fanchcho/deva.git
+   bdfe757..c464ea0  feat/plugin-deva-agent -> feat/plugin-deva-agent
+exit=0
+
+$ git push fork feat/plugin-deva-agent      # 最终树重跑后的日志（含 044005b / 9370c9b 两个提交）
+To github.com:fanchcho/deva.git
+   c464ea0..9370c9b  feat/plugin-deva-agent -> feat/plugin-deva-agent
+exit=0
 ```
+
+三次普通 push，全部 exit=0。`044005b`（推送证据日志）与 `9370c9b`（最终树重跑日志）是随第三次推送一起上去的。
 
 **推送后一致性（实测）**
 
 ```
 $ git rev-parse HEAD
-bdfe7573e84e6365f5f69f4dbc0914a2fc37b9f2
+9370c9bac60a027c2680a5ad117c3e41888b9a61
 $ git rev-parse fork/feat/plugin-deva-agent
-bdfe7573e84e6365f5f69f4dbc0914a2fc37b9f2
+9370c9bac60a027c2680a5ad117c3e41888b9a61
 $ git ls-remote fork refs/heads/feat/plugin-deva-agent
-bdfe7573e84e6365f5f69f4dbc0914a2fc37b9f2	refs/heads/feat/plugin-deva-agent
+9370c9bac60a027c2680a5ad117c3e41888b9a61	refs/heads/feat/plugin-deva-agent
 $ git status -sb
 ## feat/plugin-deva-agent...fork/feat/plugin-deva-agent
+$ git rev-list --count fork/main..HEAD
+15   # 这次推送（→9370c9b）时的实测值；此后每加一条文档修订提交会 +1
 ```
 
-三者一致，工作区无未提交改动。
+三者一致，工作区无未提交改动；`@{u}` = `fork/feat/plugin-deva-agent`（首次推送时 `-u` 建立）。本节自身产生的修订提交会让 HEAD 再前移一次，最终值以 `git ls-remote fork refs/heads/feat/plugin-deva-agent` 为准。
 
 **CI 运行结论：本机读不到，不做推断**
 
 - 本机没有 `gh` / `act`，环境里也没有 `GH_TOKEN` / `GITHUB_TOKEN`，无法查询 Actions 的 run id、job 状态与日志。
-- 已尝试：`git ls-remote origin 'refs/pull/*/head'`（20 个 PR ref，逐一比对无 `bdfe757`）；`git ls-remote fork 'refs/pull/*/head'`（0 个）。因此当前分支**尚未开 PR**，而 `ci.yml` 的触发条件是 `pull_request` 与 `push: branches: [main]`——推到 fork 的功能分支**不会触发任何 CI run**。这是配置事实，不是失败。
-- 要看到真实 runner 结论，需要：在 `sqfcyily/deva` 上对本分支开 PR（或把它合进 `main`），然后用有权限的账号查看 run。本机能提供的只有「与 CI 同命令」的本地等价执行：`logs/28`（工作区）与 `logs/29`（干净检出 worktree），两者均 `OVERALL_FAIL=0` / 全项 exit=0。
+- 已尝试：`git ls-remote origin 'refs/pull/*/head'`（20 个 PR ref，逐个比对无本分支提交）；`git ls-remote fork 'refs/pull/*/head'`（0 个）。因此当前分支**尚未开 PR**，而 `ci.yml` 的触发条件是 `pull_request` 与 `push: branches: [main]` —— 推到 fork 的功能分支**不会触发任何 CI run**。这是配置事实，不是失败。
+- 要看到真实 runner 结论，需要在 `sqfcyily/deva` 上对本分支开 PR（或合进 `main`），再用有权限的账号查看 run。本机能提供的只有「与 CI 同命令」的本地等价执行：`logs/28`（工作区，`OVERALL_FAIL=0`）与 `logs/29`（干净检出 worktree，全项 exit=0）。
+
+原始命令与输出另存：`out/logs/30-push-evidence.txt`。
