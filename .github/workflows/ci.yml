@@ -125,9 +125,33 @@ jobs:
         if: failure()
         run: tail -200 /tmp/deva-web.log
 
+  # 构建 Web 版镜像，证明 Dockerfile 真能编出来（不推送、不登录 registry）。
+  # 本机没有 docker daemon，本地只做了 out/docker-check.mjs 的静态校验（COPY 源、阶段、compose 契约）；
+  # 「镜像能构建」这件事只有这个 job 能自证。
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      # 上下文是仓库根（.dockerignore 在根，build.mjs 需要读 .git 写 build-info.json）。
+      - name: 构建镜像（不推送）
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: false
+          load: false
+          tags: deva-web:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   # 明确不覆盖的部分（不是漏跑，是本环境确实跑不了）。这里只声明，不执行。
   #   · 浏览器能力（Chromium/CDP）：Web 后端的 browser 模块在首次真正开页时才拉起系统 Chromium
   #     （apps/web/src/backend/chromium.mjs 的 ensureBrowser 是惰性的），所以上面的启动 / 探针都不需要它；
   #     但真正「开一个网页」的断言要 Chromium，runner 上没有预装，故未纳入 CI
   #     （仓库现有探针/冒烟也都不含浏览器断言，所以本工作流没有任何「假装修过」的浏览器覆盖）。
-  #   · Docker 镜像：本仓库没有可用的 docker 服务，镜像构建与容器内降权 entrypoint 未实测。
+  #   · 容器运行期：docker job 只证明镜像能构建；entrypoint 降权、/data 属主修正、健康检查这些
+  #     要真起容器才看得到，CI 里没有跑，也没有对应的本地实测（本机无 docker daemon）。
