@@ -47,6 +47,10 @@ jobs:
 
       - run: pnpm typecheck
 
+      # 版本单一事实源：apps/desktop/package.json 的 version 决定 Web 层的展示版本、user-agent
+      # 与更新检查（build.mjs → manifest.json → server.mjs → DEVA_VERSION），web 包必须跟随。
+      - run: pnpm check:versions
+
       # 主进程纯逻辑单测（node --test + 原生 type stripping，electron 由 test/support 里的替身提供）。
       - run: pnpm test:desktop
 
