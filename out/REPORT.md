@@ -391,6 +391,7 @@ BASE=http://127.0.0.1:7093 ADMIN_PASSWORD=smoke-pass SMOKE_CREATE_USER=1 node te
 | `logs/25-docker-static-check.txt` | 第三轮：Docker 资产静态校验 77 项全 PASS；附本机 `docker info` / `docker build` 的原始报错（无守护进程） |
 | `logs/26-desktop-tests-node22.txt` | 第三轮：同一套单测在 Node 22.22.0（= ci.yml 的 node-version）下 179/179 通过 |
 | `logs/27-desktop-coverage.txt` | 第三轮：desktop 247 个源文件的导入边界统计（92 可导入 / 155 不可，按 4 类原因归类）与已测模块清单 |
+| `logs/29-clean-checkout-verify.txt` | 第三轮：`git worktree --detach` 只含已提交文件的干净检出，`pnpm install --frozen-lockfile` 后 lint / check:versions / test:desktop（179）/ typecheck×2 / build×2 / docker-check（77）/ 插件单测（158）全部 exit=0 |
 | `logs/28-final-full-run-round3-close.txt` | 第三轮收尾整体复跑：install / lint / check:versions / test:desktop / typecheck×2 / build×2 / node --check 71 / 启动自检 22 步 + 162 channels / 6 个回归脚本 82 项 / Docker 静态 77 项 / 插件 158 项 → `OVERALL_FAIL=0` |
 | `docker-check.mjs` | Docker 资产静态校验脚本（Dockerfile 阶段与 COPY 源、builder 产物路径、compose 契约、CI 是否真有 docker job） |
 | `desktop-coverage.mjs` | desktop 源码「能否被 Node 原生导入」的边界统计脚本，用来说明未覆盖模块的原因 |
@@ -648,7 +649,7 @@ BASE=http://127.0.0.1:7080 ADMIN_PASSWORD=ci-pass node out/icon-check.mjs
 | ② | 版本号统一（desktop 0.1.16 / web 0.1.15） | ✅ 完成 | `apps/web/package.json` → `0.1.16`；新增 `out/check-versions.mjs` + 根脚本 `check:versions`；改前 exit=1（`logs/21`）、改后 exit=0（`logs/22`）；`pnpm-lock.yaml` `md5sum -c` OK；运行时链路实测 `manifest.version` / `app.getVersion()` / `build-info.json` 三处均为 `0.1.16` |
 | ③ | `apps/desktop` 单测 | ✅ 完成 | 18 个 `test/*.test.mjs`、**179 项全通过**（Node 24 / Node 22 双跑，`logs/23`、`logs/26`）；负向验证 178/1/exit=1 后恢复一致（`logs/24`）；`pnpm test:desktop` 已进 CI `check` job；覆盖边界与未覆盖原因见 `logs/27` |
 | ④ | Docker 进 CI | ✅ 完成（CI 侧）；本机只能静态校验 | `ci.yml` 新增 `docker` job（buildx + build-push `push:false`）；`out/docker-check.mjs` **77 项全 PASS**（`logs/25`）；本机 `docker build` 实测仍报 `Cannot connect to the Docker daemon`，**未声称本地构建过镜像**；`ci.yml` 末尾旧说明已改写 |
-| ⑤ | `out/logs/*.txt` 留档 | ✅ 完成 | `.gitignore` 加 `!/out/logs/` + `!/out/logs/*.txt`；28 个文件、约 59 KB（单文件最大 6.2 KB），全部按文本入库，无需裁剪 |
+| ⑤ | `out/logs/*.txt` 留档 | ✅ 完成 | `.gitignore` 加 `!/out/logs/` + `!/out/logs/*.txt`；29 个文件、约 60 KB（单文件最大 6.2 KB），全部按文本入库，无需裁剪 |
 | ① | 拆分提交 + 普通 push | 见 §8.4 | `git log` / `git rev-parse` 实测输出 |
 
 **通过的检查（第三轮整体复跑，`logs/28`）**
@@ -675,7 +676,7 @@ BASE=http://127.0.0.1:7080 ADMIN_PASSWORD=ci-pass node out/icon-check.mjs
 | desktop 单测 | 0 项（无测试） | **179 项** |
 | 版本一致性 | 不一致（0.1.16 vs 0.1.15） | **一致 + CI 断言** |
 | CI 覆盖 | check + web-e2e | check（+版本/单测）+ web-e2e + **docker** |
-| 证据日志入库 | 不入库 | **入库（28 个 / 59 KB）** |
+| 证据日志入库 | 不入库 | **入库（29 个 / 60 KB）** |
 | 整体复跑 | `OVERALL_FAIL=0` | `OVERALL_FAIL=0` |
 
 **本机无法自证、只能靠 GitHub runner 的部分（单列）**
@@ -683,3 +684,62 @@ BASE=http://127.0.0.1:7080 ADMIN_PASSWORD=ci-pass node out/icon-check.mjs
 1. **CI 真跑**：本机没有 `gh` / `act` / token，无法读取 Actions 运行结果；本地只做了「与 CI 同命令」的等价执行（`logs/28`）。真实 runner 上的结论需在推送后查看运行页面。
 2. **docker 真构建**：本机无 daemon，`docker build` 无法开始；`docker` job 是否通过只能由 runner 证明。静态校验（`logs/25`）只覆盖配置正确性。
 3. **容器运行期**：entrypoint 降权、`/data` 属主修正、HEALTHCHECK 均未在任何环境实测（CI 的 docker job 只构建、不启动）。
+
+### 8.4 第三轮：提交与推送实测（2026-11-22）
+
+**分支与远端事实**
+
+- 当前分支 `feat/plugin-deva-agent`，推送前**没有 upstream**（`git rev-parse --abbrev-ref --symbolic-full-name @{u}` → `fatal: no upstream configured`）。
+- `origin` = `https://github.com/sqfcyily/deva.git`（只读上游，未使用）；`fork` = `git@github.com:fanchcho/deva.git`（SSH，可写）。
+- 主分支基线：`origin/main` 与 `fork/main` 同为 `8997ecb1`；本分支合并基点 = `8997ecb1`，领先 13 个提交（下表 12 个提交 + 本节所在的报告提交；实测 `git rev-list --count fork/main..HEAD` = 13）。
+
+**提交列表（`git log --oneline`，新→旧）**
+
+| commit | 主题 |
+|---|---|
+| `bdfe757` | chore(out): 补干净检出验证日志 |
+| （本条提交） | docs(out): 补第三轮提交与推送的实测记录（即本节所在的提交） |
+| `dd8d45f` | chore(out): 补 desktop 源码可导入边界的统计脚本 |
+| `173b174` | chore: 将 out/logs 的回归证据纳入版本管理 |
+| `c6db894` | fix(web): backend 通道超时定时器在 resolve 后未释放 |
+| `f1469d8` | ci(docker): 把 Web 镜像构建纳入 CI 并补静态校验 |
+| `2ced850` | chore(release): 统一版本号并加一致性断言 |
+| `556a73b` | test(desktop): 为主进程纯逻辑模块补 node --test 单测 |
+| `3b5e3a5` | ci: 覆盖 Web 层构建、端到端回归与插件单测 |
+| `0d3b5fc` | chore(lint): 引入 ESLint 工具链并让 Web 层可独立类型检查 |
+| `bf6e43a` | fix: 修复路径闸门误判、静态资源 500/404 与 docker 构建上下文 |
+| `3ddd9dc` | feat(web): 将 apps/web 源码纳入版本管理 |
+| `98c60c5` | feat(plugins): 新增 deva-agent 插件 |
+
+（`556a73b` / `2ced850` / `f1469d8` / `173b174` / `dd8d45f` / `bdfe757` 对应本轮 ②③④⑤ 与收尾；`0d3b5fc`–`bf6e43a` 对应前两轮的修复与工具链。）
+
+**推送（普通 push，未使用 `--force`）**
+
+```
+$ git push -u fork feat/plugin-deva-agent
+To github.com:fanchcho/deva.git
+   3ddd9dc..bdfe757  feat/plugin-deva-agent -> feat/plugin-deva-agent
+branch 'feat/plugin-deva-agent' set up to track 'fork/feat/plugin-deva-agent'.
+exit=0
+```
+
+**推送后一致性（实测）**
+
+```
+$ git rev-parse HEAD
+bdfe7573e84e6365f5f69f4dbc0914a2fc37b9f2
+$ git rev-parse fork/feat/plugin-deva-agent
+bdfe7573e84e6365f5f69f4dbc0914a2fc37b9f2
+$ git ls-remote fork refs/heads/feat/plugin-deva-agent
+bdfe7573e84e6365f5f69f4dbc0914a2fc37b9f2	refs/heads/feat/plugin-deva-agent
+$ git status -sb
+## feat/plugin-deva-agent...fork/feat/plugin-deva-agent
+```
+
+三者一致，工作区无未提交改动。
+
+**CI 运行结论：本机读不到，不做推断**
+
+- 本机没有 `gh` / `act`，环境里也没有 `GH_TOKEN` / `GITHUB_TOKEN`，无法查询 Actions 的 run id、job 状态与日志。
+- 已尝试：`git ls-remote origin 'refs/pull/*/head'`（20 个 PR ref，逐一比对无 `bdfe757`）；`git ls-remote fork 'refs/pull/*/head'`（0 个）。因此当前分支**尚未开 PR**，而 `ci.yml` 的触发条件是 `pull_request` 与 `push: branches: [main]`——推到 fork 的功能分支**不会触发任何 CI run**。这是配置事实，不是失败。
+- 要看到真实 runner 结论，需要：在 `sqfcyily/deva` 上对本分支开 PR（或把它合进 `main`），然后用有权限的账号查看 run。本机能提供的只有「与 CI 同命令」的本地等价执行：`logs/28`（工作区）与 `logs/29`（干净检出 worktree），两者均 `OVERALL_FAIL=0` / 全项 exit=0。
