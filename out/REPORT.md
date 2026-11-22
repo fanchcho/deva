@@ -391,6 +391,7 @@ BASE=http://127.0.0.1:7093 ADMIN_PASSWORD=smoke-pass SMOKE_CREATE_USER=1 node te
 | `logs/25-docker-static-check.txt` | 第三轮：Docker 资产静态校验 77 项全 PASS；附本机 `docker info` / `docker build` 的原始报错（无守护进程） |
 | `logs/26-desktop-tests-node22.txt` | 第三轮：同一套单测在 Node 22.22.0（= ci.yml 的 node-version）下 179/179 通过 |
 | `logs/27-desktop-coverage.txt` | 第三轮：desktop 247 个源文件的导入边界统计（92 可导入 / 155 不可，按 4 类原因归类）与已测模块清单 |
+| `logs/30-push-evidence.txt` | 第三轮：提交列表、`git push -u fork`（普通 push）原始输出、推送后 HEAD / 远端 ref 一致性的实测，以及 CI 不可读的原因排查命令 |
 | `logs/29-clean-checkout-verify.txt` | 第三轮：`git worktree --detach` 只含已提交文件的干净检出，`pnpm install --frozen-lockfile` 后 lint / check:versions / test:desktop（179）/ typecheck×2 / build×2 / docker-check（77）/ 插件单测（158）全部 exit=0 |
 | `logs/28-final-full-run-round3-close.txt` | 第三轮收尾整体复跑：install / lint / check:versions / test:desktop / typecheck×2 / build×2 / node --check 71 / 启动自检 22 步 + 162 channels / 6 个回归脚本 82 项 / Docker 静态 77 项 / 插件 158 项 → `OVERALL_FAIL=0` |
 | `docker-check.mjs` | Docker 资产静态校验脚本（Dockerfile 阶段与 COPY 源、builder 产物路径、compose 契约、CI 是否真有 docker job） |
@@ -649,7 +650,7 @@ BASE=http://127.0.0.1:7080 ADMIN_PASSWORD=ci-pass node out/icon-check.mjs
 | ② | 版本号统一（desktop 0.1.16 / web 0.1.15） | ✅ 完成 | `apps/web/package.json` → `0.1.16`；新增 `out/check-versions.mjs` + 根脚本 `check:versions`；改前 exit=1（`logs/21`）、改后 exit=0（`logs/22`）；`pnpm-lock.yaml` `md5sum -c` OK；运行时链路实测 `manifest.version` / `app.getVersion()` / `build-info.json` 三处均为 `0.1.16` |
 | ③ | `apps/desktop` 单测 | ✅ 完成 | 18 个 `test/*.test.mjs`、**179 项全通过**（Node 24 / Node 22 双跑，`logs/23`、`logs/26`）；负向验证 178/1/exit=1 后恢复一致（`logs/24`）；`pnpm test:desktop` 已进 CI `check` job；覆盖边界与未覆盖原因见 `logs/27` |
 | ④ | Docker 进 CI | ✅ 完成（CI 侧）；本机只能静态校验 | `ci.yml` 新增 `docker` job（buildx + build-push `push:false`）；`out/docker-check.mjs` **77 项全 PASS**（`logs/25`）；本机 `docker build` 实测仍报 `Cannot connect to the Docker daemon`，**未声称本地构建过镜像**；`ci.yml` 末尾旧说明已改写 |
-| ⑤ | `out/logs/*.txt` 留档 | ✅ 完成 | `.gitignore` 加 `!/out/logs/` + `!/out/logs/*.txt`；29 个文件、约 60 KB（单文件最大 6.2 KB），全部按文本入库，无需裁剪 |
+| ⑤ | `out/logs/*.txt` 留档 | ✅ 完成 | `.gitignore` 加 `!/out/logs/` + `!/out/logs/*.txt`；30 个文件、约 64 KB（单文件最大 6.2 KB），全部按文本入库，无需裁剪 |
 | ① | 拆分提交 + 普通 push | 见 §8.4 | `git log` / `git rev-parse` 实测输出 |
 
 **通过的检查（第三轮整体复跑，`logs/28`）**
@@ -676,7 +677,7 @@ BASE=http://127.0.0.1:7080 ADMIN_PASSWORD=ci-pass node out/icon-check.mjs
 | desktop 单测 | 0 项（无测试） | **179 项** |
 | 版本一致性 | 不一致（0.1.16 vs 0.1.15） | **一致 + CI 断言** |
 | CI 覆盖 | check + web-e2e | check（+版本/单测）+ web-e2e + **docker** |
-| 证据日志入库 | 不入库 | **入库（29 个 / 60 KB）** |
+| 证据日志入库 | 不入库 | **入库（30 个 / 64 KB）** |
 | 整体复跑 | `OVERALL_FAIL=0` | `OVERALL_FAIL=0` |
 
 **本机无法自证、只能靠 GitHub runner 的部分（单列）**

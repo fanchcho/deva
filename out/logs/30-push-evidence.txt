@@ -1,0 +1,69 @@
+# 第三轮：提交与推送实测原始输出（2026-11-22）
+# 说明：本文件记录的是「写下这些命令时」的真实输出。本文件自身的提交会让 HEAD 再前移一次，
+# 因此最终 HEAD 请以最后一条 `git ls-remote fork refs/heads/feat/plugin-deva-agent` 或仓库 refs 为准。
+
+## 0. 远端与基线
+$ git remote -v
+fork	git@github.com:fanchcho/deva.git (fetch)
+fork	git@github.com:fanchcho/deva.git (push)
+origin	https://github.com/sqfcyily/deva.git (fetch)
+origin	https://github.com/sqfcyily/deva.git (push)
+
+$ echo 'fork/main    ' $(git rev-parse fork/main)
+fork/main     8997ecb10914f2b14134eb7e17025ff138bd43f2
+$ echo 'origin/main  ' $(git rev-parse origin/main)
+origin/main   8997ecb10914f2b14134eb7e17025ff138bd43f2
+
+$ git merge-base HEAD fork/main
+8997ecb10914f2b14134eb7e17025ff138bd43f2
+
+$ git rev-parse --abbrev-ref --symbolic-full-name @{u}   # 推送前
+fatal: no upstream configured for branch 'feat/plugin-deva-agent'
+
+## 1. 提交列表（新→旧）
+$ git log --oneline fork/main..HEAD
+c464ea0 docs(out): 补第三轮提交与推送的实测记录 / record commits and push evidence
+bdfe757 chore(out): 补干净检出验证日志 / add clean-checkout verification log
+dd8d45f chore(out): 补 desktop 源码可导入边界的统计脚本 / add import-boundary stats script
+173b174 chore: 将 out/logs 的回归证据纳入版本管理 / track regression evidence under out/logs
+c6db894 fix(web): backend 通道超时定时器在 resolve 后未释放 / clear channel timeout timer on resolve
+f1469d8 ci(docker): 把 Web 镜像构建纳入 CI 并补静态校验 / build the web image in CI and add static checks
+2ced850 chore(release): 统一版本号并加一致性断言 / unify package versions with a consistency check
+556a73b test(desktop): 为主进程纯逻辑模块补 node --test 单测 / add node --test unit tests for main-process logic
+3b5e3a5 ci: 覆盖 Web 层构建、端到端回归与插件单测 / cover web build, e2e regressions and plugin tests
+0d3b5fc chore(lint): 引入 ESLint 工具链并让 Web 层可独立类型检查 / add ESLint toolchain and standalone web typecheck
+bf6e43a fix: 修复路径闸门误判、静态资源 500/404 与 docker 构建上下文 / fix gate false positives, static asset handling and docker context
+3ddd9dc feat(web): 将 apps/web 源码纳入版本管理 / track apps/web sources in version control
+98c60c5 feat(plugins): 新增 deva-agent 插件，对齐桌面端最新 agent 能力 / add deva-agent plugin aligned with latest agent capabilities
+
+## 2. 第一次推送（建 upstream，普通 push，未用 --force）
+$ git push -u fork feat/plugin-deva-agent
+To github.com:fanchcho/deva.git
+   3ddd9dc..bdfe757  feat/plugin-deva-agent -> feat/plugin-deva-agent
+branch 'feat/plugin-deva-agent' set up to track 'fork/feat/plugin-deva-agent'.
+exit=0
+
+$ git rev-parse HEAD
+bdfe7573e84e6365f5f69f4dbc0914a2fc37b9f2
+$ git rev-parse fork/feat/plugin-deva-agent
+bdfe7573e84e6365f5f69f4dbc0914a2fc37b9f2
+$ git ls-remote fork refs/heads/feat/plugin-deva-agent
+bdfe7573e84e6365f5f69f4dbc0914a2fc37b9f2	refs/heads/feat/plugin-deva-agent
+
+## 3. 第二次推送（REPORT §8.4 本节所在提交）
+$ git push fork feat/plugin-deva-agent
+To github.com:fanchcho/deva.git
+   bdfe757..c464ea0  feat/plugin-deva-agent -> feat/plugin-deva-agent
+exit=0
+
+## 4. CI 可读性排查
+$ command -v gh; command -v act
+(两个都 not found)
+$ env | grep -c -E '^(GH_TOKEN|GITHUB_TOKEN)='
+0
+$ git ls-remote origin 'refs/pull/*/head' | wc -l
+20          # 20 个 PR ref，grep bdfe757 / c464ea0 均无命中
+$ git ls-remote fork 'refs/pull/*/head' | wc -l
+0
+# ci.yml 触发条件：on: pull_request / push: branches: [main]
+# → 功能分支推到 fork 不产生 run；本机也无凭据查询 run。故无可报告的 run id。
