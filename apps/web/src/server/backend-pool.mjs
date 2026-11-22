@@ -147,22 +147,21 @@ export class BackendPool {
     this.touch(entry)
     const id = entry.nextId++
     return new Promise((resolve, reject) => {
-      entry.pending.set(id, { resolve, reject })
+      // 只登记一次：resolve/reject 时顺手停掉超时定时器（否则每次调用都要挂满 10 分钟才释放）。
       const timer = setTimeout(() => {
         if (!entry.pending.has(id)) return
         entry.pending.delete(id)
         reject(new Error(`通道超时: ${channel}`))
       }, 10 * 60 * 1000)
       timer.unref?.()
-      const wrap = entry.pending.get(id)
       entry.pending.set(id, {
         resolve: (v) => {
           clearTimeout(timer)
-          wrap.resolve(v)
+          resolve(v)
         },
         reject: (e) => {
           clearTimeout(timer)
-          wrap.reject(e)
+          reject(e)
         }
       })
       entry.proc?.send({ t: 'invoke', id, channel, args })
