@@ -1,5 +1,5 @@
 # 第三轮收尾整体复跑（与 CI 三个 job 同命令，本地执行）
-时间: 2026-11-22T09:18:08+08:00  分支: feat/plugin-deva-agent  HEAD: 3ddd9dc
+时间: 2026-11-22T09:33:15+08:00  分支: feat/plugin-deva-agent  HEAD: 044005b
 
 $ pnpm install --frozen-lockfile
 exit=0
@@ -26,10 +26,10 @@ $ pnpm --filter @deva/web build
 exit=0
 
 $ node --check（已入库 js/mjs，排除构建产物）
-checked=71 fail=0
+checked=99 fail=0
 
 # 起实例 PORT=7215
-healthz=1 (pid=77874)
+healthz=1 (pid=82321)
 
 $ apps/web/test/smoke.mjs
 exit=0  RESULT pass=14 fail=0
@@ -82,10 +82,10 @@ RESULT pass=15 fail=0
 exit=0  RESULT pass=77 fail=0
 
 $ cd plugins/deva-agent && node --test tests/*.test.mjs
-✔ decodeEntities handles named and numeric entities without double decoding (0.27424ms)
-✔ web_fetch converts HTML, passes JSON through, and rejects other protocols (51.47548ms)
-✔ long web pages spill to the runtime directory and say where (26.13836ms)
-✔ web_fetch reports timeouts and cancellation without hanging (53.16176ms)
+✔ decodeEntities handles named and numeric entities without double decoding (0.27952ms)
+✔ web_fetch converts HTML, passes JSON through, and rejects other protocols (47.51672ms)
+✔ long web pages spill to the runtime directory and say where (24.91864ms)
+✔ web_fetch reports timeouts and cancellation without hanging (53.19832ms)
 ℹ tests 158
 ℹ suites 0
 ℹ pass 158
@@ -93,6 +93,6 @@ $ cd plugins/deva-agent && node --test tests/*.test.mjs
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 3186.114
+ℹ duration_ms 3269.35436
 
 OVERALL_FAIL=0
