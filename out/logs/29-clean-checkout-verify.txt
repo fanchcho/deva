@@ -1,0 +1,50 @@
+# 干净检出验证（git worktree --detach，只含已提交文件）
+# 目的：排除工作区残留文件/未提交产物造成的假绿。worktree 路径 /tmp/wt-verify，HEAD=dd8d45f。
+# 步骤：git worktree add --detach /tmp/wt-verify HEAD → pnpm install --frozen-lockfile（rc=0）→ 逐项执行。
+
+# 干净检出验证（git worktree，HEAD=dd8d45f，仅跟踪文件）
+时间: 2026-11-22T09:28:36+08:00
+$ pnpm lint
+exit=0
+$ pnpm check:versions
+exit=0
+$ pnpm test:desktop
+exit=0
+$ pnpm typecheck
+exit=0
+$ pnpm --filter @deva/web typecheck
+exit=0
+$ pnpm build
+exit=0
+$ pnpm --filter @deva/web build
+exit=0
+$ node out/docker-check.mjs
+exit=0  RESULT pass=77 fail=0
+$ cd plugins/deva-agent && node --test tests/*.test.mjs
+
+# desktop 单测与插件单测的计数（上面只看了 exit）
+$ pnpm test:desktop
+ℹ tests 179
+ℹ pass 179
+ℹ fail 0
+
+$ cd plugins/deva-agent && node --test tests/*.test.mjs
+
+# 补充计数（上一段只记录了 exit code）
+$ pnpm test:desktop
+ℹ tests 179
+ℹ pass 179
+ℹ fail 0
+
+$ cd plugins/deva-agent && node --test tests/*.test.mjs
+ℹ tests 158
+ℹ suites 0
+ℹ pass 158
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3264.09672
+
+# 结论：干净检出（无 node_modules 之外的残留、无未提交改动）下 lint / 版本一致性 / desktop 单测 /
+# 类型检查（根 + web）/ 构建（根 + web）/ Docker 静态校验 / 插件单测 全部 exit=0，无需本地隐藏文件。
