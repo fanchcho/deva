@@ -86,3 +86,22 @@ $ git rev-list --count fork/main..HEAD
 15
 
 # 说明：本文件与 REPORT 之后仍有修订提交，计数会随之 +1；最终 HEAD 以 fork 上的 ref 为准。
+
+## 6. 第四次推送（§8.4 文案校正提交）
+$ git push fork feat/plugin-deva-agent
+To github.com:fanchcho/deva.git
+   9370c9b..bb560b4  feat/plugin-deva-agent -> feat/plugin-deva-agent
+exit=0
+
+$ git rev-parse HEAD
+bb560b4ecf7dea063cf98dc866721e526e106643
+$ git rev-parse fork/feat/plugin-deva-agent
+bb560b4ecf7dea063cf98dc866721e526e106643
+$ git ls-remote fork refs/heads/feat/plugin-deva-agent
+bb560b4ecf7dea063cf98dc866721e526e106643	refs/heads/feat/plugin-deva-agent
+$ git status -sb
+## feat/plugin-deva-agent...fork/feat/plugin-deva-agent
+
+# 上面这次推送时，HEAD == fork 上的分支 ref == ls-remote 返回值，工作区干净。
+# 注意自指：本文件（以及 REPORT §8.4）的每次修订都会产生新的提交与推送，因此「最终 HEAD」
+# 只能由最后一次 `git ls-remote fork refs/heads/feat/plugin-deva-agent` 给出，不能写死在这里。
