@@ -96,3 +96,13 @@ $ cd plugins/deva-agent && node --test tests/*.test.mjs
 ℹ duration_ms 3269.35436
 
 OVERALL_FAIL=0
+
+# 追加：文档收尾后再校验（代码树未变）
+# 上面的整体复跑跑在 HEAD=044005b；之后只改了 .gitignore 的一行注释、out/REPORT.md 与本目录日志。
+# 为确认「文档改动没有碰到代码」，在 d02a4b7 的代码树上重跑四项快检：
+$ pnpm lint            exit=0
+$ pnpm check:versions  exit=0
+$ pnpm test:desktop    exit=0  （tests 179 / pass 179 / fail 0）
+$ node out/docker-check.mjs exit=0 （RESULT pass=77 fail=0）
+# 其余步骤（typecheck / build / 启动自检 / 6 个回归脚本 / 插件单测）在这个窗口内没有改动的输入，
+# 结论沿用上面 044005b 那次完整复跑。
