@@ -1,0 +1,12 @@
+{
+  "extends": "@electron-toolkit/tsconfig/tsconfig.node.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true,
+    "baseUrl": "..",
+    "paths": {
+      "@deva/main/*": ["desktop/src/main/*"]
+    }
+  },
+  "include": ["src/backend/index.ts", "src/backend/electron-shim.d.ts"]
+}

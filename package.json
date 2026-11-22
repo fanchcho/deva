@@ -10,8 +10,11 @@
   "scripts": {
     "dev": "pnpm --filter @deva/desktop dev",
     "build": "pnpm --filter @deva/desktop build",
+    "build:web": "pnpm --filter @deva/desktop build && pnpm --filter @deva/web build",
     "start": "pnpm --filter @deva/desktop start",
-    "typecheck": "pnpm --filter @deva/desktop typecheck",
+    "start:web": "pnpm --filter @deva/web start",
+    "typecheck": "pnpm --filter @deva/desktop typecheck && pnpm --filter @deva/web typecheck",
+    "lint": "eslint .",
     "package:win": "pnpm --filter @deva/desktop build:win",
     "package:mac": "pnpm --filter @deva/desktop build:mac",
     "package:linux": "pnpm --filter @deva/desktop build:linux",
@@ -29,5 +32,12 @@
       "esbuild",
       "@parcel/watcher"
     ]
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "eslint": "9",
+    "eslint-plugin-react-hooks": "^5",
+    "globals": "^17.14.0",
+    "typescript-eslint": "^8"
   }
 }
