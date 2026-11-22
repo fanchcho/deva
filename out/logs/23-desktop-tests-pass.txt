@@ -1,0 +1,25 @@
+# desktop 单测：通过（全量）
+时间: 2026-11-22T09:16:05+08:00
+Node: v24.22.1（CI 用 Node 22，另见 26-desktop-tests-node22.txt）
+$ pnpm test:desktop
+✔ 一次 chunk 里多个事件全部产出 (0.6182ms)
+✔ 尾部不完整的一帧不产出（流结束时还没等到空行） (0.4858ms)
+✔ 只有注释行的心跳帧不产出事件 (0.38716ms)
+✔ UTF-8 多字节字符被 chunk 切开仍能正确解码（流式解码） (0.72748ms)
+✔ 没有 body 的响应直接结束，不抛错 (0.42252ms)
+✔ 空闲看门狗：超过 idleMs 拿不到数据就抛 StreamIdleError (31.26368ms)
+✔ StreamIdleError 文案带上秒数，且分中英文 (0.49632ms)
+✔ idleMs=0 时不启用看门狗（不会因为等待而失败） (0.50632ms)
+✔ STREAM_IDLE_MS 常量是 60s（改动要同时想清楚慢思考模型） (0.11072ms)
+✔ fs:read-dir：未受信路径被拒绝；受信后列出目录（目录在前，按名排序） (20.0356ms)
+✔ fs:write-file：受信根内可写；根外拒绝且不落盘 (3.70772ms)
+✔ fs:reveal-folder：非字符串 / 空串 / 根外 返回 ok:false（不抛错） (2.152ms)
+✔ fs:read-file：普通文件返回正文；超大文件标 tooLarge；含 NUL 标 binary (4.94236ms)
+✔ 未注册通道调用会明确报错（防止测试误判为空过） (1.18356ms)
+ℹ tests 179
+ℹ pass 179
+ℹ fail 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1779.0542
+exit=0

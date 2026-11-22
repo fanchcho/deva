@@ -1,0 +1,36 @@
+# Web 层 lint 证据（item 3）
+时间: 2026-11-21T15:40:49+08:00  分支: feat/plugin-deva-agent  HEAD: 3ddd9dc
+
+## 配置
+$ node -e "console.log(require(\"eslint/package.json\").version)"
+9.39.4
+$ ls eslint.config.mjs
+-rw-r--r-- 1 root hermes 3105 Nov 21 15:10 eslint.config.mjs
+
+## before（基线，out/logs/11-lint-before.txt，全仓 eslint .）
+apps/web 部分 4 条 error：
+/tmp/lint-baseline/apps/web/build.mjs
+  12:10  error  'createRequire' is defined but never used  no-unused-vars
+/tmp/lint-baseline/apps/web/src/backend/chromium.mjs
+  215:7  error  'sleep' is assigned a value but never used  no-unused-vars
+/tmp/lint-baseline/apps/web/src/electron-shim.js
+  7:7  error  'pending' is assigned a value but never used  no-unused-vars
+  9:5  error  'nextId' is assigned a value but never used   no-unused-vars
+全仓：30 problems (29 errors, 1 warning)
+
+## after（当前，apps/web 单独跑）
+$ ./node_modules/.bin/eslint apps/web -f stylish
+web-exit=0
+
+$ ./node_modules/.bin/eslint apps/web -f json | node -e "..."
+json-exit=0
+files=17 errors=0 warnings=0
+
+## after（当前，全仓 ./node_modules/.bin/eslint .）
+all-exit=0
+json-exit=0
+files=345 errors=0 warnings=0
+
+## 附加自检：未被使用的 disable 指令（--report-unused-disable-directives）
+$ ./node_modules/.bin/eslint . --report-unused-disable-directives -f stylish
+exit=0

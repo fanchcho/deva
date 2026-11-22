@@ -1,0 +1,11 @@
+# desktop 单测在 Node 22 下复跑（与 ci.yml 的 node-version 一致）
+时间: 2026-11-22T09:16:10+08:00
+二进制: /tmp/n22/node-v22.22.0-linux-arm64/bin/node (v22.22.0)
+下载来源: https://nodejs.org/dist/v22.22.0/node-v22.22.0-linux-arm64.tar.xz
+$ cd apps/desktop && node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./test/support/register.mjs --test test/*.test.mjs
+# tests 179
+# pass 179
+# fail 0
+# skipped 0
+# todo 0
+exit=0

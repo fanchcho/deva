@@ -1,0 +1,37 @@
+### pnpm build
+
+> deva-workspace@ build /home/agent/shared_workspace/deva
+> pnpm --filter @deva/desktop build
+
+
+> @deva/desktop@0.1.15 build /home/agent/shared_workspace/deva/apps/desktop
+> electron-vite build
+
+[36mvite v5.4.21 [32mbuilding SSR bundle for production...[36m[39m
+transforming...
+[32m✓[39m 90 modules transformed.
+rendering chunks...
+[2mout/main/[22m[36mpty-host.js  [39m[1m[2m  2.13 kB[22m[1m[22m
+[2mout/main/[22m[36mindex.js     [39m[1m[33m744.49 kB[39m[22m
+[32m✓ built in 1.45s[39m
+[36mvite v5.4.21 [32mbuilding SSR bundle for production...[36m[39m
+transforming...
+[32m✓[39m 1 modules transformed.
+rendering chunks...
+[2mout/preload/[22m[36mindex.js  [39m[1m[2m24.51 kB[22m[1m[22m
+[32m✓ built in 30ms[39m
+[36mvite v5.4.21 [32mbuilding for production...[36m[39m
+transforming...
+[32m✓[39m 2197 modules transformed.
+rendering chunks...
+[2m../../out/renderer/[22m[32mindex.html                   [39m[1m[2m    0.78 kB[22m[1m[22m
+[2m../../out/renderer/[22m[32mbrowser.html                 [39m[1m[2m    0.78 kB[22m[1m[22m
+[2m../../out/renderer/[22m[2massets/[22m[32mfeishu-PHOsC_GZ.svg   [39m[1m[2m    6.32 kB[22m[1m[22m
+[2m../../out/renderer/[22m[2massets/[22m[35mbrowser-C_iNvXeT.css  [39m[1m[2m    5.77 kB[22m[1m[22m
+[2m../../out/renderer/[22m[2massets/[22m[35mindex-B94CB8vb.css    [39m[1m[2m  127.29 kB[22m[1m[22m
+[2m../../out/renderer/[22m[2massets/[22m[35mtext-CRS9VcOt.css     [39m[1m[2m  133.06 kB[22m[1m[22m
+[2m../../out/renderer/[22m[2massets/[22m[36mbrowser-C0Lpq-MB.js   [39m[1m[2m   10.17 kB[22m[1m[22m
+[2m../../out/renderer/[22m[2massets/[22m[36mtext-C9wd0hHJ.js      [39m[1m[33m1,092.85 kB[39m[22m
+[2m../../out/renderer/[22m[2massets/[22m[36mindex-feRGkUOb.js     [39m[1m[33m1,837.16 kB[39m[22m
+[32m✓ built in 4.99s[39m
+exit=0

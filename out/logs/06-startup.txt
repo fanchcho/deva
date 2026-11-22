@@ -1,0 +1,50 @@
+### 启动自检（PORT=7092，DEVA_WEB_DATA=/tmp/deva-final-data）
+$ tail -20 /tmp/deva-final.log
+[backend:smokemwelmxwn] [backend] secrets ok
+[backend:smokemwelmxwn] [backend] provider ok
+[backend:smokemwelmxwn] [backend] chat ok
+[backend:smokemwelmxwn] [backend] remote ok
+[backend:smokemwelmxwn] [backend] skills ok
+[backend:smokemwelmxwn] [backend] personas ok
+[backend:smokemwelmxwn] [backend] profile ok
+[backend:smokemwelmxwn] [backend] memory ok
+[backend:smokemwelmxwn] [backend] mcp ok
+[backend:smokemwelmxwn] [backend] attachments ok
+[backend:smokemwelmxwn] [backend] terminal ok
+[backend:smokemwelmxwn] [backend] git ok
+[backend:smokemwelmxwn] [backend] clipboard ok
+[backend:smokemwelmxwn] [backend] deliverables ok
+[backend:smokemwelmxwn] [backend] tasks ok
+[backend:smokemwelmxwn] [backend] updater ok
+[backend:smokemwelmxwn] [backend] browser ok
+[backend:smokemwelmxwn] [backend] mcp autoconnect ok
+[backend:smokemwelmxwn] [backend] scheduler ok
+[backend:smokemwelmxwn] ready: 154 channels
+
+$ curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:7092/healthz
+200
+$ grep -c 'ready: 154 channels' /tmp/deva-final.log
+2
+$ grep -E '\[backend\] .* ok|failed|error' /tmp/deva-final.log | sort -u
+[backend] attachments ok
+[backend] browser ok
+[backend] chat ok
+[backend] clipboard ok
+[backend] config ok
+[backend] deliverables ok
+[backend] git ok
+[backend] mcp autoconnect ok
+[backend] mcp ok
+[backend] memory ok
+[backend] personas ok
+[backend] profile ok
+[backend] provider ok
+[backend] remote ok
+[backend] scheduler ok
+[backend] secrets ok
+[backend] skills ok
+[backend] tasks ok
+[backend] terminal ok
+[backend] updater ok
+[backend] window channels ok
+[backend] workspace ok

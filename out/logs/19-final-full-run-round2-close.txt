@@ -1,0 +1,121 @@
+# 第二轮收尾整体复跑（与 CI 同命令，本地执行）
+时间: 2026-11-21T15:46:59+08:00  分支: feat/plugin-deva-agent  HEAD: 3ddd9dc
+
+$ pnpm install --frozen-lockfile
+exit=0
+
+$ pnpm lint
+exit=0
+
+$ pnpm typecheck
+exit=0
+
+$ pnpm --filter @deva/web typecheck
+exit=0
+
+$ pnpm build
+exit=0
+
+$ pnpm --filter @deva/web build
+exit=0
+
+$ node --check（已入库 js/mjs，排除构建产物）
+checked=71 fail=0
+
+# 起实例 PORT=7215
+healthz=1 (pid=11258)
+
+$ apps/web/test/smoke.mjs
+exit=0  RESULT pass=14 fail=0
+# 启动自检（admin 首次登录触发；memory 那行没有用户前缀，按头部区段截取）
+  [backend:admin] [backend] window channels ok
+  [backend:admin] [backend] config ok
+  [backend:admin] [backend] workspace ok
+  [backend:admin] [backend] secrets ok
+  [backend:admin] [backend] provider ok
+  [backend:admin] [backend] chat ok
+  [backend:admin] [backend] remote ok
+  [backend:admin] [backend] skills ok
+  [backend:admin] [backend] personas ok
+  [backend:admin] [backend] profile ok
+  [backend:admin] [backend] memory ok
+  [backend:admin] [backend] mcp ok
+  [backend:admin] [backend] attachments ok
+  [backend:admin] [backend] terminal ok
+  [backend:admin] [backend] git ok
+  [backend:admin] [backend] clipboard ok
+  [backend:admin] [backend] deliverables ok
+  [backend:admin] [backend] tasks ok
+  [backend:admin] [backend] updater ok
+  [backend:admin] [backend] browser ok
+  [backend:admin] [backend] mcp autoconnect ok
+  [backend:admin] [backend] scheduler ok
+  共 22 个步骤 ok
+  [backend:admin] ready: 162 channels
+
+$ out/probe.mjs
+exit=0  RESULT pass=30 fail=0
+$ out/git-e2e.mjs
+exit=0  RESULT pass=10 fail=0
+$ out/channel-coverage.mjs
+exit=0  RESULT pass=4 fail=0
+$ out/browse-check.mjs
+exit=0  RESULT pass=9 fail=0
+$ out/icon-check.mjs
+exit=0  RESULT pass=15 fail=0
+
+# 合计（6 个脚本）
+RESULT pass=14 fail=0
+RESULT pass=30 fail=0
+RESULT pass=10 fail=0
+RESULT pass=4 fail=0
+RESULT pass=9 fail=0
+RESULT pass=15 fail=0
+
+$ cd plugins/deva-agent && node --test tests/*.test.mjs
+✔ decodeEntities handles named and numeric entities without double decoding (0.28364ms)
+✔ web_fetch converts HTML, passes JSON through, and rejects other protocols (48.51672ms)
+✔ long web pages spill to the runtime directory and say where (30.12452ms)
+✔ web_fetch reports timeouts and cancellation without hanging (53.64812ms)
+ℹ tests 158
+ℹ suites 0
+ℹ pass 158
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3236.13316
+
+OVERALL_FAIL=0
+
+## 附加：node --check 的实际范围（与 CI 中那条命令完全一致）
+
+$ git ls-files '*.mjs' '*.js' | grep -v -E '^(apps/desktop/out|out|\.tmp)/'
+已跟踪并纳入检查 = 71 个，全部通过
+
+$ git ls-files --others --exclude-standard '*.mjs' '*.js' | grep -v -E '^(apps/desktop/out|out|\.tmp)/'
+尚未入库但同样会命中上面命令 = 3 个（本轮新增/未跟踪的 js/mjs，入库后自动纳入）
+
+$ ls out/*.mjs
+6 个回归脚本（probe / git-e2e / channel-coverage / browse-check / icon-check / server.baseline）
+
+说明：CI 的 node --check 显式排除 `out/`（证据目录）。这 6 个脚本不靠语法检查兜底，
+而是由 `web-e2e` job 逐个实际执行（任一语法错误会直接让该 step 失败）。
+入库后 check 覆盖数 = 71 + 3 = 74。
+
+## 收尾微调（删除 chromium.mjs 遗留空行，纯空白）后的重跑  2026-11-21T15:51:39+08:00
+$ pnpm lint
+exit=0
+> deva-workspace@ lint /home/agent/shared_workspace/deva
+> eslint .
+
+$ pnpm typecheck
+exit=0
+> @deva/web@0.1.15 typecheck /home/agent/shared_workspace/deva/apps/web
+> tsc --noEmit -p tsconfig.backend.json
+
+$ pnpm --filter @deva/web build
+exit=0
+> node build.mjs
+
+[build] shim.js + backend.cjs + pty-host.js ok, renderer=/home/agent/shared_workspace/deva/apps/desktop/out/renderer, deva=0.1.16, commit=3ddd9dc

@@ -1,0 +1,58 @@
+### 收尾后整体复跑（PORT=7096，工作区当前状态，含 out/ 改名与 favicon 修复）
+# 实例：apps/web/server.mjs，数据 /tmp/deva-final2-data，更新检查关闭
+
+$ pnpm typecheck
+exit=0（@deva/desktop node + web 两套 tsconfig）
+
+$ pnpm --filter @deva/web build
+[build] shim.js + backend.cjs + pty-host.js ok, renderer=.../apps/desktop/out/renderer, deva=0.1.15, commit=109937f
+exit=0
+
+$ curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:7096/healthz
+200
+
+# 后端启动自检（首次登录拉起每用户后端进程）
+[backend:*] ready: 154 channels  （22 个模块逐项 ok，日志尾部见下）
+[backend] window channels ok
+[backend] config ok
+[backend] workspace ok
+[backend] secrets ok
+[backend] provider ok
+[backend] chat ok
+[backend] remote ok
+[backend] skills ok
+[backend] personas ok
+[backend] profile ok
+[backend] memory ok
+[backend] mcp ok
+[backend] attachments ok
+[backend] terminal ok
+[backend] git ok
+[backend] clipboard ok
+[backend] deliverables ok
+[backend] tasks ok
+[backend] updater ok
+[backend] browser ok
+[backend] mcp autoconnect ok
+[backend] scheduler ok
+
+# 回归（全部从仓库根以 node out/<脚本> 形式调用）
+$ BASE=http://127.0.0.1:7096 node out/probe.mjs
+RESULT pass=30 fail=0
+
+$ BASE=http://127.0.0.1:7096 node out/git-e2e.mjs
+RESULT pass=10 fail=0
+
+$ BASE=http://127.0.0.1:7096 node out/browse-check.mjs
+RESULT pass=9 fail=0
+
+$ BASE=http://127.0.0.1:7096 node out/channel-coverage.mjs
+RESULT pass=4 fail=0
+
+$ BASE=http://127.0.0.1:7096 node out/icon-check.mjs
+RESULT pass=15 fail=0
+
+$ cd apps/web && BASE=http://127.0.0.1:7096 ADMIN_PASSWORD=smoke-pass SMOKE_CREATE_USER=1 node test/smoke.mjs
+RESULT pass=14 fail=0
+
+# 合计：30+10+9+4+15+14 = 82 项全部 PASS，fail=0

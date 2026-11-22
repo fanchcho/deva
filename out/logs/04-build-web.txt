@@ -1,0 +1,7 @@
+### pnpm --filter @deva/web build
+
+> @deva/web@0.1.15 build /home/agent/shared_workspace/deva/apps/web
+> node build.mjs
+
+[build] shim.js + backend.cjs + pty-host.js ok, renderer=/home/agent/shared_workspace/deva/apps/desktop/out/renderer, deva=0.1.15, commit=109937f
+exit=0

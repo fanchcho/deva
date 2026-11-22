@@ -1,0 +1,12 @@
+# desktop 单测：负向验证（故意改坏断言，应报红）
+时间: 2026-11-22T09:15:58+08:00
+改动：test/dsml.test.mjs 中 parseDsmlCalls 的路径期望 'a.txt' → 'WRONG-a.txt'
+$ pnpm test:desktop
+✖ parseDsmlCalls：标准一段返回调用与参数 (3.11816ms)
+ℹ tests 179
+ℹ pass 178
+ℹ fail 1
+✖ failing tests:
+✖ parseDsmlCalls：标准一段返回调用与参数 (3.11816ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+exit=1

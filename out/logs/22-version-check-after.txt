@@ -1,0 +1,33 @@
+# 版本一致性断言：修复后 + lockfile 不受影响
+时间: 2026-11-22T08:56:17+08:00
+
+## 1) 断言通过
+$ node out/check-versions.mjs
+版本一致: 0.1.16（apps/desktop/package.json = apps/web/package.json）
+exit=0
+
+## 2) pnpm install --frozen-lockfile（版本改动不应产生 lockfile diff）
+$ md5sum pnpm-lock.yaml  # 改 version 前
+aa58cd7d96ed82bf04d8709a6e2d6111  pnpm-lock.yaml
+$ pnpm install --frozen-lockfile
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+Done in 1.7s using pnpm v10.8.0
+exit=0
+$ md5sum -c /tmp/lock-before.md5  # 改 version 后
+pnpm-lock.yaml: OK
+
+## 3) 为什么没有 lockfile diff
+pnpm-lock.yaml(v9) 的 importers 段只记录「依赖的 specifier/version」，不记录包自身的 version，
+所以改 apps/web/package.json 的 version 不会让 lockfile 变化；
+当前 pnpm-lock.yaml 的未提交 diff 来自前几轮新增的 eslint / typescript-eslint / @deva/web typescript 等依赖，
+与本次版本号统一无关：
+ pnpm-lock.yaml | 721 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 718 insertions(+), 3 deletions(-)
+
+## 4) 版本读取链路核对
+108:const version = JSON.parse(fs.readFileSync(path.join(desktopDir, 'package.json'), 'utf8')).version
+38:if (!process.env.DEVA_VERSION) process.env.DEVA_VERSION = manifest.version
+apps/web/src/backend/updater-stub.mjs:16:  currentVersion: { version: process.env.DEVA_VERSION || '0.0.0' }
+apps/web/src/backend/electron-shim.mjs:125:    return process.env.DEVA_VERSION || '0.0.0'

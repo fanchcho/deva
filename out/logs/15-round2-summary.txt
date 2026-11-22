@@ -1,0 +1,21 @@
+# 第 2 轮：未修复项专项（lint / Web 类型检查 / CI 覆盖）证据汇总
+时间: 2026-11-21T15:34:01+08:00  分支: feat/plugin-deva-agent  HEAD: 3ddd9dc
+
+## 1) Web 层类型检查（原 7.2）
+$ cd apps/web && npx tsc --noEmit -p tsconfig.backend.json
+exit=0，--listFiles 含 118 个 apps/desktop/src/main/** 与 2 个 web 文件
+反例控制：移除 electron-shim.d.ts 后重现 4 条 TS2305（见 logs/10-web-typecheck-before.txt）
+
+## 2) Lint（原 7.1）
+基线（git HEAD 代码 + 新配置）：30 problems（29 errors / 1 warning），见 logs/11-lint-before.txt
+修复后：$ pnpm lint → exit=0，0 problems，见 logs/12-lint-after.txt
+
+## 3) CI（原 7.3）
+ci.yml 新增 two jobs：check（node --check + lint + typecheck + desktop/web build + 插件 158 项单测）与 web-e2e（起实例跑 smoke/probe/git-e2e/channel-coverage/browse-check/icon-check）
+本地等价执行记录见 logs/13-ci-equivalent.txt（check 与 web-e2e 两步逐步复跑，82 项全 PASS）
+
+## 4) 顺带修掉的真实缺陷
+- backend-pool invoke()：pending 条目被登记两次且外层 resolve/reject 未清定时器（每次调用残留 10 分钟定时器），改为单次登记
+- smoke.mjs / probe.mjs：跨用户断言只认「超出」，在配置了 DEVA_WEB_ROOTS 的部署下会被后端 fs-guard 的「拒绝访问」文案误报（实测 30→29）。改为「被拒即可」
+- apps/web 文档通道数 154 → 实测 162（/api/channels count=162，启动日志 ready: 162 channels）；
+  模块数 21 → 实际 22 个注册步骤（apps/web/src/backend/index.ts 的 step() 调用）

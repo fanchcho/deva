@@ -1,0 +1,89 @@
+# lint 前后对比（同一份 eslint.config.mjs）
+生成时间: 2026-11-21T15:18:40+08:00
+分支: feat/plugin-deva-agent  HEAD: 3ddd9dc
+
+## 基线：git HEAD 代码（未含本轮修复）跑新配置
+$ eslint .  →  30 problems (29 errors, 1 warning)，exit=1
+
+/tmp/lint-baseline/apps/desktop/src/main/index.ts
+  317:5  error  Expected an assignment or function call and instead saw an expression  @typescript-eslint/no-unused-expressions
+
+/tmp/lint-baseline/apps/desktop/src/main/services/ask-questions.ts
+  39:17  error  Unnecessary escape character: \.  no-useless-escape
+
+/tmp/lint-baseline/apps/desktop/src/main/services/attachments.ts
+  141:45  error  Unexpected control character(s) in regular expression: \x00, \x1f  no-control-regex
+
+/tmp/lint-baseline/apps/desktop/src/main/services/frontmatter.ts
+  153:11  error  Unnecessary escape character: \[  no-useless-escape
+
+/tmp/lint-baseline/apps/desktop/src/main/services/remote/telegram.ts
+  504:14  error  Unexpected control character(s) in regular expression: \x00, \x00  no-control-regex
+
+/tmp/lint-baseline/apps/desktop/src/main/services/remote/web/files.ts
+  55:45  error  Unexpected control character(s) in regular expression: \x00, \x1f  no-control-regex
+
+/tmp/lint-baseline/apps/desktop/src/preload/index.ts
+  1253:3  error  Use "@ts-expect-error" instead of "@ts-ignore", as "@ts-ignore" will do nothing if the following line is error-free  @typescript-eslint/ban-ts-comment
+
+/tmp/lint-baseline/apps/desktop/src/renderer/src/redesign/Conversation.tsx
+  571:5  warning  Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps')
+
+/tmp/lint-baseline/apps/desktop/src/renderer/src/redesign/Rail.tsx
+  336:6  error  React Hook useEffect has a missing dependency: 'setQuery'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/tmp/lint-baseline/apps/desktop/src/renderer/src/redesign/attachments.tsx
+  395:42  error  Irregular whitespace not allowed  no-irregular-whitespace
+
+/tmp/lint-baseline/apps/desktop/src/renderer/src/store/chat.tsx
+  1710:24  error  '_stale' is assigned a value but never used                                                                                             @typescript-eslint/no-unused-vars
+  2090:26  error  '_persisted' is assigned a value but never used                                                                                         @typescript-eslint/no-unused-vars
+  2413:6   error  React Hook useMemo has missing dependencies: 'attachSession' and 'isMemberSession'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+/tmp/lint-baseline/apps/desktop/src/renderer/src/store/extensions.tsx
+  542:6  error  React Hook useMemo has a missing dependency: 'patchLocal'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/tmp/lint-baseline/apps/web/build.mjs
+  12:10  error  'createRequire' is defined but never used  no-unused-vars
+
+/tmp/lint-baseline/apps/web/src/backend/chromium.mjs
+  215:7  error  'sleep' is assigned a value but never used  no-unused-vars
+
+/tmp/lint-baseline/apps/web/src/electron-shim.js
+  7:7  error  'pending' is assigned a value but never used  no-unused-vars
+  9:5  error  'nextId' is assigned a value but never used   no-unused-vars
+
+/tmp/lint-baseline/plugins/deva-agent/lib/loop.mjs
+  97:37  error  'run' is defined but never used. Allowed unused args must match /^_/u  no-unused-vars
+
+/tmp/lint-baseline/plugins/deva-agent/lib/mcp.mjs
+  398:40  error  'signal' is assigned a value but never used. Allowed unused args must match /^_/u  no-unused-vars
+
+/tmp/lint-baseline/plugins/deva-agent/lib/memory-consolidate.mjs
+  35:7  error  'TIMEOUT_MS' is assigned a value but never used  no-unused-vars
+  36:7  error  'MAX_TOKENS' is assigned a value but never used  no-unused-vars
+
+/tmp/lint-baseline/plugins/deva-agent/lib/memory.mjs
+  198:18  error  'workspaceDir' is assigned a value but never used  no-unused-vars
+  198:39  error  'identityId' is assigned a value but never used    no-unused-vars
+
+/tmp/lint-baseline/plugins/deva-agent/lib/tools.mjs
+  268:9  error  'found' is assigned a value but never used  no-unused-vars
+
+/tmp/lint-baseline/plugins/deva-agent/tests/agent.test.mjs
+  234:20  error  'request' is defined but never used. Allowed unused args must match /^_/u  no-unused-vars
+
+/tmp/lint-baseline/plugins/deva-agent/tests/memory.test.mjs
+  164:24  error  Spaces are hard to count. Use {2}  no-regex-spaces
+
+/tmp/lint-baseline/plugins/deva-agent/tests/skills.test.mjs
+   5:16  error  'updateSkill' is defined but never used                                    no-unused-vars
+  76:32  error  'options' is defined but never used. Allowed unused args must match /^_/u  no-unused-vars
+
+/tmp/lint-baseline/plugins/deva-agent/tests/spill.test.mjs
+  3:44  error  'mkdir' is defined but never used  no-unused-vars
+
+✖ 30 problems (29 errors, 1 warning)
+  1 error and 1 warning potentially fixable with the `--fix` option.
+
+exit=1

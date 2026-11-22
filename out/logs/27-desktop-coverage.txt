@@ -1,0 +1,139 @@
+# desktop 源码导入边界（node --experimental-strip-types + test/support 解析钩子）
+源文件总数: 247
+可被 Node 原生导入: 92
+不可导入: 155
+
+## 需要 bundler / 浏览器环境（renderer、preload、移动端） —— 84 个
+  apps/desktop/src/mobile/App.tsx
+  apps/desktop/src/mobile/avatar.tsx
+  apps/desktop/src/mobile/cards.tsx
+  apps/desktop/src/mobile/chat-menu.tsx
+  apps/desktop/src/mobile/chat.tsx
+  apps/desktop/src/mobile/composer.tsx
+  apps/desktop/src/mobile/connect-art.tsx
+  apps/desktop/src/mobile/dialog.tsx
+  apps/desktop/src/mobile/drawer.tsx
+  apps/desktop/src/mobile/files.tsx
+  apps/desktop/src/mobile/home.tsx
+  apps/desktop/src/mobile/main.tsx
+  … 另 72 个
+
+## 目录导入（../providers 之类，Node ESM 不支持） —— 32 个
+  apps/desktop/src/main/index.ts
+  apps/desktop/src/main/services/agent-loop.ts
+  apps/desktop/src/main/services/attachment-image.ts
+  apps/desktop/src/main/services/background-tasks.ts
+  apps/desktop/src/main/services/chat-display.ts
+  apps/desktop/src/main/services/chat-history.ts
+  apps/desktop/src/main/services/chat-members.ts
+  apps/desktop/src/main/services/chat-prompts.ts
+  apps/desktop/src/main/services/chat-state.ts
+  apps/desktop/src/main/services/chat-task-handoff.ts
+  apps/desktop/src/main/services/chat-turns.ts
+  apps/desktop/src/main/services/chat.ts
+  … 另 20 个
+
+## 缺 electron 命名导出（替身未覆盖的 API） —— 22 个
+  apps/desktop/src/main/http.ts
+  apps/desktop/src/main/providers/anthropic.ts
+  apps/desktop/src/main/providers/index.ts
+  apps/desktop/src/main/providers/openai-responses.ts
+  apps/desktop/src/main/providers/openai.ts
+  apps/desktop/src/main/providers/request.ts
+  apps/desktop/src/main/services/attachments.ts
+  apps/desktop/src/main/services/browser/host.ts
+  apps/desktop/src/main/services/browser/index.ts
+  apps/desktop/src/main/services/browser/live.ts
+  apps/desktop/src/main/services/browser/pages.ts
+  apps/desktop/src/main/services/chat-inserts.ts
+  … 另 10 个
+
+## TS 参数属性（无法 type-strip） —— 14 个
+  apps/desktop/src/main/services/remote/feishu.ts
+  apps/desktop/src/main/services/remote/index.ts
+  apps/desktop/src/main/services/remote/telegram-onboard.ts
+  apps/desktop/src/main/services/remote/telegram.ts
+  apps/desktop/src/main/services/remote/web/adapter.ts
+  apps/desktop/src/main/services/remote/web/devices.ts
+  apps/desktop/src/main/services/remote/web/files.ts
+  apps/desktop/src/main/services/remote/web/phone.ts
+  apps/desktop/src/main/services/remote/web/push.ts
+  apps/desktop/src/main/services/remote/web/secure.ts
+  apps/desktop/src/mobile/link.ts
+  apps/desktop/src/mobile/push.ts
+  … 另 2 个
+
+## 其他：Cannot read properties of undefined (reading 'on') —— 1 个
+  apps/desktop/src/main/pty-host.ts
+
+## 其他：Unknown file extension ".tsx" for /home/agent/shared_workspace/deva/apps/desktop/src/mobile/files.tsx —— 1 个
+  apps/desktop/src/mobile/outbox.ts
+
+## 其他：Unknown file extension ".tsx" for /home/agent/shared_workspace/deva/apps/desktop/src/renderer/src/i18n/i18n.tsx —— 1 个
+  apps/desktop/src/renderer/src/redesign/memory-editor.ts
+
+## 已有单测直接 import 的源文件
+  ✓ apps/desktop/src/main/providers/dsml.ts
+  ✓ apps/desktop/src/main/providers/sse.ts
+  ✓ apps/desktop/src/main/services/ask-questions.ts
+  ✓ apps/desktop/src/main/services/atomic-write.ts
+  ✓ apps/desktop/src/main/services/browser/url.ts
+  ✓ apps/desktop/src/main/services/config.ts
+  ✓ apps/desktop/src/main/services/exec-policy.ts
+  ✓ apps/desktop/src/main/services/frontmatter.ts
+  ✓ apps/desktop/src/main/services/fs-guard.ts
+  ✓ apps/desktop/src/main/services/handoff.ts
+  ✓ apps/desktop/src/main/services/line-stats.ts
+  ✓ apps/desktop/src/main/services/memory.ts
+  ✓ apps/desktop/src/main/services/model-resolve.ts
+  ✓ apps/desktop/src/main/services/repetition.ts
+  ✓ apps/desktop/src/main/services/shells.ts
+  ✓ apps/desktop/src/main/services/workspace.ts
+  ✓ apps/desktop/src/shared/context.ts
+  ✓ apps/desktop/src/shared/effort.ts
+  ✓ apps/desktop/src/shared/mention.ts
+  ✓ apps/desktop/src/shared/quote.ts
+  ✓ apps/desktop/src/shared/slash.ts
+
+## 可导入但当前没有直接单测: 71 个（多为被上面模块间接覆盖的叶子/类型模块）
+  apps/desktop/src/main/locale.ts
+  apps/desktop/src/main/providers/opencode.ts
+  apps/desktop/src/main/providers/types.ts
+  apps/desktop/src/main/services/appimage.ts
+  apps/desktop/src/main/services/avatar-image.ts
+  apps/desktop/src/main/services/browser/page-scripts.ts
+  apps/desktop/src/main/services/chat-bus.ts
+  apps/desktop/src/main/services/chat-store.ts
+  apps/desktop/src/main/services/clipboard.ts
+  apps/desktop/src/main/services/default-personas.ts
+  apps/desktop/src/main/services/deva-personas.ts
+  apps/desktop/src/main/services/ext-roles.ts
+  apps/desktop/src/main/services/mcp-config.ts
+  apps/desktop/src/main/services/media-store.ts
+  apps/desktop/src/main/services/memory-prompt.ts
+  apps/desktop/src/main/services/model-view.ts
+  apps/desktop/src/main/services/office-text.ts
+  apps/desktop/src/main/services/personas.ts
+  apps/desktop/src/main/services/profile.ts
+  apps/desktop/src/main/services/project-doc.ts
+  apps/desktop/src/main/services/read-sync.ts
+  apps/desktop/src/main/services/remote/chat-reply.ts
+  apps/desktop/src/main/services/remote/feishu-onboard.ts
+  apps/desktop/src/main/services/remote/paginate.ts
+  apps/desktop/src/main/services/remote/store.ts
+  apps/desktop/src/main/services/remote/types.ts
+  apps/desktop/src/main/services/remote/web/conn.ts
+  apps/desktop/src/main/services/remote/web/relay.ts
+  apps/desktop/src/main/services/remote/web/server.ts
+  apps/desktop/src/main/services/reply-notify.ts
+  apps/desktop/src/main/services/role-home.ts
+  apps/desktop/src/main/services/schedule.ts
+  apps/desktop/src/main/services/secrets.ts
+  apps/desktop/src/main/services/skill-invoke.ts
+  apps/desktop/src/main/services/skills.ts
+  apps/desktop/src/main/services/subagent-store.ts
+  apps/desktop/src/main/services/subagents.ts
+  apps/desktop/src/main/services/tasks-types.ts
+  apps/desktop/src/main/services/tasks.ts
+  apps/desktop/src/main/services/todos.ts
+  … 另 31 个

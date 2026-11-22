@@ -1,0 +1,89 @@
+# 第二轮收尾整体复跑（与 CI 同命令，本地执行）
+时间: 2026-11-21T15:58:56+08:00  分支: feat/plugin-deva-agent  HEAD: 3ddd9dc
+
+$ pnpm install --frozen-lockfile
+exit=0
+
+$ pnpm lint
+exit=0
+
+$ pnpm typecheck
+exit=0
+
+$ pnpm --filter @deva/web typecheck
+exit=0
+
+$ pnpm build
+exit=0
+
+$ pnpm --filter @deva/web build
+exit=0
+
+$ node --check（已入库 js/mjs，排除构建产物）
+checked=71 fail=0
+
+# 起实例 PORT=7215
+healthz=1 (pid=20117)
+
+$ apps/web/test/smoke.mjs
+exit=0  RESULT pass=14 fail=0
+# 启动自检（admin 首次登录触发；memory 那行没有用户前缀，按头部区段截取）
+  [backend:admin] [backend] window channels ok
+  [backend:admin] [backend] config ok
+  [backend:admin] [backend] workspace ok
+  [backend:admin] [backend] secrets ok
+  [backend:admin] [backend] provider ok
+  [backend:admin] [backend] chat ok
+  [backend:admin] [backend] remote ok
+  [backend:admin] [backend] skills ok
+  [backend:admin] [backend] personas ok
+  [backend:admin] [backend] profile ok
+  [backend] memory ok
+  [backend:admin] [backend] mcp ok
+  [backend:admin] [backend] attachments ok
+  [backend:admin] [backend] terminal ok
+  [backend:admin] [backend] git ok
+  [backend:admin] [backend] clipboard ok
+  [backend:admin] [backend] deliverables ok
+  [backend:admin] [backend] tasks ok
+  [backend:admin] [backend] updater ok
+  [backend:admin] [backend] browser ok
+  [backend:admin] [backend] mcp autoconnect ok
+  [backend:admin] [backend] scheduler ok
+  共 22 个步骤 ok
+  [backend:admin] ready: 162 channels
+
+$ out/probe.mjs
+exit=0  RESULT pass=30 fail=0
+$ out/git-e2e.mjs
+exit=0  RESULT pass=10 fail=0
+$ out/channel-coverage.mjs
+exit=0  RESULT pass=4 fail=0
+$ out/browse-check.mjs
+exit=0  RESULT pass=9 fail=0
+$ out/icon-check.mjs
+exit=0  RESULT pass=15 fail=0
+
+# 合计（6 个脚本）
+RESULT pass=14 fail=0
+RESULT pass=30 fail=0
+RESULT pass=10 fail=0
+RESULT pass=4 fail=0
+RESULT pass=9 fail=0
+RESULT pass=15 fail=0
+
+$ cd plugins/deva-agent && node --test tests/*.test.mjs
+✔ decodeEntities handles named and numeric entities without double decoding (0.34732ms)
+✔ web_fetch converts HTML, passes JSON through, and rejects other protocols (48.67632ms)
+✔ long web pages spill to the runtime directory and say where (31.5942ms)
+✔ web_fetch reports timeouts and cancellation without hanging (53.43308ms)
+ℹ tests 158
+ℹ suites 0
+ℹ pass 158
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3322.51976
+
+OVERALL_FAIL=0

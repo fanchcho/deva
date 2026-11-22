@@ -1,0 +1,28 @@
+### pnpm typecheck
+
+> deva-workspace@ typecheck /home/agent/shared_workspace/deva
+> pnpm --filter @deva/desktop typecheck
+
+
+> @deva/desktop@0.1.15 typecheck /home/agent/shared_workspace/deva/apps/desktop
+> npm run typecheck:node && npm run typecheck:web
+
+npm warn Unknown env config "electron-mirror". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "node-linker". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "verify-deps-before-run". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "electron-builder-binaries-mirror". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "recursive". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> @deva/desktop@0.1.15 typecheck:node
+> tsc --noEmit -p tsconfig.node.json --composite false
+
+npm warn Unknown env config "electron-mirror". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "node-linker". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "verify-deps-before-run". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "electron-builder-binaries-mirror". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "recursive". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> @deva/desktop@0.1.15 typecheck:web
+> tsc --noEmit -p tsconfig.web.json --composite false
+
+exit=0

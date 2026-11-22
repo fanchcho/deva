@@ -1,0 +1,127 @@
+### 图标回归（修复前实现 7094 / 修复后 7093）
+# 修复前：apps/web 里既没有 favicon 文件，index.html 也没有 rel=icon；/favicon.* 还会先撞登录墙 302。
+
+$ BASE=http://127.0.0.1:7094 node out/icon-check.mjs   # 基线（pages.mjs 与 server.mjs 均为修复前实现）
+FAIL 未登录可取得 /favicon.svg HTTP 302
+FAIL /favicon.svg content-type 
+FAIL /favicon.svg 内容非空 0B
+FAIL 未登录可取得 /favicon.ico HTTP 302
+FAIL /favicon.ico content-type 
+FAIL /favicon.ico 内容非空 0B
+FAIL ICO 文件头 00 00 01 00 
+FAIL SVG 含 svg 根节点 
+FAIL 图标路由只接受 GET/HEAD HTTP 302
+FAIL 应用首页 含 rel="icon" HTTP 200
+FAIL 应用首页 含 ico 兜底 
+FAIL 管理页 含 rel="icon" HTTP 200
+FAIL 管理页 含 ico 兜底 
+FAIL 未登录访问 /login 含 rel="icon" 
+FAIL 403 错误页含 rel="icon" HTTP 403
+
+RESULT pass=0 fail=15
+
+$ BASE=http://127.0.0.1:7093 node out/icon-check.mjs   # 修复后
+PASS 未登录可取得 /favicon.svg
+PASS /favicon.svg content-type
+PASS /favicon.svg 内容非空
+PASS 未登录可取得 /favicon.ico
+PASS /favicon.ico content-type
+PASS /favicon.ico 内容非空
+PASS ICO 文件头 00 00 01 00
+PASS SVG 含 svg 根节点
+PASS 图标路由只接受 GET/HEAD
+PASS 应用首页 含 rel="icon"
+PASS 应用首页 含 ico 兜底
+PASS 管理页 含 rel="icon"
+PASS 管理页 含 ico 兜底
+PASS 未登录访问 /login 含 rel="icon"
+PASS 403 错误页含 rel="icon"
+
+RESULT pass=15 fail=0
+
+### HTTP 实测（修复后 PORT=7093）
+$ curl -s -D - -o /dev/null http://127.0.0.1:7093/favicon.svg
+HTTP/1.1 200 OK
+content-type: image/svg+xml
+cache-control: public, max-age=3600
+x-content-type-options: nosniff
+Date: Fri, 13 Nov 2026 07:13:14 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+Transfer-Encoding: chunked
+
+$ curl -s -D - -o /dev/null http://127.0.0.1:7093/favicon.ico
+HTTP/1.1 200 OK
+content-type: image/x-icon
+cache-control: public, max-age=3600
+x-content-type-options: nosniff
+Date: Fri, 13 Nov 2026 07:13:14 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+Transfer-Encoding: chunked
+
+$ curl -s http://127.0.0.1:7093/login | grep -o '<link rel="[^"]*"[^>]*>'
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="alternate icon" href="/favicon.ico" sizes="any">
+
+### 基线实例对照（同一请求，PORT=7094）
+$ curl -s -D - -o /dev/null http://127.0.0.1:7094/favicon.svg
+HTTP/1.1 302 Found
+location: /login?next=%2Ffavicon.svg
+cache-control: no-store
+Date: Fri, 13 Nov 2026 07:13:14 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+Transfer-Encoding: chunked
+
+### 构建/运行产物核对
+# 图标是 Web 层静态资源（apps/web/src/web），build.mjs 不产出它；Dockerfile 已有
+# COPY --from=builder /src/apps/web/src /app/src，故镜像内路径为 /app/src/web/favicon.*。
+# 按 Dockerfile runtime 阶段的 COPY 布局在 /tmp/deva-runtime-sim 复刻后实跑（PORT=7095）：
+$ ls /tmp/deva-runtime-sim/app
+dist  package.json  server.mjs  src
+$ ls /tmp/deva-runtime-sim/app/src/web/favicon.*
+/tmp/deva-runtime-sim/app/src/web/favicon.ico
+/tmp/deva-runtime-sim/app/src/web/favicon.svg
+
+$ curl -s -D - -o /dev/null http://127.0.0.1:7095/favicon.svg
+HTTP/1.1 200 OK
+content-type: image/svg+xml
+cache-control: public, max-age=3600
+x-content-type-options: nosniff
+
+$ curl -s -D - -o /dev/null http://127.0.0.1:7095/favicon.ico
+HTTP/1.1 200 OK
+content-type: image/x-icon
+cache-control: public, max-age=3600
+x-content-type-options: nosniff
+
+# 响应体与仓库文件逐字节一致
+$ curl -s http://127.0.0.1:7095/favicon.svg | sha256sum
+d0eb27a9d9e312ecb4f45033e5f0410f4e47b50a118cf20ce8dc9751f8fee3c6  -
+$ sha256sum apps/web/src/web/favicon.svg
+d0eb27a9d9e312ecb4f45033e5f0410f4e47b50a118cf20ce8dc9751f8fee3c6  apps/web/src/web/favicon.svg
+$ curl -s http://127.0.0.1:7095/favicon.ico | sha256sum
+e6164595c775a71ad332d7d58b3cc6937179aa2c557868a90930aac9bfa1e9c2  -
+$ sha256sum apps/web/src/web/favicon.ico
+e6164595c775a71ad332d7d58b3cc6937179aa2c557868a90930aac9bfa1e9c2  apps/web/src/web/favicon.ico
+
+# UI 内图标（非缺口，仅确认未受影响）：renderer 产物里 about 图标已内联
+$ grep -l 'data:image/svg+xml' apps/desktop/out/renderer/assets/*.js
+apps/desktop/out/renderer/assets/index-feRGkUOb.js
+apps/desktop/out/renderer/assets/text-C9wd0hHJ.js
+
+### 图标内容非空白（渲染级核对）
+# ICO 是 7 帧（16/24/32/48/64/128/256，均为 32bpp），最大帧是 PNG 压缩的 256x256 RGBA。
+$ python3 - <<'PY'   # 解析目录 + 解 PNG 帧
+type 1 frames 7 size 12567
+  frame0: 16x16 bpp=32 ...
+  frame6: 256x256 bpp=32 bytes=5464 offset=7103
+IHDR 256 256 depth 8 ctype 6
+distinct sampled colors: 57
+  #ffffff count 107
+  #6640e9 count 47
+  #6341e9 count 46
+PY
+# 解出的 256 帧目视检查：紫色渐变圆角底板 + 白色 "D/!" 工程标识，非空白占位。
+$ /tmp/ico-256.png  (5464 bytes, 已目视确认)

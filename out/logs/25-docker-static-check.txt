@@ -1,0 +1,99 @@
+# Docker 资产静态校验（本机无 docker daemon，只能做静态断言）
+时间: 2026-11-22T09:12:48+08:00
+$ node out/docker-check.mjs
+PASS Dockerfile 至少两个阶段（builder + runtime）
+PASS builder 阶段有名字
+PASS runtime 阶段（最后一个）有名字
+PASS 每个 --from 都指向已声明的阶段或镜像
+PASS 第一阶段不依赖本地产物（FROM 是公开镜像）
+PASS Dockerfile 有构建上下文 COPY
+PASS COPY 源存在: package.json
+PASS COPY 源被 git 跟踪（CI checkout 里存在）: package.json
+PASS COPY 源未被 .dockerignore 排除: package.json
+PASS COPY 源存在: pnpm-lock.yaml
+PASS COPY 源被 git 跟踪（CI checkout 里存在）: pnpm-lock.yaml
+PASS COPY 源未被 .dockerignore 排除: pnpm-lock.yaml
+PASS COPY 源存在: pnpm-workspace.yaml
+PASS COPY 源被 git 跟踪（CI checkout 里存在）: pnpm-workspace.yaml
+PASS COPY 源未被 .dockerignore 排除: pnpm-workspace.yaml
+PASS COPY 源存在: .npmrc
+PASS COPY 源被 git 跟踪（CI checkout 里存在）: .npmrc
+PASS COPY 源未被 .dockerignore 排除: .npmrc
+PASS COPY 源存在: apps/desktop/package.json
+PASS COPY 源被 git 跟踪（CI checkout 里存在）: apps/desktop/package.json
+PASS COPY 源未被 .dockerignore 排除: apps/desktop/package.json
+PASS COPY 源存在: apps/relay/package.json
+PASS COPY 源被 git 跟踪（CI checkout 里存在）: apps/relay/package.json
+PASS COPY 源未被 .dockerignore 排除: apps/relay/package.json
+PASS COPY 源存在: apps/relay-node/package.json
+PASS COPY 源被 git 跟踪（CI checkout 里存在）: apps/relay-node/package.json
+PASS COPY 源未被 .dockerignore 排除: apps/relay-node/package.json
+PASS COPY 源存在: apps/web/package.json
+PASS COPY 源被 git 跟踪（CI checkout 里存在）: apps/web/package.json
+PASS COPY 源未被 .dockerignore 排除: apps/web/package.json
+PASS COPY 源存在: .
+PASS COPY 源被 git 跟踪（CI checkout 里存在）: .
+PASS COPY 源未被 .dockerignore 排除: .
+PASS builder 产物路径与本地构建一致: /src/apps/desktop/out/renderer
+PASS builder 产物路径与本地构建一致: /runtime/node_modules/@lydell
+PASS builder 产物路径与本地构建一致: /src/apps/web/dist
+PASS builder 产物路径与本地构建一致: /src/apps/web/server.mjs
+PASS builder 产物路径与本地构建一致: /src/apps/web/package.json
+PASS builder 产物路径与本地构建一致: /src/apps/web/src
+PASS builder 产物路径与本地构建一致: /src/apps/web/docker-entrypoint.sh
+PASS 有 ENTRYPOINT（降权入口）
+PASS 有 CMD（默认启动 node server.mjs）
+PASS 有 HEALTHCHECK（/healthz）
+PASS 有 EXPOSE
+PASS ENTRYPOINT 指向脚本路径
+PASS ENTRYPOINT 脚本由 COPY 送进镜像
+PASS entrypoint 源文件存在
+PASS entrypoint 有 shebang
+PASS entrypoint 有可执行位
+PASS Dockerfile 里对 entrypoint 做了 chmod +x（checkout 会丢权限位）
+PASS entrypoint 会 drop 到非 root（setpriv 或 su）
+PASS entrypoint 用 exec 交付进程（信号可透传）
+PASS compose 能被 YAML 解析
+PASS compose 有 deva-web 服务
+PASS compose 声明了 build.context
+PASS compose 声明了 build.dockerfile
+PASS build.context 解析到仓库根
+PASS build.dockerfile 文件存在
+PASS compose 的 dockerfile 与静态校验的是同一份
+PASS compose 端口映射的容器侧端口与 EXPOSE 一致
+PASS compose 开了 no-new-privileges
+PASS compose 给 /dev/shm 调大了（Chromium 需要）
+PASS compose 挂载了数据卷 /data
+PASS compose 未设置与 Dockerfile 冲突的 USER
+PASS compose 的 image 名与 README 一致（deva-web）
+PASS .dockerignore 没有排除 .git（build.mjs 要读 HEAD）
+PASS ci.yml 能被 YAML 解析
+PASS ci.yml 有构建镜像的 job
+PASS docker: push: false（不推镜像）
+PASS docker: 使用 buildx
+PASS docker: context 为仓库根
+PASS docker: file 指向 apps/web/Dockerfile
+PASS docker: 无 load/push 之外的副作用（不登录 registry）
+PASS check job 跑了 desktop 单测
+PASS check job 跑了版本一致性断言
+PASS ci.yml 不再留「Docker 镜像未实测」的旧说明
+PASS ci.yml 注明了本地无法验证 docker
+
+RESULT pass=77 fail=0
+exit=0
+
+--- 环境实测 ---
+Docker version 26.1.5+dfsg1, build a72d7cd
+docker: 'buildx' is not a docker command.
+See 'docker --help'
+docker: 'compose' is not a docker command.
+See 'docker --help'
+ERROR: Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+errors pretty printing info
+
+$ docker build -f apps/web/Dockerfile -t deva-web:ci-check .
+            Install the buildx component to build images with BuildKit:
+            https://docs.docker.com/go/buildx/
+
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+exit=1

@@ -1,0 +1,8 @@
+# 版本一致性断言：修复前（应为红）
+时间: 2026-11-22T08:55:53+08:00
+$ node out/check-versions.mjs
+版本不一致：apps/desktop/package.json 是唯一事实源，web 包必须跟随。
+  apps/desktop/package.json: 0.1.16
+  apps/web/package.json: 0.1.15
+修复：把 apps/web/package.json 的 version 改成与 desktop 相同。
+exit=1

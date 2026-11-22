@@ -1,0 +1,28 @@
+# Web 层类型检查证据（item 1）
+时间: 2026-11-21T15:38:48+08:00
+分支: feat/plugin-deva-agent   HEAD: 3ddd9dc
+
+## 结论
+修复前：4 个 TS2305 错误，exit=2
+修复后：0 个错误，exit=0
+
+# Web 层类型检查（apps/web，独立于 desktop 的 tsconfig）
+时间: 2026-11-21T15:38:15+08:00  分支: feat/plugin-deva-agent  HEAD: 3ddd9dc
+
+## 修复后（当前状态）
+$ npx tsc --noEmit -p tsconfig.backend.json
+exit=0
+(无输出即 0 错误)
+
+## 修复前（临时移走 electron-shim.d.ts，复现缺口）
+$ mv src/backend/electron-shim.d.ts /tmp/ && npx tsc --noEmit -p tsconfig.backend.json
+exit=2
+src/backend/index.ts(9,3): error TS2305: Module '"electron"' has no exported member 'setEventSink'.
+src/backend/index.ts(10,3): error TS2305: Module '"electron"' has no exported member '__invoke'.
+src/backend/index.ts(11,3): error TS2305: Module '"electron"' has no exported member '__send'.
+src/backend/index.ts(12,3): error TS2305: Module '"electron"' has no exported member '__listChannels'.
+错误条数: 4
+
+## 覆盖范围（--listFiles 统计）
+118
+  ^ apps/desktop/src/main 下实际被检查的文件数

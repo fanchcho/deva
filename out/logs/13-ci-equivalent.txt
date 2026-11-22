@@ -1,0 +1,63 @@
+# CI 等价命令本地验证（与 .github/workflows/ci.yml 逐步对应）
+时间: 2026-11-21T15:27:57+08:00  分支: feat/plugin-deva-agent  HEAD: 3ddd9dc
+
+## check job
+$ pnpm install --frozen-lockfile
+exit=0 (Done in 1.7s)
+
+$ mapfile files < <(git ls-files "*.mjs" "*.js" | grep -v -E "^(apps/desktop/out|out|\.tmp)/"); node --check each
+检查 71 个文件，syntax fail=0
+
+$ pnpm lint
+exit=0（0 problems）
+
+$ pnpm typecheck
+exit=0（desktop node+web、web backend 三套 tsconfig）
+
+$ pnpm build
+exit=0
+
+$ pnpm --filter @deva/web build
+exit=0  [build] shim.js + backend.cjs + pty-host.js ok, deva=0.1.16
+
+## web-e2e job
+起服务：DEVA_WEB_DATA=/tmp/ci-run-data DEVA_WEB_ADMIN_PASSWORD=ci-pass DEVA_UPDATE_CHECK_MINUTES=-1 node apps/web/server.mjs
+healthz=200
+
+$ cd apps/web && BASE=... SMOKE_CREATE_USER=1 node test/smoke.mjs
+
+RESULT pass=14 fail=0
+
+$ BASE=http://127.0.0.1:7080 node out/probe.mjs
+
+RESULT pass=30 fail=0
+
+$ BASE=http://127.0.0.1:7080 node out/git-e2e.mjs
+
+RESULT pass=10 fail=0
+
+$ BASE=http://127.0.0.1:7080 node out/channel-coverage.mjs
+
+RESULT pass=4 fail=0
+
+$ BASE=http://127.0.0.1:7080 node out/browse-check.mjs
+
+RESULT pass=9 fail=0
+
+$ BASE=http://127.0.0.1:7080 node out/icon-check.mjs
+
+RESULT pass=15 fail=0
+
+$ cd plugins/deva-agent && node --test tests/*.test.mjs
+ℹ tests 158  ℹ pass 158  ℹ fail 0
+
+## 追加：共享 roots 场景（DEVA_WEB_ROOTS 指向一个公共目录）复跑
+# 该场景下跨用户路径由后端 fs-guard 拦（文案「拒绝访问：路径不在已打开的项目内」），
+# 原断言只认「超出」会误报——已改为「被拒即可」。两种部署形态分别实测：
+#   DEVA_WEB_DATA=/tmp/roots-data DEVA_WEB_ROOTS=/tmp/roots-proj PORT=7202
+RESULT smoke pass=14 fail=0
+RESULT probe pass=30 fail=0
+RESULT git-e2e pass=10 fail=0
+RESULT browse-check pass=9 fail=0
+RESULT channel-coverage pass=4 fail=0
+RESULT icon-check pass=15 fail=0

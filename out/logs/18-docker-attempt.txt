@@ -1,0 +1,76 @@
+# Docker 实测尝试（item 4 · apps/web/Dockerfile）
+时间: 2026-11-21T15:41:25+08:00  分支: feat/plugin-deva-agent  HEAD: 3ddd9dc
+
+## 结论
+客户端与 CLI 存在，但守护进程不可用（/var/run/docker.sock 不存在/未启动），
+且本机 docker 未装 compose 插件、也没有独立的 docker-compose 二进制。
+→ 镜像构建与容器内 entrypoint 无法实测，属环境限制，不是代码缺陷。
+
+$ docker --version
+Docker version 26.1.5+dfsg1, build a72d7cd
+exit=0
+
+$ docker info
+Client:
+ Version:    26.1.5+dfsg1
+ Context:    default
+ Debug Mode: false
+
+Server:
+ERROR: Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+errors pretty printing info
+exit=1
+
+$ docker compose version
+docker: 'compose' is not a docker command.
+See 'docker --help'
+exit=1
+
+--- apps/web/Dockerfile 相关 ---
+$ ls apps/web/Dockerfile apps/web/docker-compose.yml
+-rw-r--r-- 1 root hermes 3310 Nov 20 15:19 apps/web/Dockerfile
+-rw-r--r-- 1 root hermes 1922 Nov 20 15:19 apps/web/docker-compose.yml
+
+$ docker build -f apps/web/Dockerfile apps/web
+DEPRECATED: The legacy builder is deprecated and will be removed in a future release.
+            Install the buildx component to build images with BuildKit:
+            https://docs.docker.com/go/buildx/
+
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+exit=1
+
+$ docker compose -f apps/web/docker-compose.yml config
+                           "/home/agent/.docker/cert.pem")
+      --tlskey string      Path to TLS key file (default
+                           "/home/agent/.docker/key.pem")
+      --tlsverify          Use TLS and verify the remote
+  -v, --version            Print version information and quit
+
+Run 'docker COMMAND --help' for more information on a command.
+
+For more help on how to use Docker, head to https://docs.docker.com/go/guides/
+
+exit=125
+
+$ docker-compose -f apps/web/docker-compose.yml config
+docker-compose: command not found
+
+## 补充：socket 与进程
+$ ls -l /var/run/docker.sock
+ls: cannot access '/var/run/docker.sock': No such file or directory
+exit=2
+$ ps aux | grep -c "[d]ockerd"
+0
+
+## 能做的静态自证（排除「Dockerfile 语法本身写错」这类问题）
+$ head -5 apps/web/Dockerfile
+# syntax=docker/dockerfile:1
+#
+# Deva 纯 Web 版镜像：两阶段构建。
+#   1) builder：基于本仓库源码装依赖、构建桌面 renderer，再把 preload 打成浏览器
+#      shim、把主进程业务模块打成 Node 后端包；
+$ node -e "js-yaml 解析 apps/web/docker-compose.yml"
+services: deva-web
+version: (无 version 字段，Compose v2 规范)
+exit=0
+  ^ 说明：compose 文件语法本身可解析；未解析失败，纯粹是运行时缺守护进程。

@@ -1,0 +1,37 @@
+# 收尾整体复跑（工作区当前状态，含本轮全部修复）
+时间: 2026-11-21T15:32:10+08:00  分支: feat/plugin-deva-agent  HEAD: 3ddd9dc
+
+$ pnpm install --frozen-lockfile      exit=0
+$ pnpm lint                          exit=0（0 problems）
+$ pnpm typecheck                     exit=0（desktop node+web / web backend 三套 tsconfig）
+$ pnpm build                         exit=0
+$ pnpm --filter @deva/web build      exit=0  [build] shim.js + backend.cjs + pty-host.js ok, deva=0.1.16
+$ node --check（71 个已入库 js/mjs） fail=0
+
+# 实例：PORT=7205 DEVA_WEB_DATA=/tmp/f2 DEVA_UPDATE_CHECK_MINUTES=-1 node apps/web/server.mjs
+#（早先在 7197 的同一轮跑过一遍，结果相同；此处以最后一次为准）
+healthz=200
+启动自检：22 个注册步骤逐项 ok，ready: 162 channels
+
+$ cd apps/web && BASE=http://127.0.0.1:7205 SMOKE_CREATE_USER=1 node test/smoke.mjs
+RESULT pass=14 fail=0
+
+$ BASE=http://127.0.0.1:7205 node out/probe.mjs
+RESULT pass=30 fail=0
+
+$ BASE=http://127.0.0.1:7205 node out/git-e2e.mjs
+RESULT pass=10 fail=0
+
+$ BASE=http://127.0.0.1:7205 node out/browse-check.mjs
+RESULT pass=9 fail=0
+
+$ BASE=http://127.0.0.1:7205 node out/channel-coverage.mjs
+RESULT pass=4 fail=0
+
+$ BASE=http://127.0.0.1:7205 node out/icon-check.mjs
+RESULT pass=15 fail=0
+
+# 合计 82 项 PASS，fail=0
+
+$ cd plugins/deva-agent && node --test tests/*.test.mjs
+ℹ tests 158  ℹ pass 158  ℹ fail 0

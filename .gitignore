@@ -15,6 +15,15 @@ out/
 !/out/*.mjs
 !/out/*.md
 !/out/*.sh
+# 证据日志：28 个文件合计约 59 KB（最大单个 6.2 KB），属于可复核的实测输出，按文本入库。
+!/out/logs/
+!/out/logs/*.txt
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
 # Crash dumps
 core
 core.*
