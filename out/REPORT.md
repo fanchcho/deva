@@ -715,7 +715,7 @@ BASE=http://127.0.0.1:7080 ADMIN_PASSWORD=ci-pass node out/icon-check.mjs
 | `3ddd9dc` | feat(web): 将 apps/web 源码纳入版本管理 |
 | `98c60c5` | feat(plugins): 新增 deva-agent 插件，对齐桌面端最新 agent 能力 |
 
-按主题拆分：版本统一 = `2ced850`；desktop 单测 = `556a73b`；CI（docker + web e2e + 插件单测）= `f1469d8` / `3b5e3a5`；gitignore + 日志留档 = `173b174`；前两轮修复与工具链 = `bf6e43a` / `0d3b5fc` / `3ddd9dc`；收尾证据 = `bdfe757` / `dd8d45f` / `c464ea0` / `044005b` / `9370c9b` / 本节所在的修订提交。
+按主题拆分：版本统一 = `2ced850`；desktop 单测 = `556a73b`；CI（docker + web e2e + 插件单测）= `f1469d8` / `3b5e3a5`；gitignore + 日志留档 = `173b174`；前两轮修复与工具链 = `bf6e43a` / `0d3b5fc` / `3ddd9dc`；收尾证据 = `bdfe757` / `dd8d45f` / `c464ea0` / `044005b` / `9370c9b` 及本节自身的文档修订提交（后者不逐一列举，哈希以 `git log` 为准）。
 
 **推送（普通 push，全程未使用 `--force`）**
 
