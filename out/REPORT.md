@@ -650,7 +650,7 @@ BASE=http://127.0.0.1:7080 ADMIN_PASSWORD=ci-pass node out/icon-check.mjs
 | ② | 版本号统一（desktop 0.1.16 / web 0.1.15） | ✅ 完成 | `apps/web/package.json` → `0.1.16`；新增 `out/check-versions.mjs` + 根脚本 `check:versions`；改前 exit=1（`logs/21`）、改后 exit=0（`logs/22`）；`pnpm-lock.yaml` `md5sum -c` OK；运行时链路实测 `manifest.version` / `app.getVersion()` / `build-info.json` 三处均为 `0.1.16` |
 | ③ | `apps/desktop` 单测 | ✅ 完成 | 18 个 `test/*.test.mjs`、**179 项全通过**（Node 24 / Node 22 双跑，`logs/23`、`logs/26`）；负向验证 178/1/exit=1 后恢复一致（`logs/24`）；`pnpm test:desktop` 已进 CI `check` job；覆盖边界与未覆盖原因见 `logs/27` |
 | ④ | Docker 进 CI | ✅ 完成（CI 侧）；本机只能静态校验 | `ci.yml` 新增 `docker` job（buildx + build-push `push:false`）；`out/docker-check.mjs` **77 项全 PASS**（`logs/25`）；本机 `docker build` 实测仍报 `Cannot connect to the Docker daemon`，**未声称本地构建过镜像**；`ci.yml` 末尾旧说明已改写 |
-| ⑤ | `out/logs/*.txt` 留档 | ✅ 完成 | `.gitignore` 加 `!/out/logs/` + `!/out/logs/*.txt`；30 个文件、约 64 KB（单文件最大 6.2 KB），全部按文本入库，无需裁剪 |
+| ⑤ | `out/logs/*.txt` 留档 | ✅ 完成 | `.gitignore` 加 `!/out/logs/` + `!/out/logs/*.txt`；30 个文件、约 65 KB（单文件最大 6.2 KB），全部按文本入库，无需裁剪 |
 | ① | 拆分提交 + 普通 push | 见 §8.4 | `git log` / `git rev-parse` 实测输出 |
 
 **通过的检查（第三轮整体复跑，`logs/28`）**
@@ -677,7 +677,7 @@ BASE=http://127.0.0.1:7080 ADMIN_PASSWORD=ci-pass node out/icon-check.mjs
 | desktop 单测 | 0 项（无测试） | **179 项** |
 | 版本一致性 | 不一致（0.1.16 vs 0.1.15） | **一致 + CI 断言** |
 | CI 覆盖 | check + web-e2e | check（+版本/单测）+ web-e2e + **docker** |
-| 证据日志入库 | 不入库 | **入库（30 个 / 64 KB）** |
+| 证据日志入库 | 不入库 | **入库（30 个 / 65 KB）** |
 | 整体复跑 | `OVERALL_FAIL=0` | `OVERALL_FAIL=0` |
 
 **本机无法自证、只能靠 GitHub runner 的部分（单列）**
