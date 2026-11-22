@@ -335,14 +335,18 @@ export function ExtensionsProvider({ children }: { children: ReactNode }): React
     []
   )
 
-  const setterFor = (kind: ExtKind): React.Dispatch<React.SetStateAction<AnyExt[]>> => {
+  // 两者只转调 useState 的 setter（标识恒定），用 useCallback 固化标识，才可安全进入下面 useMemo 的依赖。
+  const setterFor = useCallback((kind: ExtKind): React.Dispatch<React.SetStateAction<AnyExt[]>> => {
     if (kind === 'skill') return setSkills as React.Dispatch<React.SetStateAction<AnyExt[]>>
     if (kind === 'mcp') return setMcp as React.Dispatch<React.SetStateAction<AnyExt[]>>
     return setPersonas as React.Dispatch<React.SetStateAction<AnyExt[]>>
-  }
+  }, [])
 
-  const patchLocal = (kind: ExtKind, id: string, fn: (item: AnyExt) => AnyExt): void =>
-    setterFor(kind)((list) => list.map((it) => (it.id === id ? fn(it) : it)))
+  const patchLocal = useCallback(
+    (kind: ExtKind, id: string, fn: (item: AnyExt) => AnyExt): void =>
+      setterFor(kind)((list) => list.map((it) => (it.id === id ? fn(it) : it))),
+    [setterFor]
+  )
 
   const value = useMemo<ExtensionsContextValue>(() => {
     // 技能导入错误码 → 本地化消息 key。
@@ -539,7 +543,7 @@ export function ExtensionsProvider({ children }: { children: ReactNode }): React
         }
       }
     }
-  }, [skills, mcp, personas, selected, refresh, t, dialog])
+  }, [skills, mcp, personas, selected, refresh, t, dialog, patchLocal, setterFor])
 
   return <ExtensionsContext.Provider value={value}>{children}</ExtensionsContext.Provider>
 }

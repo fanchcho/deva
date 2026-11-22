@@ -4,11 +4,13 @@ import { createServer } from 'node:http'
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { McpPool, parseServerConfig, expandEnv, sanitizeName, mergeServers, flattenResult } from '../lib/mcp.mjs'
+import { McpPool, parseServerConfig, expandEnv, sanitizeName, mergeServers, flattenResult, serverFingerprint } from '../lib/mcp.mjs'
 
 /** 一个最小 MCP stdio 服务器：换行分帧的 JSON-RPC，工具 echo/慢/sse 由调用方按需选。 */
 const STDIO_SERVER = `
 import { createInterface } from 'node:readline'
+import { appendFileSync } from 'node:fs'
+if (process.env.START_LOG) appendFileSync(process.env.START_LOG, 'start\\n')
 const send = value => process.stdout.write(JSON.stringify(value) + '\\n')
 createInterface({ input: process.stdin }).on('line', line => {
   if (!line.trim()) return
@@ -110,6 +112,51 @@ test('a failing MCP server is reported and never blocks the other tools', async 
   }
 })
 
+test('serverFingerprint ignores key order but notices credential changes', () => {
+  const a = serverFingerprint({ name: 'x', type: 'http', url: 'u', headers: { a: '1', b: '2' } })
+  const b = serverFingerprint({ headers: { b: '2', a: '1' }, url: 'u', type: 'http', name: 'x' })
+  assert.equal(a, b)
+  assert.notEqual(a, serverFingerprint({ name: 'x', type: 'http', url: 'u', headers: { a: '1', b: '3' } }))
+  assert.notEqual(a, serverFingerprint({ name: 'x', type: 'http', url: 'u2', headers: { a: '1', b: '2' } }))
+})
+
+test('connections are reused across connectAll and rebuilt only when the config changes', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'deva-mcp-reuse-'))
+  const file = join(dir, 'server.mjs')
+  const startsFile = join(dir, 'starts.log')
+  await writeFile(file, STDIO_SERVER)
+  await chmod(file, 0o755)
+  const pool = new McpPool({ log: { info() {}, warn() {} } })
+  const signal = new AbortController().signal
+  const config = extra => ({
+    name: 'fake', type: 'stdio', command: process.execPath, args: [file],
+    env: { START_LOG: startsFile, ...extra },
+  })
+  const starts = async () => (await readFile(startsFile, 'utf8')).trim().split('\n').filter(Boolean).length
+  try {
+    await pool.connectAll([config()], signal)
+    assert.equal(await starts(), 1)
+
+    // 同配置再来一轮：不重新握手，连接与工具定义都还在
+    await pool.connectAll([config()], signal)
+    assert.equal(await starts(), 1)
+    assert.equal(await pool.call('mcp__fake__echo', { text: 'still' }), 'echo:{"text":"still"}')
+
+    // 凭证/配置变了：旧连接断开，重新握手
+    await pool.connectAll([config({ EXTRA: '1' })], signal)
+    assert.equal(await starts(), 2)
+    assert.equal(await pool.call('mcp__fake__echo', { text: 'new' }), 'echo:{"text":"new"}')
+
+    // 服务被移除：连接关闭，工具定义一并消失
+    await pool.connectAll([], signal)
+    assert.deepEqual(pool.definitions(), [])
+    await assert.rejects(pool.call('mcp__fake__echo', { text: 'gone' }), /未知的 MCP 工具/)
+  } finally {
+    pool.close()
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 function sseServer(handler) {
   return new Promise(resolve => {
     const server = createServer(handler)
@@ -179,6 +226,38 @@ test('a long MCP result spills to the runtime directory with both ends previewed
   } finally {
     pool.close()
     await rm(runtimeDir, { recursive: true, force: true })
+    await new Promise(resolve => server.close(resolve))
+  }
+})
+
+test('streamable HTTP accepts CRLF SSE frames without a trailing blank line', async () => {
+  const { server, port } = await sseServer((request, response) => {
+    let body = ''
+    request.on('data', chunk => { body += chunk })
+    request.on('end', () => {
+      const message = JSON.parse(body)
+      const result = message.method === 'initialize'
+        ? { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'http', version: '1' } }
+        : message.method === 'tools/list'
+          ? { tools: [{ name: 'ping', description: 'pong', inputSchema: { type: 'object', properties: {} } }] }
+          : { content: [{ type: 'text', text: 'ok' }] }
+      const reply = { jsonrpc: '2.0', id: message.id, result }
+      if (message.method === 'tools/call') {
+        response.writeHead(200, { 'content-type': 'text/event-stream' })
+        // 只有 CRLF、且末尾没有空行：帧必须仍然被交付。
+        response.end(`event: message\r\ndata: ${JSON.stringify(reply)}\r\n`)
+        return
+      }
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(JSON.stringify(reply))
+    })
+  })
+  const pool = new McpPool({ log: { info() {}, warn() {} } })
+  try {
+    await pool.connectAll([{ name: 'http', type: 'http', url: `http://127.0.0.1:${port}/mcp`, headers: {} }], new AbortController().signal)
+    assert.equal(await pool.call('mcp__http__ping', {}), 'ok')
+  } finally {
+    pool.close()
     await new Promise(resolve => server.close(resolve))
   }
 })

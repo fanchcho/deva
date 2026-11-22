@@ -12,7 +12,7 @@
 | 同步 IPC | 1 处（`config:get-sync`） |
 | 引入 `electron` 的主进程文件 | 32 个 |
 | 渲染层 | React 18，49 个 ts/tsx，零 Electron API 直接调用 |
-| Web 版实际注册通道 | **154 个**（21 个业务模块全部 ok） |
+| Web 版实际注册通道 | **162 个**（22 个注册步骤全部 ok） |
 
 渲染层只通过 `window.deva.*` 一个对象访问后端，因此**前端一行没改**。
 
@@ -34,7 +34,7 @@
 server.mjs
   ├─ /login /logout /admin        账号、角色、密码重置
   ├─ 静态托管 out/renderer        原前端产物，零改动
-  ├─ /api/invoke                  154 通道路由 + 路径闸门 + 审计
+  ├─ /api/invoke                  162 通道路由 + 路径闸门 + 审计
   ├─ /api/events                  按用户隔离的 SSE 事件流
   └─ /healthz
   │  IPC（fork，按用户懒启动，空闲回收）
@@ -102,8 +102,8 @@ worker-host.mjs × N（每用户一个进程）
 | 项 | 证据 |
 |---|---|
 | 上游版本 | `109937f` / v0.1.15，renderer + preload + 主进程 bundle 重建后全部通过 |
-| 后端模块注册 | 21 个模块全部 ok，日志 `ready: 154 channels`，无 failed |
-| 通道清单 | `GET /api/channels` 返回 154 |
+| 后端模块注册 | 22 个注册步骤全部 ok，日志 `ready: 162 channels`，无 failed |
+| 通道清单 | `GET /api/channels` 返回 162 |
 | 冒烟回归 | `test/smoke.mjs`：**pass=14 fail=0** |
 | 登录 / CSRF | 未登录 302；缺 `x-deva-csrf` → 403 |
 | 会话持久化 | 登录后重启服务，旧 Cookie 调 `/api/me` 仍返回 admin |

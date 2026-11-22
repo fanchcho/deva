@@ -150,7 +150,7 @@ export function fmMap(data: Record<string, FmValue>, key: string): Record<string
 /** 把值序列化为 frontmatter 行的标量表示（含特殊字符时加双引号并转义）。 */
 export function fmScalar(v: string): string {
   if (v === '') return '""'
-  if (/[:#\[\]{}"'\n]/.test(v) || /^\s|\s$/.test(v)) {
+  if (/[:#[\]{}"'\n]/.test(v) || /^\s|\s$/.test(v)) {
     return `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
   }
   return v

@@ -165,11 +165,10 @@ export async function listMemories(scope = 'global', ctx = {}) {
   return readEntries(store)
 }
 
-/** 三层一起读，供提示词与 memory_read 使用。 */
+/** 三层一起读，供提示词与 memory_read 使用。三层互不依赖，并发读。 */
 export async function readMemories(ctx = {}) {
-  const out = {}
-  for (const scope of SCOPES) out[scope] = await listMemories(scope, ctx)
-  return out
+  const values = await Promise.all(SCOPES.map(scope => listMemories(scope, ctx)))
+  return Object.fromEntries(SCOPES.map((scope, index) => [scope, values[index]]))
 }
 
 /**
@@ -195,7 +194,7 @@ export function layerLabel(scope, { workspaceDir, identityName } = {}) {
 
 /** 写入或更新一条记忆。新增时 type 与 title 必填；带 id 时省略的字段保持原值。 */
 export async function writeMemory(input, ctx = {}, id) {
-  const { state, workspaceDir = null, identityId } = ctx
+  const { state } = ctx
   const targetId = typeof id === 'string' && id.trim() ? id.trim() : undefined
   const explicit = SCOPES.find(scope => scope === input?.scope)
   // 省略 scope：带 id 按前缀定位；新增默认全局。

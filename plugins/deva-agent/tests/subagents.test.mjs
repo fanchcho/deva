@@ -282,6 +282,46 @@ test('sibling subagents in one reply run concurrently and preserve result order'
   assert.deepEqual(started, ['call-a', 'call-b'])
 })
 
+test('parallel subagents are capped at three concurrent child turns', async () => {
+  const { run } = fakeRun()
+  const tasks = Array.from({ length: 6 }, (_, index) => `任务${index + 1}`)
+  const running = new Set()
+  let concurrentPeak = 0
+  const parentCalls = []
+  const result = await runAgentTurn({
+    run, workspaceDir: null, system: 'sys', facts: {},
+    input: { input: [{ type: 'text', text: '一次查六件事' }], history: [], instructions: [], options: {} },
+    model: async request => {
+      if (request.system.includes('你是子智能体')) {
+        const task = request.messages.at(-1).text
+        running.add(task)
+        concurrentPeak = Math.max(concurrentPeak, running.size)
+        await new Promise(resolve => setTimeout(resolve, 15))
+        running.delete(task)
+        return { text: `结论:${task}`, toolCalls: [], finish: 'stop' }
+      }
+      parentCalls.push(request.messages)
+      if (parentCalls.length === 1) {
+        return {
+          text: '并行派发',
+          toolCalls: tasks.map((task, index) => ({
+            id: `call-${index + 1}`,
+            name: 'run_subagent',
+            arguments: JSON.stringify({ description: task, prompt: task }),
+          })),
+          finish: 'tool_calls',
+        }
+      }
+      return { text: '六件事都查完了', toolCalls: [], finish: 'stop' }
+    },
+  })
+  assert.equal(concurrentPeak, 3, '并发上限应为 3，超出部分排队等待')
+  assert.equal(result.content[0].text, '并行派发六件事都查完了')
+  const toolMessages = parentCalls[1].filter(message => message.role === 'tool')
+  assert.deepEqual(toolMessages.map(message => message.toolCallId), tasks.map((_, index) => `call-${index + 1}`))
+  assert.match(toolMessages.at(-1).text, /结论:任务6/)
+})
+
 test('continuing a subagent closes a dangling tool-call tail left by an aborted turn', async () => {
   const { run } = fakeRun()
   await run.state.agentSession.set('subagents', {

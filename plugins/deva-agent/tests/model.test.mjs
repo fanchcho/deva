@@ -31,8 +31,10 @@ test('sseFrames tolerates CRLF chunks split across reads', async () => {
   const stream = new ReadableStream({
     start(controller) {
       const encoder = new TextEncoder()
-      controller.enqueue(encoder.encode('data: {"a":1}\r\n\r\n'))
-      controller.enqueue(encoder.encode('data: {"b"'))
+      // 把 \r\n\r\n 拆到三个 chunk 里：单独规整每个 chunk 会漏掉跨块的 CRLF。
+      controller.enqueue(encoder.encode('data: {"a":1}\r'))
+      controller.enqueue(encoder.encode('\n\r'))
+      controller.enqueue(encoder.encode('\ndata: {"b"'))
       controller.enqueue(encoder.encode(':2}\r\n\r\ndata: [DONE]\r\n\r\n'))
       controller.close()
     },
@@ -40,6 +42,18 @@ test('sseFrames tolerates CRLF chunks split across reads', async () => {
   const frames = []
   for await (const frame of sseFrames({ body: stream })) frames.push(frame)
   assert.deepEqual(frames, ['{"a":1}', '{"b":2}'])
+})
+
+test('sseFrames flushes a final frame without a trailing blank line', async () => {
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('data: {"last":true}\r\n'))
+      controller.close()
+    },
+  })
+  const frames = []
+  for await (const frame of sseFrames({ body: stream })) frames.push(frame)
+  assert.deepEqual(frames, ['{"last":true}'])
 })
 
 test('chat_completions streams text, reasoning and tool calls', async () => {

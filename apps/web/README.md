@@ -37,7 +37,7 @@ server.mjs ── 登录 / 用户管理 / 静态托管 / 审计 / 路径闸门
 | `preload/index.ts` + `ipcRenderer` | `dist/shim.js`：`invoke` → `POST /api/invoke`，`on` → `GET /api/events`（SSE） |
 | `app` / `BrowserWindow` / `dialog` / `safeStorage` / `webContents` | `src/backend/electron-shim.mjs` + `chromium.mjs` |
 
-渲染层通过 `window.deva.*` 访问后端的 154 个 IPC 通道，签名与桌面版一致。
+渲染层通过 `window.deva.*` 访问后端的 162 个 IPC 通道，签名与桌面版一致。
 
 ---
 
@@ -233,7 +233,7 @@ $DEVA_WEB_DATA/
 | 项 | 结果 |
 |---|---|
 | 上游版本 | `109937f` / v0.1.15（renderer、preload shim、主进程 bundle 全部重建） |
-| 后端模块注册 | 21 个模块全部 ok，`154 channels` |
+| 后端模块注册 | 22 个注册步骤全部 ok，`ready: 162 channels` |
 | 冒烟回归 | `test/smoke.mjs`：pass=14 fail=0 |
 | 原 renderer 渲染 | 零改动，登录后完整 UI |
 | 登录 / 会话 / CSRF | 未登录 302，无 CSRF 403，重启服务后旧 Cookie 仍有效 |

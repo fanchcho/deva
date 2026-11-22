@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, writeFile, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { executeTool, resolveSafe } from '../lib/tools.mjs'
@@ -22,6 +22,37 @@ test('read_file returns numbered lines and enforces the workspace boundary', asy
     await assert.rejects(executeTool('read_file', { path: '/etc/passwd' }, { workspaceDir: dir }), /路径越界/)
     assert.throws(() => resolveSafe(dir, '..'), /路径越界/)
   } finally { await cleanup() }
+})
+
+test('symbolic links cannot escape the workspace', { skip: process.platform === 'win32' && 'Windows 创建文件符号链接需要额外权限' }, async () => {
+  const { dir, cleanup } = await sandbox()
+  const outside = await mkdtemp(join(tmpdir(), 'deva-outside-'))
+  try {
+    await writeFile(join(outside, 'secret.txt'), 'secret\n')
+    await symlink(outside, join(dir, 'escape-dir'), 'dir')
+    await symlink(join(outside, 'secret.txt'), join(dir, 'secret-link.txt'), 'file')
+    await symlink(join(outside, 'missing.txt'), join(dir, 'broken-link.txt'), 'file')
+
+    // 读：文件链接、目录链接、断链都必须拒绝。
+    await assert.rejects(executeTool('read_file', { path: 'secret-link.txt' }, { workspaceDir: dir }), /路径越界/)
+    await assert.rejects(executeTool('read_file', { path: 'escape-dir/secret.txt' }, { workspaceDir: dir }), /路径越界/)
+    await assert.rejects(executeTool('read_file', { path: 'broken-link.txt' }, { workspaceDir: dir }), /路径越界/)
+    await assert.rejects(executeTool('list_dir', { path: 'escape-dir' }, { workspaceDir: dir }), /路径越界/)
+    await assert.rejects(executeTool('grep', { pattern: 'secret', path: 'escape-dir' }, { workspaceDir: dir }), /路径越界/)
+    // 写：不能顺着链接写到工作区外，也不能通过链接目录新建文件。
+    await assert.rejects(executeTool('write_file', { path: 'secret-link.txt', content: 'pwn' }, { workspaceDir: dir }), /路径越界/)
+    await assert.rejects(executeTool('edit_file', { path: 'secret-link.txt', old_string: 'secret', new_string: 'pwn' }, { workspaceDir: dir }), /路径越界/)
+    await assert.rejects(executeTool('write_file', { path: 'escape-dir/new.txt', content: 'pwn' }, { workspaceDir: dir }), /路径越界/)
+    assert.equal(await readFile(join(outside, 'secret.txt'), 'utf8'), 'secret\n')
+
+    // 工作区内部互指的链接仍然可用。
+    await symlink(join(dir, 'apps/desktop/main.ts'), join(dir, 'inside-link.ts'), 'file')
+    const ok = await executeTool('read_file', { path: 'inside-link.ts' }, { workspaceDir: dir })
+    assert.match(ok, /const answer = 42/)
+  } finally {
+    await rm(outside, { recursive: true, force: true })
+    await cleanup()
+  }
 })
 
 test('write_file + edit_file keep the file consistent and reject ambiguous edits', async () => {
@@ -50,6 +81,10 @@ test('list_dir, glob and grep stay inside the workspace and skip build output', 
     const hits = await executeTool('grep', { pattern: 'answer', include: '*.ts' }, { workspaceDir: dir })
     assert.match(hits, /apps\/desktop\/main\.ts:1: const answer = 42/)
     assert.doesNotMatch(hits, /node_modules/)
+    // 开头 4 KiB 内出现 NUL 的文件按二进制跳过，不把 needle 当命中。
+    await writeFile(join(dir, 'image.bin'), Buffer.concat([Buffer.from([0, 1, 2]), Buffer.from('needle')]))
+    const text = await executeTool('grep', { pattern: 'needle' }, { workspaceDir: dir })
+    assert.doesNotMatch(text, /image\.bin/)
   } finally { await cleanup() }
 })
 
@@ -62,6 +97,21 @@ test('run_command reports exit codes instead of throwing, and respects timeout',
     const failed = await executeTool('run_command', { command: 'echo boom >&2; exit 3' }, { workspaceDir: dir })
     assert.match(failed, /exit=3/)
     assert.match(failed, /boom/)
+  } finally { await cleanup() }
+})
+
+test('run_command timeout kills the whole process group', { skip: process.platform === 'win32' && 'Windows 走 taskkill，不在本用例覆盖' }, async () => {
+  const { dir, cleanup } = await sandbox()
+  try {
+    const out = await executeTool('run_command', {
+      command: '(sleep 1.2; echo leaked > leaked.txt) & sleep 5',
+      timeout_ms: 1000,
+    }, { workspaceDir: dir })
+    assert.match(out, /exit=timeout/)
+    assert.match(out, /已终止进程组/)
+    // 只杀 bash 时，后台子 shell 会在 1.2s 后写下 leaked.txt。
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    await assert.rejects(readFile(join(dir, 'leaked.txt')), { code: 'ENOENT' })
   } finally { await cleanup() }
 })
 

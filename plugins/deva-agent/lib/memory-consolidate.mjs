@@ -32,8 +32,6 @@ import {
 const TARGET_RATIO = 0.7
 /** 验收线：写入新条目后条数与字数都须低于上限的九成，否则视为没归纳到位。 */
 const ACCEPT_RATIO = 0.9
-const TIMEOUT_MS = 90_000
-const MAX_TOKENS = 8192
 const ATTEMPTS = 2
 const KEEP_BACKUPS = 5
 

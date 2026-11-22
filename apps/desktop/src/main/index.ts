@@ -314,7 +314,8 @@ if (!app.requestSingleInstanceLock()) {
   ipcMain.handle('window:minimize', () => mainWindow?.minimize())
   ipcMain.handle('window:toggle-maximize', () => {
     if (!mainWindow) return
-    mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize()
+    if (mainWindow.isMaximized()) mainWindow.unmaximize()
+    else mainWindow.maximize()
   })
   ipcMain.handle('window:close', () => mainWindow?.close())
   ipcMain.handle('window:is-fullscreen', () => mainWindow?.isFullScreen() ?? false)

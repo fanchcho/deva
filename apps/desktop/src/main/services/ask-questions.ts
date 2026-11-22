@@ -36,7 +36,7 @@ function isCustomEntryLabel(label: string): boolean {
   // 归一：去首尾空白与尾部省略号/标点（…/./。/:/：），再小写比对。
   const k = label
     .trim()
-    .replace(/[…\.。:：\s]+$/u, '')
+    .replace(/[…。:：\s.]+$/u, '')
     .toLowerCase()
   return CUSTOM_ENTRY_LABELS.has(k)
 }

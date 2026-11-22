@@ -55,7 +55,7 @@ Studio 选中 Agent「Deva」并选模型
 | `list_dir` | 列目录，目录在前并带大小 |
 | `glob` | `**`/`*` 通配查找，跳过 `node_modules`、`.git`、`out`、`dist` |
 | `grep` | 正则搜索内容，返回 `文件:行号:内容`，可 `include` 过滤；`path` 可指定搜索根（含运行目录里的落盘结果） |
-| `run_command` | 工作区根目录跑 `bash -lc`，返回退出码与 stdout/stderr，默认 120s、上限 600s；超长输出全文落盘，只回首尾预览 |
+| `run_command` | 工作区根目录跑 `bash -lc`，返回退出码与 stdout/stderr，默认 120s、上限 600s；输出上限 8 MiB（超出截断并标注），超长结果落盘只回首尾预览；超时/取消终止整个进程组 |
 | `deva_project` | 项目速览：版本、常用脚本、文档入口、git 分支与未提交改动 |
 | `web_fetch` | 抓取 http/https 页面（30s 超时、5MB 上限），HTML 转文本；超过 10 万字符写进运行目录并给出路径 |
 | `browser` | 操作 Studio 已授权共享的桌面浏览器（CDP）：打开、读取结构、点击、输入、截图、执行 JS、管理标签 |
@@ -68,6 +68,9 @@ Studio 选中 Agent「Deva」并选模型
 | `send_to_subagent` | 给已派出的子智能体续聊，让它在保留自己上下文的基础上继续；记录存在本会话（最近 20 个） |
 | `mcp__<服务>__<工具>` | 本轮连接的 MCP 服务工具（stdio / Streamable HTTP / 旧版 SSE），来自 MCP 页勾选的 Studio 服务与宿主注入 |
 
+工程事实里的 `docs/PROJECT-MAP.md` 与 `docs/FUNCTION-INDEX.md` 是本地生成物，不入库；
+工作区里存在时才会出现在系统提示词与 `deva_project` 速览里，不存在就静默跳过，不影响其他能力。
+
 ## MCP 配置
 
 Studio 只在「任务计划运行」里给 Agent 注入 `run.mcpServers`，普通插件运行拿到的是空对象，
@@ -79,6 +82,7 @@ Studio 只在「任务计划运行」里给 Agent 注入 `run.mcpServers`，普�
    与 Studio 的「MCP」页面是同一份数据（走 `/api/ekko/mcp/servers`）；再勾选本 Agent 要用的服务。
    插件只存服务名（user+profile 作用域），每轮运行按名字去 Studio 取最新连接配置——
    改了 URL、env 或启停状态，下一轮对话就生效，不用改插件配置、也不复制 Studio 的凭据。
+   同一会话里配置没变时复用已有连接（stdio 子进程不重启）；配置或宿主注入的凭证变了才重连。
    页面上的「在 Studio 中打开 MCP 页面」可直接跳到宿主原生界面。
    已勾选但被 Studio 删除或停用的服务会在系统提示词的「MCP 连接状态」里点名，不会静默跳过。
 2. **宿主注入的 `run.mcpServers`**：只在任务计划运行里有内容，同名覆盖 Studio 勾选。
@@ -103,10 +107,10 @@ Studio 只在「任务计划运行」里给 Agent 注入 `run.mcpServers`，普�
 所以输入框里请用不带斜杠的 `deva:identity …` 或 `@deva:<id>` 前缀；斜杠形式只在插件
 `invoke` 接口（`kind:"command"`）里直接调用。
 
-所有**写入**路径以会话工作区为界，越界直接报错；只读的 `read_file` 另接受本轮运行目录（`web_fetch` 落盘的
-正文、工具结果落盘文件要能读回）。文件与检索类结果单条上限 20000 字符（超长标注原长）；`run_command` 与 MCP 的
-超长结果改为**全文落盘 + 首尾预览**，路径在运行目录的 `tool-results/` 下——命令报错常在结尾，只留开头会
-看不出为什么失败。
+所有**写入**路径以会话工作区为界（符号链接按 `realpath` 解析后再校验，指向外部的链接会直接报错），越界直接报错；
+只读的 `read_file` 另接受本轮运行目录（`web_fetch` 落盘的正文、工具结果落盘文件要能读回）。文件与检索类结果单条
+上限 20000 字符（超长标注原长）；`run_command` 与 MCP 的超长结果在各自上限内**全文落盘 + 首尾预览**，路径在运行
+目录的 `tool-results/` 下——命令报错常在结尾，只留开头会看不出为什么失败。
 一轮最多 24 步工具循环，到顶返回 `finishReason: tool_limit`。同一步里的只读工具和多个子智能体会并发跑，
 结果按模型给出的调用顺序回灌。
 
@@ -129,8 +133,9 @@ Gemini 3 起每步的第一个工具调用必须带思考签名，缺了整个�
 ### 技能与子智能体的边界
 
 - **技能**走 Studio 自己的技能接口（`host.request`，需要清单里的 `api.read` / `api.write` 权限）：
-  每轮只注入已启用技能的 name + description，模型命中后用 `skill_view` 取全文。该接口只能写 SKILL.md
-  正文，**不能写支持文件**；内置技能只读。失败时把宿主原始报错交回模型，不假装成功。
+  已启用技能的 name + description 按会话缓存（`skill_manage` 成功后下一轮立即重读，外部改动最多延迟 30 秒），
+  模型命中后用 `skill_view` 取全文。该接口只能写 SKILL.md 正文，**不能写支持文件**；内置技能只读。
+  失败时把宿主原始报错交回模型，不假装成功。
 - **子智能体**与桌面端同一套类型（General / Explore / Research / Plan / fork），工具表只做收窄。
   插件运行期内没有「子任务结束后唤醒主轮」的通道，所以 `run_subagent` **一律前台执行**：等它跑完
   再返回结论，不提供 `foreground` 参数，也不假装它在后台继续跑。子轮事件不外发（Studio 没有 Task 卡），

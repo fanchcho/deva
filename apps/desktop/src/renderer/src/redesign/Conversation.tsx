@@ -519,10 +519,11 @@ export function Conversation({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [win])
 
-  const exitSelect = (): void => {
+  // 只调用 setter，标识恒定：可安全作下面清空消息时那个 effect 的依赖。
+  const exitSelect = useCallback((): void => {
     setSelecting(false)
     setSelected(new Set())
-  }
+  }, [])
   const toggleTurn = (turn: number): void => {
     setSelected((prev) => {
       const next = new Set(prev)
@@ -568,8 +569,7 @@ export function Conversation({
   // 会话内消息被删空（选中全部轮）后自动退出选择态，避免停留在空白选择界面。
   useEffect(() => {
     if (selecting && messages.length === 0) exitSelect()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages.length, selecting])
+  }, [messages.length, selecting, exitSelect])
 
   // 新内容到达：仅当仍贴底才自动滚到底；用户上滚查看历史时保持不动。
   useEffect(() => {

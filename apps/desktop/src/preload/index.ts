@@ -1250,8 +1250,14 @@ if (process.contextIsolated) {
     console.error(error)
   }
 } else {
-  // @ts-ignore (仅在未启用隔离的回退场景)
+  // 未启用隔离的回退场景：没有 contextBridge，直接挂到 window 上。
   window.deva = api
 }
 
 export type DevaApi = typeof api
+
+declare global {
+  interface Window {
+    deva: DevaApi
+  }
+}

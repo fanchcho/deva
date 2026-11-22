@@ -161,7 +161,7 @@ test('memory index only carries titles, except feedback entries which include th
     const text = formatMemoryIndex([{ scope: 'global', label: '全局记忆', entries }])
     assert.match(text, /全局记忆】3 条/)
     assert.match(text, /用户 · 用户身份/)
-    assert.match(text, /做事方式 · 先跑测试\n  正文：规则：改完先跑测试。/)
+    assert.match(text, /做事方式 · 先跑测试\n {2}正文：规则：改完先跑测试。/)
     assert.doesNotMatch(text, /后端工程师/)
     assert.doesNotMatch(text, /figma/)
   } finally {

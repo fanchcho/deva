@@ -52,6 +52,7 @@ function uploadDir(): string {
 
 /** 文件名：去掉路径与非法字符；重名加序号。 */
 function uniquePath(dir: string, raw: string): string {
+  // eslint-disable-next-line no-control-regex -- 目的就是剥掉文件名里的控制字符
   const clean = basename(raw || '').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim().slice(0, 120)
   const name = clean && !/^\.+$/.test(clean) ? clean : `手机上传-${Date.now()}`
   const ext = extname(name)

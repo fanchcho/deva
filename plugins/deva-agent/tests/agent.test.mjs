@@ -231,7 +231,7 @@ test('a broken DSML call is reported as failed and never executed', async () => 
     const result = await runAgentTurn({
       run, workspaceDir: dir, system: 'sys', facts: {},
       input: { input: [{ type: 'text', text: 'x' }], history: [], instructions: [], options: {} },
-      model: async request => {
+      model: async () => {
         if (!seenResult) {
           seenResult = true
           // broken=true 表示参数残缺（适配器从漏出的 DSML 里恢复、但没写完）：不执行，只回灌说明。
@@ -246,8 +246,7 @@ test('a broken DSML call is reported as failed and never executed', async () => 
   } finally { await cleanup() }
 })
 
-test('definition end-to-end: a memory written mid-turn reaches the next step and never rewrites the system prefix', async () => {
-  const { dir, cleanup } = await workspace()
+test('definition end-to-end: a memory written mid-turn reaches the next step and never rewrites the system prefix', async () => {  const { dir, cleanup } = await workspace()
   const seen = []
   const server = createServer((request, response) => {
     let body = ''
@@ -293,4 +292,40 @@ test('definition end-to-end: a memory written mid-turn reaches the next step and
     await new Promise(resolve => server.close(resolve))
     await cleanup()
   }
+})
+
+test('the memory index is re-read only after a successful memory write or delete', async () => {
+  const { dir, cleanup } = await workspace()
+  try {
+    const records = new Map()
+    let entriesReads = 0
+    const countingStorage = (prefix = 'root') => ({
+      namespace: (...parts) => countingStorage(`${prefix}/${parts.join('/')}`),
+      get: async key => {
+        if (key === 'entries') entriesReads++
+        return records.get(`${prefix}#${key}`)
+      },
+      set: async (key, value) => { records.set(`${prefix}#${key}`, value) },
+      async delete(key) { records.delete(`${prefix}#${key}`) },
+      keys: async () => [...records.keys()],
+    })
+    const { run } = fakeRun(dir)
+    run.state = { plugin: countingStorage('plugin'), user: countingStorage('user'), profile: countingStorage('profile') }
+
+    let step = 0
+    const result = await runAgentTurn({
+      run, workspaceDir: dir, system: 'sys', facts: {},
+      input: { input: [{ type: 'text', text: '做点事' }], history: [], instructions: [], options: {} },
+      execute: async name => (name === 'read_file' ? '文件内容' : '已记录'),
+      model: async () => {
+        step++
+        if (step === 1) return { text: '', toolCalls: [{ id: 'c1', name: 'read_file', arguments: '{"path":"a.txt"}' }], finish: 'tool_calls' }
+        if (step === 2) return { text: '', toolCalls: [{ id: 'c2', name: 'memory_write', arguments: '{"type":"user","title":"t","body":"b"}' }], finish: 'tool_calls' }
+        return { text: '完成', toolCalls: [], finish: 'stop' }
+      },
+    })
+    assert.equal(result.finishReason, 'stop')
+    // 开场读一次（全局 + 项目两层）；普通工具步不重读；写入后下一步再读一次（两层）。
+    assert.equal(entriesReads, 4)
+  } finally { await cleanup() }
 })

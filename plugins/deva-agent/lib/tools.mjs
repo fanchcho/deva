@@ -2,16 +2,16 @@
  * Agent 的工具集：文件读写、检索、命令执行、项目速览。
  *
  * 约定：
- *  · 一切写入路径以工作区根为界（resolveSafe），越界直接报错，不做"猜你想访问哪儿"；
- *    只读的 read_file 额外接受本轮运行目录（web_fetch 落盘正文要能读回，见 resolveReadable）；
+ *  · 一切写入路径以工作区根为界（resolveSafe + realpath 校验，符号链接不能穿出去），越界直接报错，
+ *    不做"猜你想访问哪儿"；只读的 read_file 额外接受本轮运行目录（web_fetch 落盘正文要能读回，见 resolveReadable）；
  *  · 所有工具都是纯 JS 实现，只依赖 node 内建，方便在插件里直接跑、也方便测试；
- *  · 输出有界：检索类结果超长时硬截断并显式标注原长；run_command 的超长输出全文落盘，
- *    只回开头与结尾的预览（lib/spill.mjs）——命令报错藏在结尾，只留开头会看不出为什么失败；
- *  · run_command 只跑 bash -lc，超时后 kill 进程组，不阻塞 Studio 的取消。
+ *  · 输出有界：检索类结果超长时硬截断并显式标注原长；run_command 先由 maxBuffer 封顶 8 MiB，
+ *    上限内的超长输出全文落盘，只回开头与结尾的预览（lib/spill.mjs）——命令报错藏在结尾，只留开头会看不出为什么失败；
+ *  · run_command 只跑 bash -lc，超时/取消后 kill 整个进程组，不阻塞 Studio 的取消。
  */
-import { execFile } from 'node:child_process'
-import { readFile, writeFile, readdir, stat, mkdir } from 'node:fs/promises'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { execFile, spawn } from 'node:child_process'
+import { readFile, writeFile, readdir, stat, mkdir, realpath, lstat, readlink, open } from 'node:fs/promises'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { WEB_TOOL, executeWebFetch } from './web.mjs'
 import { ASK_TOOL, TODO_TOOL, executeAskUser, normalizeTodos, formatTodos } from './interact.mjs'
 import { MEMORY_TOOLS, memoryLayers, listMemories, layerLabel, formatMemoryLine, scopeOfId, memoryTypeLabel, deleteMemory, MemoryError } from './memory.mjs'
@@ -24,6 +24,7 @@ import { spillText } from './spill.mjs'
 
 const MAX_OUTPUT = 20000
 const MAX_READ_LINES = 2000
+const MAX_SHELL_BYTES = 8 << 20
 const SKIP_DIRS = new Set(['node_modules', '.git', 'out', 'dist', '.pnpm-store', '.turbo', 'coverage'])
 const MAX_FILES = 20000
 
@@ -66,6 +67,47 @@ export function resolveReadable(workspaceDir, runtimeDir, target, { allowEmpty =
     return { root: extra, full, relative: relative(extra, full) || '.' }
   }
   return { root, full, relative: relative(root, full) || '.' }
+}
+
+/**
+ * 词法边界之外再解析一次真实路径：工作区里的符号链接可能指向外部，
+ * 只按 resolve() 判断会把边界外的文件当成工作区内的路径。
+ * 目标不存在时（write_file 新建文件）沿父目录向上找最深的已存在祖先；
+ * 目标本身是符号链接时（包括断链）按 readlink 递归解析，避免 writeFile 顺着链接写到外面。
+ */
+async function resolvePhysical(full, depth = 0) {
+  if (depth > 20) throw new ToolError(`符号链接层级过深：${full}`)
+  let info
+  try {
+    info = await lstat(full)
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw new ToolError(`无法解析路径：${full}（${error.message}）`)
+    const parent = dirname(full)
+    if (parent === full) return full
+    return join(await resolvePhysical(parent, depth + 1), basename(full))
+  }
+  if (info.isSymbolicLink()) {
+    const target = await readlink(full)
+    return resolvePhysical(isAbsolute(target) ? target : resolve(dirname(full), target), depth + 1)
+  }
+  try {
+    return await realpath(full)
+  } catch (error) {
+    throw new ToolError(`无法解析路径：${full}（${error.message}）`)
+  }
+}
+
+/** 真实路径必须仍在给定的某个根之内；根自身是符号链接时按真实路径比较。 */
+async function assertPhysicalInside(roots, full, raw) {
+  const real = await resolvePhysical(full)
+  const realRoots = []
+  for (const root of roots) {
+    if (!root) continue
+    try { realRoots.push(await realpath(root)) } catch { realRoots.push(resolve(root)) }
+  }
+  if (!realRoots.some(root => inside(root, real))) {
+    throw new ToolError(`路径越界：${raw}（符号链接解析到 ${real}，不在工作区内）`)
+  }
 }
 
 function lineCount(text) {
@@ -259,13 +301,11 @@ async function executeMemoryRead(args, ctx, workspaceDir) {
   const ids = Array.isArray(args.ids) ? args.ids.map(id => String(id ?? '').trim()).filter(Boolean) : []
   if (ids.length) {
     const out = []
-    let found = 0
     for (const id of ids) {
       const scope = scopeOfId(id)
       const entries = await listMemories(scope, mem)
       const hit = entries.find(entry => entry.id === id)
       if (hit) {
-        found++
         out.push(fullMemoryEntry(hit, layerLabel(scope, mem)))
       } else out.push(`[${id}] 不存在${scope === 'project' && !workspaceDir ? '（当前未挂载工作区，无法读取项目记忆）' : ''}`)
     }
@@ -341,6 +381,25 @@ async function readIfText(full) {
   }
 }
 
+/**
+ * 只读开头 4 KiB 判断是否为二进制：grep 遍历时先挡住图片/压缩包，避免为了 NUL 检查
+ * 把整个文件读进来。只判断开头是取舍——4 KiB 之后才出现 NUL 的文件由 grep 的全文
+ * 检查兜底（content.includes('\0')）。
+ */
+async function looksBinary(full) {
+  let handle
+  try {
+    handle = await open(full, 'r')
+    const buffer = Buffer.alloc(4096)
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
+    return buffer.subarray(0, bytesRead).includes(0)
+  } catch {
+    return true
+  } finally {
+    await handle?.close().catch(() => {})
+  }
+}
+
 function numberLines(lines, start) {
   return lines.map((line, index) => `${String(start + index).padStart(6)}→${line}`).join('\n')
 }
@@ -380,6 +439,7 @@ export async function executeTool(name, input, ctx) {
   switch (name) {
     case 'read_file': {
       const { full, relative: rel } = resolveReadable(workspaceDir, ctx?.runtimeDir, args.path)
+      await assertPhysicalInside([workspaceDir, ctx?.runtimeDir], full, args.path)
       const content = await readIfText(full)
       if (content === null) throw new ToolError(`读不到文件（不存在、不是文本或过大）：${rel}`)
       const lines = content.split('\n')
@@ -392,6 +452,7 @@ export async function executeTool(name, input, ctx) {
     }
     case 'write_file': {
       const { full, relative: rel } = resolveSafe(workspaceDir, args.path)
+      await assertPhysicalInside([workspaceDir], full, args.path)
       const content = String(args.content ?? '')
       await mkdir(dirname(full), { recursive: true })
       await writeFile(full, content, 'utf8')
@@ -399,6 +460,7 @@ export async function executeTool(name, input, ctx) {
     }
     case 'edit_file': {
       const { full, relative: rel } = resolveSafe(workspaceDir, args.path)
+      await assertPhysicalInside([workspaceDir], full, args.path)
       const current = await readIfText(full)
       if (current === null) throw new ToolError(`读不到文件：${rel}`)
       const oldString = String(args.old_string ?? '')
@@ -413,11 +475,16 @@ export async function executeTool(name, input, ctx) {
     }
     case 'list_dir': {
       const { full, relative: rel } = resolveSafe(workspaceDir, args.path ?? '.', { allowEmpty: true })
+      await assertPhysicalInside([workspaceDir], full, args.path ?? '.')
       let entries
       try { entries = await readdir(full, { withFileTypes: true }) } catch { throw new ToolError(`不是可读目录：${rel}`) }
       const rows = await Promise.all(entries.map(async entry => {
-        const info = await stat(join(full, entry.name)).catch(() => null)
-        const size = entry.isDirectory() ? '-' : String(info?.size ?? 0)
+        // 目录不展示大小，省掉一次 stat；文件和符号链接才取 size。
+        let size = '-'
+        if (!entry.isDirectory()) {
+          const info = await stat(join(full, entry.name)).catch(() => null)
+          size = String(info?.size ?? 0)
+        }
         return `${entry.isDirectory() ? 'd' : '-'} ${size.padStart(10)}  ${entry.name}`
       }))
       rows.sort((a, b) => (a.startsWith('d') === b.startsWith('d') ? a.localeCompare(b) : a.startsWith('d') ? -1 : 1))
@@ -442,10 +509,12 @@ export async function executeTool(name, input, ctx) {
       const limit = Math.min(1000, Math.max(1, Number(args.limit ?? 80)))
       // 搜索根默认工作区，也可指向本轮运行目录里落盘的工具结果（落盘说明就是这么建议的）。
       const { full: searchRoot } = resolveReadable(workspaceDir, ctx?.runtimeDir, args.path ?? '.', { allowEmpty: true })
+      await assertPhysicalInside([workspaceDir, ctx?.runtimeDir], searchRoot, args.path ?? '.')
       const hits = []
       await walk(searchRoot, async full => {
         const rel = relative(searchRoot, full).replaceAll(sep, '/')
         if (include && !include.test(rel.split('/').pop())) return true
+        if (await looksBinary(full)) return true
         const content = await readIfText(full)
         if (content === null || content.includes('\0')) return true
         const lines = content.split('\n')
@@ -494,19 +563,85 @@ export async function executeTool(name, input, ctx) {
 function runShell(command, cwd, timeout, signal) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(new ToolError('本轮已被取消')); return }
-    const child = execFile('bash', ['-lc', command], { cwd, timeout, maxBuffer: 8 << 20, signal, killSignal: 'SIGKILL' },
-      (error, stdout, stderr) => {
-        const code = error ? (typeof error.code === 'number' ? error.code : error.killed ? 'killed' : 1) : 0
-        const body = [
-          `$ ${command}`,
-          `exit=${code}`,
-          String(stdout).trim() ? `--- stdout ---\n${String(stdout).trimEnd()}` : '',
-          String(stderr).trim() ? `--- stderr ---\n${String(stderr).trimEnd()}` : '',
-        ].filter(Boolean).join('\n')
-        // 有输出就算跑完了：非零退出码交给模型判断，不在这里抛错。
-        // 截断交给调用方（spillText）：先拿到完整输出，落盘后只回预览。
-        resolve(body)
-      })
-    child.on('error', error => reject(new ToolError(`命令启动失败：${error.message}`)))
+    // 注意不能用 execFile：Node 24 的 execFile 不透传 detached，超时只能杀掉 bash 本身。
+    // 这里用 spawn 让 bash 成为进程组组长，超时/取消时整组杀掉，避免 pnpm/test 派生的孤儿进程继续跑。
+    const child = spawn('bash', ['-lc', command], {
+      cwd,
+      detached: process.platform !== 'win32',
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const stdout = []
+    const stderr = []
+    let stdoutBytes = 0
+    let stderrBytes = 0
+    let timedOut = false
+    let aborted = false
+    let tooLarge = false
+    let settled = false
+
+    const killTree = () => {
+      if (!child.pid) return
+      if (process.platform === 'win32') {
+        // Windows 没有进程组信号，用 taskkill /T 连子进程一起结束。
+        execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true }, () => {})
+        return
+      }
+      try { process.kill(-child.pid, 'SIGKILL') } catch { try { child.kill('SIGKILL') } catch { /* 已经退出 */ } }
+    }
+    const collect = (chunks, chunk, stream) => {
+      // 超限后仍然消费数据（不 removeListener），否则管道被写满会卡住子进程。
+      if (tooLarge) return
+      const used = stream === 'stdout' ? stdoutBytes : stderrBytes
+      const room = MAX_SHELL_BYTES - used
+      if (chunk.length > room) {
+        if (room > 0) chunks.push(chunk.subarray(0, room))
+        tooLarge = true
+        killTree()
+        return
+      }
+      chunks.push(chunk)
+      if (stream === 'stdout') stdoutBytes += chunk.length
+      else stderrBytes += chunk.length
+    }
+    child.stdout.on('data', chunk => collect(stdout, chunk, 'stdout'))
+    child.stderr.on('data', chunk => collect(stderr, chunk, 'stderr'))
+
+    const timer = setTimeout(() => { timedOut = true; killTree() }, timeout)
+    const onAbort = () => { aborted = true; killTree() }
+    const cleanup = () => {
+      clearTimeout(timer)
+      signal?.removeEventListener?.('abort', onAbort)
+    }
+    signal?.addEventListener?.('abort', onAbort, { once: true })
+    // 注册监听与检查之间仍有极小窗口：已经取消就立刻按取消处理。
+    if (signal?.aborted) onAbort()
+
+    child.on('error', error => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(new ToolError(`命令启动失败：${error.message}`))
+    })
+    child.on('close', (code, sig) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      const status = timedOut ? 'timeout' : aborted ? 'aborted' : tooLarge ? 'output-limit' : (code ?? sig ?? 'killed')
+      const out = Buffer.concat(stdout).toString('utf8')
+      const err = Buffer.concat(stderr).toString('utf8')
+      const body = [
+        `$ ${command}`,
+        `exit=${status}`,
+        timedOut ? `（命令超时（>${timeout}ms），已终止进程组）` : '',
+        aborted ? '（本轮已取消，已终止进程组）' : '',
+        tooLarge ? `（输出超过 ${MAX_SHELL_BYTES >> 20} MiB，已被截断）` : '',
+        out.trim() ? `--- stdout ---\n${out.trimEnd()}` : '',
+        err.trim() ? `--- stderr ---\n${err.trimEnd()}` : '',
+      ].filter(Boolean).join('\n')
+      // 有输出就算跑完了：非零退出码交给模型判断，不在这里抛错。
+      // 单条命令先由 MAX_SHELL_BYTES 封顶；超过 20000 字符的正文再由 spillText 落盘并只回预览。
+      resolve(body)
+    })
   })
 }

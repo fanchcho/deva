@@ -501,6 +501,7 @@ function inline(s: string): string {
     .replace(/__(?=\S)([^_\n]*?\S)__/g, '<b>$1</b>')
     .replace(/(^|[^\w*])\*(?=\S)([^*\n]*?\S)\*(?![\w*])/g, '$1<i>$2</i>')
     .replace(/~~(?=\S)([^~\n]*?\S)~~/g, '<s>$1</s>')
+    // eslint-disable-next-line no-control-regex -- \u0000 是内部占位符定界符，不是误写
     .replace(/\u0000(\d+)\u0000/g, (_, i: string) => codes[Number(i)])
 }
 

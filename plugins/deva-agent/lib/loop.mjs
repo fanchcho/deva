@@ -62,6 +62,35 @@ const DEGENERATE_NOTE = '（模型输出陷入逐字重复，重试后仍如此�
  */
 const PARALLEL_SAFE = new Set(['read_file', 'list_dir', 'glob', 'grep', 'web_fetch', 'memory_read', 'run_subagent'])
 
+/** 会改变记忆索引的工具：只有它们成功后，下一步才需要重读索引。子智能体看不到写删工具。 */
+const MEMORY_MUTATORS = new Set(['memory_write', 'memory_delete'])
+
+/**
+ * 并行子智能体的并发上限：一次响应里模型可能同时派发十几个 run_subagent，
+ * 每个都是一条完整的模型循环。没有上限就会同时打出十几条请求、抢占连接与上下文。
+ */
+const SUBAGENT_CONCURRENCY = 3
+
+/** 极简信号量：先到先得，release 时把名额直接交给下一个等待者。 */
+function createSemaphore(limit) {
+  let active = 0
+  const waiting = []
+  return {
+    async acquire() {
+      if (active < limit) {
+        active++
+        return
+      }
+      await new Promise(resolve => waiting.push(resolve))
+    },
+    release() {
+      const next = waiting.shift()
+      if (next) next()
+      else active--
+    },
+  }
+}
+
 function safeText(blocks) {
   return (blocks || []).filter(block => block?.type === 'text').map(block => block.text).join('\n')
 }
@@ -94,7 +123,7 @@ async function contentToMessage(role, content, run) {
 }
 
 /** Studio 历史里 assistant/tool 也带 toolCallId，这里按上游协议归一化。 */
-function historyToMessages(history, run) {
+function historyToMessages(history) {
   const messages = []
   for (const message of (history || []).slice(-MAX_HISTORY_MESSAGES)) {
     const text = safeText(message.content).slice(0, MAX_TEXT_PER_MESSAGE)
@@ -141,7 +170,7 @@ export async function runAgentTurn({
   tools: toolsOverride = null, initialMessages = null, depth = 0, silent = false, runTurn = runAgentTurn,
 }) {
   // 子智能体传入自己的记录消息数组：原地追加，跑完后记录里就有完整上下文（续聊要用）。
-  const messages = initialMessages || historyToMessages(input.history, run)
+  const messages = initialMessages || historyToMessages(input.history)
   if (!initialMessages) messages.push(await contentToMessage('user', input.input, run))
   const tools = toolsOverride || [...TOOL_DEFINITIONS, ...extraTools]
   const emit = silent || !run.output?.emit ? async () => {} : event => run.output.emit(event)
@@ -157,15 +186,19 @@ export async function runAgentTurn({
     if (notes.length) system = `${system}\n\n${notes.join('\n')}`
   }
   /** 记忆索引：紧跟在用户消息之后下发一次；本轮中模型自己写入的条目在下一步补发。 */
-  const pushMemoryIndex = async ({ diffOnly = false } = {}) => {
+  let memoryDirty = false
+  const pushMemoryIndex = async ({ force = false } = {}) => {
     if (!memoryCtx) return
+    // 只有本轮的写/删改过记忆才需要重读；否则整步都在重复读同一份索引。
+    if (!force && !memoryDirty) return
+    memoryDirty = false
     const layers = []
     for (const layer of await memoryLayers(memoryCtx)) layers.push({ ...layer, entries: await listMemories(layer.scope, memoryCtx) })
     const text = formatMemoryIndex(layers)
     if (!text) return
-    if (diffOnly && text === lastMemoryIndex) return
+    if (!force && text === lastMemoryIndex) return
     lastMemoryIndex = text
-    messages.push({ role: 'user', text: `【记忆】${diffOnly ? '更新后的' : ''}记忆索引（方括号里是 id，用于 memory_read 读正文、memory_write 更新、memory_delete 删除）：\n\n${text}` })
+    messages.push({ role: 'user', text: `【记忆】${force ? '' : '更新后的'}记忆索引（方括号里是 id，用于 memory_read 读正文、memory_write 更新、memory_delete 删除）：\n\n${text}` })
   }
   let lastMemoryIndex = null
   const composeSystem = async () => {
@@ -177,7 +210,7 @@ export async function runAgentTurn({
   }
   let systemText = await composeSystem()
   // 索引紧跟用户消息：user → 记忆索引 → ……这样缓存前缀从 system 到首条用户消息都不受记忆变化影响。
-  if (!initialMessages) await pushMemoryIndex()
+  if (!initialMessages) await pushMemoryIndex({ force: true })
   const toolCtx = {
     run,
     workspaceDir,
@@ -204,6 +237,7 @@ export async function runAgentTurn({
     identity: identityId || identityName ? { identityId, identityName } : undefined,
   }
   const callTool = execute || ((name, args, ctx) => executeTool(name, args, ctx))
+  const subagentSlots = createSemaphore(SUBAGENT_CONCURRENCY)
   const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }
   let sawUsage = false
   let reply = ''
@@ -222,8 +256,8 @@ export async function runAgentTurn({
   for (let step = 0; step < maxSteps; step++) {
     if (run.signal?.aborted) throw new Error('本轮已被取消')
     if (stuckOn) messages.push({ role: 'user', text: repeatStopNudge(stuckOn.tool, stuckOn.count) })
-    // 第一步的索引已随用户消息发出；此后每步只在条目有变化时补一条，避免重复灌同样的索引。
-    if (step > 0) await pushMemoryIndex({ diffOnly: true })
+    // 第一步的索引已随用户消息发出；此后只在记忆被写/删后重读，避免每步重复读同一份索引。
+    if (step > 0) await pushMemoryIndex()
     systemText = await composeSystem()
     await emit({ type: 'status', phase: 'thinking' })
     let streamed = ''
@@ -332,15 +366,21 @@ export async function runAgentTurn({
         await emit({ type: 'tool.failed', callId: call.id, error: parsed.error })
         return { text: parsed.error, isError: true, args: null }
       }
+      const limited = call.name === 'run_subagent'
+      if (limited) await subagentSlots.acquire()
       try {
         // callId 供子智能体派生记录用（确定性派生 ID）；depth 供子轮拒绝再派生。
         const content = await callTool(call.name, parsed.value, { ...toolCtx, callId: call.id })
+        // 写/删成功后下一步才需要重读索引；失败时不标脏。
+        if (MEMORY_MUTATORS.has(call.name)) memoryDirty = true
         await emit({ type: 'tool.completed', callId: call.id, result: summarize(content) })
         return { text: content, isError: false, args: parsed.value }
       } catch (error) {
         const message = `工具执行失败：${error?.message || error}`
         await emit({ type: 'tool.failed', callId: call.id, error: String(error?.message || error) })
         return { text: message, isError: true, args: parsed.value }
+      } finally {
+        if (limited) subagentSlots.release()
       }
     }
 

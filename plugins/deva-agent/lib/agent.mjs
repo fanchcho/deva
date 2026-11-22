@@ -27,6 +27,41 @@ function packageVersion() {
 
 const PROTOCOLS = ['chat_completions', 'anthropic_messages', 'codex_responses']
 
+/** 工程事实与技能清单的会话级缓存时长：工具改动会立即失效，外部改动最多等这么久。 */
+const FACTS_TTL = 30000
+const SKILLS_TTL = 30000
+
+/**
+ * 极小的 TTL 缓存：按 key 缓存异步结果，同一 key 的并发读取只执行一次。
+ * 失败不缓存（下次重试），invalidate 清空全部条目。
+ */
+function createTtlCache(load, ttl) {
+  const entries = new Map()
+  return {
+    async get(key) {
+      const now = Date.now()
+      const hit = entries.get(key)
+      if (hit?.pending) return hit.pending
+      if (hit && now - hit.at < ttl) return hit.value
+      const entry = { at: now, pending: null, value: undefined }
+      entry.pending = Promise.resolve()
+        .then(() => load(key))
+        .then(value => {
+          entry.pending = null
+          entry.value = value
+          entry.at = Date.now()
+          return value
+        }, error => {
+          entries.delete(key)
+          throw error
+        })
+      entries.set(key, entry)
+      return entry.pending
+    },
+    invalidate() { entries.clear() },
+  }
+}
+
 const INSTRUCTION = `Deva Agent 需要 Studio 注入的模型（scoped 模式）。在 Agent 管理里为它选择模型，或在会话里切换到一个已配置的模型后重试。`
 
 /** 宿主注入的 run.mcpServers 条目 → 本插件客户端的配置形状（宿主条目可能省掉 type）。 */
@@ -37,10 +72,49 @@ function injectedServers(injected) {
 }
 
 /**
- * 连接本轮可用的 MCP（MCP 页勾选的 Studio 服务 + 宿主注入，同名的宿主优先），
- * 跑完一轮后断开。连接失败不中断对话：把失败原因写进系统提示词，让模型如实告诉用户缺什么。
+ * 每会话一份 MCP 连接缓存：配置不变就跨轮复用；配置变了由 pool.connectAll 收敛。
+ * 连接生命周期绑在会话上（dispose 时断开），不绑单轮 signal——否则第一轮结束就会杀掉子进程。
  */
-async function runWithMcp({ run, input, system, workspaceDir, facts, identity, log, runTurn }) {
+function createMcpCache(log) {
+  const lifecycle = new AbortController()
+  let pool = null
+  const release = () => {
+    if (!pool) return
+    pool.close()
+    pool = null
+  }
+  return {
+    signal: lifecycle.signal,
+    acquire: () => (pool ??= new McpPool({ log })),
+    release,
+    close() {
+      release()
+      if (!lifecycle.signal.aborted) lifecycle.abort()
+    },
+  }
+}
+
+/**
+ * 统一的工具执行入口：MCP 工具走连接池，其余走本地工具集；成功后再通知缓存失效。
+ * 失败（抛错）不通知——写文件/改技能失败时没有产生需要刷新的事实。
+ */
+function makeExecute({ run, getPool, onToolSuccess }) {
+  return async (name, args, ctx) => {
+    const pool = getPool()
+    const result = pool && name.startsWith('mcp__')
+      ? await pool.call(name, args, { signal: run.signal, runtimeDir: run.paths?.runtimeDir })
+      : await executeTool(name, args, ctx)
+    onToolSuccess?.(name)
+    return result
+  }
+}
+
+/**
+ * 连接本轮可用的 MCP（MCP 页勾选的 Studio 服务 + 宿主注入，同名的宿主优先）。
+ * 连接跨轮复用；服务配置或宿主注入的凭证变了才重连。连接失败不中断对话：
+ * 把失败原因写进系统提示词，让模型如实告诉用户缺什么。
+ */
+async function runWithMcp({ run, input, system, workspaceDir, facts, identity, log, runTurn, mcp, onToolSuccess }) {
   const problems = []
   // MCP 页勾选的 Studio 服务：配置每轮现取，用户在 Studio 或设置页改完后下一轮即生效
   const studio = await resolveStudioServers({ host: run.host, state: run.state, identity: run.identity, log })
@@ -49,29 +123,26 @@ async function runWithMcp({ run, input, system, workspaceDir, facts, identity, l
   // 记忆的角色层按本轮身份分区：把 id/名称一路带给工具层（runTurn 的默认实现就是 runAgentTurn）。
   const identityScope = { identityId: identity?.id ?? null, identityName: identity?.name ?? null }
   if (!servers.length && !problems.length) {
-    return await runTurn({ run, input, system, workspaceDir, facts, identity, ...identityScope })
+    // 用户已把服务全部取消勾选：断开上一轮留下的连接，本轮不背任何 MCP。
+    mcp.release()
+    const execute = makeExecute({ run, getPool: () => null, onToolSuccess })
+    return await runTurn({ run, input, system, workspaceDir, facts, identity, ...identityScope, execute, runTurn })
   }
-  const pool = new McpPool({ log })
-  try {
-    await pool.connectAll(servers, run.signal)
-    const notes = [...problems, ...pool.problems]
-    const mergedSystem = notes.length
-      ? `${system}\n\n## MCP 连接状态\n\n以下 MCP 服务本轮不可用，涉及它们的任务要如实告知用户，不要凭空编造结果：\n${notes.map(note => `- ${note}`).join('\n')}`
-      : system
-    if (pool.definitions().length) {
-      log.info?.(`deva: 本轮 MCP 工具 ${pool.definitions().length} 个（${servers.map(server => server.name).join('/')}）`)
-    }
-    const execute = async (name, args, ctx) => {
-      if (name.startsWith('mcp__')) return pool.call(name, args, { signal: run.signal, runtimeDir: run.paths?.runtimeDir })
-      return executeTool(name, args, ctx)
-    }
-    return await runTurn({
-      run, input, system: mergedSystem, workspaceDir, facts, identity,
-      ...identityScope, extraTools: pool.definitions(), execute, runTurn,
-    })
-  } finally {
-    pool.close()
+  const pool = mcp.acquire()
+  // 握手与工具发现用会话级 signal；单次 tools/call 仍受本轮 run.signal 取消。
+  await pool.connectAll(servers, mcp.signal)
+  const notes = [...problems, ...pool.problems]
+  const mergedSystem = notes.length
+    ? `${system}\n\n## MCP 连接状态\n\n以下 MCP 服务本轮不可用，涉及它们的任务要如实告知用户，不要凭空编造结果：\n${notes.map(note => `- ${note}`).join('\n')}`
+    : system
+  if (pool.definitions().length) {
+    log.info?.(`deva: 本轮 MCP 工具 ${pool.definitions().length} 个（${servers.map(server => server.name).join('/')}）`)
   }
+  const execute = makeExecute({ run, getPool: () => pool, onToolSuccess })
+  return await runTurn({
+    run, input, system: mergedSystem, workspaceDir, facts, identity,
+    ...identityScope, extraTools: pool.definitions(), execute, runTurn,
+  })
 }
 
 /**
@@ -101,6 +172,15 @@ export function createAgentDefinition({ log = console, runTurn = runAgentTurn, i
     runtime: {
       async createSession(session) {
         let disposed = false
+        const mcp = createMcpCache(log)
+        // 工程事实与技能清单按会话缓存：每轮重读 package.json / 起两个 git、再请求一次技能接口没有必要。
+        const factsCache = createTtlCache(workspaceDir => projectFacts(workspaceDir), FACTS_TTL)
+        const skillsCache = createTtlCache(host => formatSkillListing({ host, log }), SKILLS_TTL)
+        const onToolSuccess = name => {
+          // 技能刚被改过、工作区刚被写过/跑过命令：下一轮立即重读，不等 TTL。
+          if (name === 'skill_manage') skillsCache.invalidate()
+          if (name === 'write_file' || name === 'edit_file' || name === 'run_command') factsCache.invalidate()
+        }
         log.info?.(`deva: 创建会话 ${session.identity.sessionId}（${session.paths.workspaceDir}）`)
         return {
           async run(input, run) {
@@ -119,18 +199,23 @@ export function createAgentDefinition({ log = console, runTurn = runAgentTurn, i
             const resolved = fixed ? { id: fixed.id, source: 'agent' } : await resolveIdentityId(run.state, run.identity)
             const identity = await loadIdentity(resolved.id)
             log.info?.(`deva: 本轮身份=${identity.id}（${identity.name}，来源 ${resolved.source}）`)
-            const facts = await projectFacts(workspaceDir)
+            const facts = await factsCache.get(workspaceDir)
             const instructions = (input.instructions || []).map(item => item.text).filter(Boolean).join('\n\n')
             const system = buildSystemPrompt({
               identity,
               factsText: formatFacts(facts),
               hostInstructions: instructions,
-              skillsText: await formatSkillListing({ host: run.host, log }),
+              skillsText: await skillsCache.get(run.host),
             })
-            return await runWithMcp({ run, input: consumed.input, system, workspaceDir, facts, identity, log, runTurn })
+            return await runWithMcp({
+              run, input: consumed.input, system, workspaceDir, facts, identity, log, runTurn, mcp, onToolSuccess,
+            })
           },
           async dispose() {
             disposed = true
+            mcp.close()
+            factsCache.invalidate()
+            skillsCache.invalidate()
           },
         }
       },

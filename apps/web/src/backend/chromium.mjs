@@ -212,8 +212,6 @@ export function ensureBrowser() {
   return browserPromise
 }
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
 /** Electron WebContents 的 CDP 实现（够 browser/terminal 这些真实业务模块用）。 */
 export class CDPWebContents extends EventEmitter {
   constructor(options = {}) {

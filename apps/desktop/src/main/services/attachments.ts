@@ -138,6 +138,7 @@ function inspect(abs: string, size: number, byPath = true): PickedAttachment {
 
 /** 粘贴文件名：剥掉路径与 Windows 非法字符；截图等无名/通用名（image.png）按时间戳重命名。 */
 function pasteName(raw: string, mime: string): string {
+  // eslint-disable-next-line no-control-regex -- 目的就是剥掉文件名里的控制字符
   const clean = basename(raw || '').replace(/[<>:"/|?*\x00-\x1f]/g, '_').trim()
   // 「.」「..」会让 join 退回上级目录：与无名同样处理。
   if (clean && !/^\.+$/.test(clean) && !/^image\.\w+$/i.test(clean)) return clean

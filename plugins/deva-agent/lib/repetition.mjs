@@ -25,40 +25,9 @@ const RULES = [
 /** 认得出的最长重复单元（字符）：段落级复读也在此之内。 */
 const MAX_PERIOD = 1000
 
-function qualifies(span, period) {
-  return RULES.some(rule => span >= rule.minSpan && span / period >= rule.minCount)
-}
-
 /** 周期为 period 的重复区域至少多长才算复读（各档门槛取最宽松的那档）。 */
 function minSpanFor(period) {
   return Math.min(...RULES.map(rule => Math.max(rule.minSpan, rule.minCount * period)))
-}
-
-/**
- * 找出文本里最长的一段复读区域；没有则返回 null。
- * 返回 { start, period, span }：起点（含第一份）、重复单元长度、区域总长。
- */
-export function findRepetition(text) {
-  const n = String(text ?? '').length
-  const source = String(text ?? '')
-  const maxPeriod = Math.min(MAX_PERIOD, Math.floor(n / 2))
-  let best = null
-  for (let p = 1; p <= maxPeriod; p++) {
-    // run = 连续满足 text[i] === text[i - p] 的字符数；该区域总长 = run + p（加上第一份）。
-    let run = 0
-    for (let i = p; i <= n; i++) {
-      if (i < n && source.charCodeAt(i) === source.charCodeAt(i - p)) {
-        run++
-        continue
-      }
-      if (run > 0) {
-        const span = run + p
-        if (qualifies(span, p) && (!best || span > best.span)) best = { start: i - span, period: p, span }
-        run = 0
-      }
-    }
-  }
-  return best
 }
 
 /**

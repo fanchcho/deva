@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   SKILL_TOOLS, SkillError, listSkills, readSkill, readSkillFile, listSkillFiles,
-  createSkill, updateSkill, toggleSkill, deleteSkill, formatSkillListing, executeSkillTool,
+  createSkill, toggleSkill, deleteSkill, formatSkillListing, executeSkillTool,
 } from '../lib/skills.mjs'
 import { TOOL_DEFINITIONS, executeTool } from '../lib/tools.mjs'
 import { buildSystemPrompt } from '../lib/prompt.mjs'
@@ -73,7 +73,7 @@ test('skill tools join the agent tool set and the system prompt carries the list
 })
 
 test('skill_view lists skills when name is omitted and loads full content by name', async () => {
-  const host = fakeHost((path, options) => {
+  const host = fakeHost((path) => {
     if (path === '/api/ekko/skills') return catalog()
     if (path === '/api/ekko/skills/release-notes') return { skill: { name: 'release-notes', description: '整理发布说明', enabled: true, content: SKILL_MD } }
     throw new Error(`unexpected ${path}`)

@@ -273,6 +273,10 @@ export function Rail({
   const [queries, setQueries] = useState(railSearchMemo.query)
   const query = queries[tab]
   const setQuery = (v: string): void => setQueries((qs) => (qs[tab] === v ? qs : { ...qs, [tab]: v }))
+  // 收起浮出列表时要清空「当前 tab」的搜索词。经 ref 取最新实现：setQuery 随 tab 变化，
+  // 若放进下面那个 effect 的依赖，切 tab 也会触发清空——与「切 tab 保留各自搜索词」的既有行为相悖。
+  const setQueryRef = useRef(setQuery)
+  setQueryRef.current = setQuery
   // 对话筛选（只在消息 tab）：按选中先后排列，空输入框按退格撤掉最后一项。与消息 tab 的搜索词同进退——
   // 浮出列表收回、从列表新建对话时一并清空。
   const [filters, setFilters] = useState<ConvFilter[]>(railSearchMemo.filters)
@@ -328,7 +332,7 @@ export function Rail({
   useEffect(() => {
     if (!collapsed || peek) return
     setMenu(null)
-    setQuery('')
+    setQueryRef.current('')
     clearFilters()
     setArchiveView(false)
     const el = document.activeElement

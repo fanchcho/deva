@@ -13,6 +13,7 @@
  */
 import { spawn } from 'node:child_process'
 import { spillText } from './spill.mjs'
+import { SseParser } from './sse.mjs'
 
 const PROTOCOL_VERSION = '2024-11-05'
 const CLIENT_INFO = { name: 'deva-studio-plugin', version: '1' }
@@ -99,6 +100,42 @@ export function mergeServers(configured, injected) {
   return [...merged.values()]
 }
 
+/** 键顺序无关的规范化，保证同一份配置每次得到同样的指纹。 */
+function canonicalValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalValue)
+  if (value && typeof value === 'object') {
+    const out = {}
+    for (const key of Object.keys(value).sort()) out[key] = canonicalValue(value[key])
+    return out
+  }
+  return value
+}
+
+/**
+ * 连接配置指纹：只覆盖会改变连接身份/凭证的字段。
+ * 跨轮复用时指纹不变就沿用连接；宿主注入了新凭证（值变了）或用户改了配置就重连。
+ */
+export function serverFingerprint(config) {
+  return JSON.stringify(canonicalValue({
+    name: config.name,
+    type: config.type,
+    command: config.command ?? null,
+    args: config.args ?? [],
+    cwd: config.cwd ?? null,
+    url: config.url ?? null,
+    env: config.env ?? {},
+    headers: config.headers ?? {},
+  }))
+}
+
+/** 把连接生命周期信号与单次请求的取消信号合到一起（Node 20.3+ 有 AbortSignal.any）。 */
+function combineSignals(lifecycle, request) {
+  if (!lifecycle) return request
+  if (!request || request === lifecycle) return lifecycle
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any([lifecycle, request])
+  return request
+}
+
 function withTimeout(promise, ms, label) {
   let timer
   const timeout = new Promise((_, reject) => {
@@ -146,7 +183,7 @@ class RpcClient {
         signal?.removeEventListener?.('abort', onAbort)
       }
     })
-    this.deliver(id, String(method), params || {}).catch(error => this.fail(id, error))
+    this.deliver(id, String(method), params || {}, signal).catch(error => this.fail(id, error))
     return promise
   }
 
@@ -238,24 +275,6 @@ class StdioClient extends RpcClient {
   }
 }
 
-function sseDataFrames(buffer, onFrame) {
-  let rest = buffer
-  let index
-  while ((index = rest.indexOf('\n\n')) >= 0) {
-    const frame = rest.slice(0, index)
-    rest = rest.slice(index + 2)
-    let event = 'message'
-    const data = []
-    for (const raw of frame.split('\n')) {
-      const line = raw.replace(/\r$/, '')
-      if (line.startsWith('event:')) event = line.slice(6).trim()
-      else if (line.startsWith('data:')) data.push(line.slice(5).trimStart())
-    }
-    onFrame(event, data.join('\n'))
-  }
-  return rest.replace(/\r\n/g, '\n')
-}
-
 /** Streamable HTTP：POST JSON-RPC，响应可能是 JSON，也可能是同一条请求的 SSE 流。 */
 class HttpClient extends RpcClient {
   constructor(config, headers) {
@@ -271,10 +290,10 @@ class HttpClient extends RpcClient {
     return this
   }
 
-  async deliver(id, method, params) {
+  async deliver(id, method, params, signal) {
     const response = await fetch(this.config.url, {
       method: 'POST',
-      signal: this.signal,
+      signal: combineSignals(this.signal, signal),
       headers: {
         ...this.headers,
         'content-type': 'application/json',
@@ -290,16 +309,21 @@ class HttpClient extends RpcClient {
     if (type.includes('text/event-stream')) {
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
-      let buffer = ''
+      const parser = new SseParser()
+      const handle = frames => {
+        for (const { event, data } of frames) {
+          if (event !== 'message' || !data) continue
+          try { this.handlePayload(JSON.parse(data)) } catch { /* 忽略坏帧 */ }
+        }
+      }
       try {
         while (true) {
           const { value, done } = await reader.read()
           if (done) break
-          buffer = sseDataFrames(buffer + decoder.decode(value, { stream: true }), (event, data) => {
-            if (event !== 'message' || !data) return
-            try { this.handlePayload(JSON.parse(data)) } catch { /* 忽略坏帧 */ }
-          })
+          handle(parser.push(decoder.decode(value, { stream: true })))
         }
+        handle(parser.push(decoder.decode()))
+        handle(parser.flush())
       } finally {
         try { await reader.cancel() } catch { /* 已结束 */ }
       }
@@ -339,22 +363,27 @@ class SseClient extends RpcClient {
     const endpointReady = new Promise((resolve, reject) => { this.resolveEndpoint = resolve; this.rejectEndpoint = reject })
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
-    let buffer = ''
+    const parser = new SseParser()
     this.reader = reader
     ;(async () => {
+      const handle = frames => {
+        for (const { event, data } of frames) {
+          if (event === 'endpoint') {
+            try { this.endpoint = new URL(data, this.config.url).href; this.resolveEndpoint?.(this.endpoint) } catch { this.rejectEndpoint?.(new McpError('endpoint 地址无效')) }
+            continue
+          }
+          if (event !== 'message' || !data) continue
+          try { this.handlePayload(JSON.parse(data)) } catch { /* 忽略坏帧 */ }
+        }
+      }
       try {
         while (true) {
           const { value, done } = await reader.read()
           if (done) break
-          buffer = sseDataFrames(buffer + decoder.decode(value, { stream: true }), (event, data) => {
-            if (event === 'endpoint') {
-              try { this.endpoint = new URL(data, this.config.url).href; this.resolveEndpoint?.(this.endpoint) } catch { this.rejectEndpoint?.(new McpError('endpoint 地址无效')) }
-              return
-            }
-            if (event !== 'message' || !data) return
-            try { this.handlePayload(JSON.parse(data)) } catch { /* 忽略坏帧 */ }
-          })
+          handle(parser.push(decoder.decode(value, { stream: true })))
         }
+        handle(parser.push(decoder.decode()))
+        handle(parser.flush())
         this.shutdown('连接结束')
         this.rejectEndpoint?.(new McpError(`${this.label}：未收到 endpoint`))
       } catch (error) {
@@ -367,11 +396,11 @@ class SseClient extends RpcClient {
     return this
   }
 
-  async deliver(id, method, params) {
+  async deliver(id, method, params, signal) {
     if (!this.endpoint) throw new McpError(`${this.label}：尚未收到 endpoint`)
     const response = await fetch(this.endpoint, {
       method: 'POST',
-      signal: this.signal,
+      signal: combineSignals(this.signal, signal),
       headers: { ...this.headers, 'content-type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
     })
@@ -395,7 +424,7 @@ class SseClient extends RpcClient {
 
 /** initialize 握手在 RpcClient 上实现，见 RpcClient#initialize。 */
 
-export function createClient(config, { signal, env = process.env } = {}) {
+export function createClient(config, { env = process.env } = {}) {
   if (config.type === 'stdio') {
     const resolved = expandMap(config.env, env)
     if (resolved.missing.length) throw new McpError(`${config.name} 缺少环境变量：${resolved.missing.join('、')}`)
@@ -450,8 +479,8 @@ export function flattenResult(result) {
 }
 
 /**
- * 一轮运行内的 MCP 连接池。
- * connectAll 在全量服务上并行发起，单点失败只记录原因；
+ * MCP 连接池。可跨轮复用：connectAll 先按配置指纹收敛已有连接（删掉的/改配置的断开重连），
+ * 再补连缺失的服务；上一轮失败的服务每轮都会重试，单点失败只记录原因。
  * tools() 返回命名空间化后的工具定义（mcp__<server>__<tool>）。
  */
 export class McpPool {
@@ -462,37 +491,91 @@ export class McpPool {
     this.tools = new Map()
     this.failures = new Map()
     this.problems = []
+    this.configs = new Map()
+    this.connecting = new Map()
+    this.closed = false
   }
 
   async connectAll(servers, signal) {
     this.problems = []
-    await Promise.all(servers.map(async config => {
-      if (this.clients.has(config.name)) return
-      try {
-        const client = createClient(config, { signal, env: this.env })
-        await client.connect(signal)
-        const discovered = await listAllTools(client, signal)
-        this.clients.set(config.name, client)
-        for (const tool of discovered) {
-          const fqName = `mcp__${config.name}__${sanitizeName(tool.name, `tool-${this.tools.size}`)}`
-          if (this.tools.has(fqName)) continue
-          this.tools.set(fqName, {
-            name: fqName,
-            description: `[MCP:${config.name}] ${tool.description || tool.name}`.slice(0, 1024),
-            inputSchema: tool.inputSchema,
-            server: config.name,
-            original: tool.name,
-          })
-        }
-        this.log.info?.(`deva: MCP ${config.name} 已连接，工具 ${discovered.length} 个`)
-      } catch (error) {
-        const message = error?.message || String(error)
-        this.failures.set(config.name, message)
-        this.problems.push(`${config.name}: ${message}`)
-        this.log.warn?.(`deva: MCP ${config.name} 连接失败：${message}`)
-      }
-    }))
+    this.#reconcile(servers)
+    await Promise.all(servers.map(config => this.#ensureConnected(config, signal)))
     return this
+  }
+
+  /** 断开不再选中或配置已变的连接，并清掉它们的工具定义。 */
+  #reconcile(servers) {
+    const byName = new Map(servers.map(config => [config.name, config]))
+    for (const [name, client] of [...this.clients]) {
+      const config = byName.get(name)
+      const reusable = config && !client.closed && serverFingerprint(config) === this.configs.get(name)
+      if (reusable) continue
+      try { client.close() } catch { /* 已经关闭 */ }
+      this.clients.delete(name)
+      this.configs.delete(name)
+      for (const [fqName, tool] of [...this.tools]) {
+        if (tool.server === name) this.tools.delete(fqName)
+      }
+    }
+    for (const name of [...this.failures.keys()]) {
+      if (!byName.has(name)) this.failures.delete(name)
+    }
+  }
+
+  async #ensureConnected(config, signal) {
+    const existing = this.clients.get(config.name)
+    if (existing && !existing.closed) return
+    const fingerprint = serverFingerprint(config)
+    const inflight = this.connecting.get(config.name)
+    // 同一配置的并发连接只发起一次；配置变了则另起一次。
+    if (inflight && inflight.fingerprint === fingerprint) {
+      await inflight.promise
+      return
+    }
+    const entry = { fingerprint }
+    this.connecting.set(config.name, entry)
+    entry.promise = this.#connect(config, signal, fingerprint, entry)
+    try {
+      await entry.promise
+    } finally {
+      if (this.connecting.get(config.name) === entry) this.connecting.delete(config.name)
+    }
+  }
+
+  async #connect(config, signal, fingerprint, entry) {
+    let client
+    try {
+      client = createClient(config, { env: this.env })
+      await client.connect(signal)
+      const discovered = await listAllTools(client, signal)
+      // 会话已释放，或同一服务在握手期间又发起了新配置的连接：这一次的结果作废。
+      if (this.closed || this.connecting.get(config.name) !== entry) {
+        client.close()
+        return
+      }
+      this.clients.set(config.name, client)
+      this.configs.set(config.name, fingerprint)
+      this.failures.delete(config.name)
+      for (const tool of discovered) {
+        const fqName = `mcp__${config.name}__${sanitizeName(tool.name, `tool-${this.tools.size}`)}`
+        if (this.tools.has(fqName)) continue
+        this.tools.set(fqName, {
+          name: fqName,
+          description: `[MCP:${config.name}] ${tool.description || tool.name}`.slice(0, 1024),
+          inputSchema: tool.inputSchema,
+          server: config.name,
+          original: tool.name,
+        })
+      }
+      this.log.info?.(`deva: MCP ${config.name} 已连接，工具 ${discovered.length} 个`)
+    } catch (error) {
+      try { client?.close() } catch { /* 已经关闭 */ }
+      if (this.closed || this.connecting.get(config.name) !== entry) return
+      const message = error?.message || String(error)
+      this.failures.set(config.name, message)
+      this.problems.push(`${config.name}: ${message}`)
+      this.log.warn?.(`deva: MCP ${config.name} 连接失败：${message}`)
+    }
   }
 
   definitions() { return [...this.tools.values()] }
@@ -509,12 +592,15 @@ export class McpPool {
     return await spillText(flat.text, MAX_TEXT, { runtimeDir, label: 'mcp' })
   }
 
-  /** 本轮结束后断开：凭证随本轮失效，不跨轮保留连接。 */
+  /** 会话释放时断开全部连接；普通轮次结束不再调用，连接留给下一轮复用。 */
   close() {
+    this.closed = true
     for (const client of this.clients.values()) {
       try { client.close() } catch { /* 已经关闭 */ }
     }
     this.clients.clear()
     this.tools.clear()
+    this.configs.clear()
+    this.failures.clear()
   }
 }

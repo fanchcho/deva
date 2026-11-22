@@ -145,8 +145,10 @@ if (CREATE_USER) {
   const otherConfig = await oc.invoke('config:get')
   const isolated = !(otherConfig.value?.models?.providers ?? []).some((p) => p.id === 'mock')
   check('新用户配置隔离', isolated)
+  // 断言「被拒」即可：网关闸门报「超出」，后端 fs-guard 报「不在已打开的项目内」——
+  // 两道闸门都在，错误文案取决于哪一道先拦（配了 DEVA_WEB_ROOTS 时走后者），不能只认一种措辞。
   const forbidden = await oc.invoke('fs:read-dir', [ws])
-  check('跨用户路径被拒绝', forbidden.ok === false && /超出/.test(forbidden.error ?? ''), JSON.stringify(forbidden))
+  check('跨用户路径被拒绝', forbidden.ok === false && /超出|拒绝访问/.test(forbidden.error ?? ''), JSON.stringify(forbidden))
 }
 
 console.log(`\nRESULT pass=${pass} fail=${fail}`)

@@ -185,13 +185,22 @@ function runGitRaw(
 ): Promise<RunResult> {
   const git = resolveGitPath()
   if (!git) return Promise.resolve({ code: -1, stdout: '', stderr: 'git-not-found' })
+  // core.quotepath=false：diff/log 里的中文路径按原文输出，不再转成 \346\226\207 这种八进制转义。
+  // LC_ALL 用 C.UTF-8 而不是 C：C 是 ASCII 区域，非 ASCII 文件名会被替换/转义。
+  const locale = process.platform === 'win32' ? process.env.LC_ALL : 'C.UTF-8'
+  const argv = ['-c', 'core.quotepath=false', ...args]
   return new Promise((res) => {
     const child = execFile(
       git,
-      args,
+      argv,
       {
         cwd,
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C' },
+        env: {
+          ...process.env,
+          GIT_TERMINAL_PROMPT: '0',
+          GIT_OPTIONAL_LOCKS: '0',
+          ...(locale ? { LC_ALL: locale } : {})
+        },
         maxBuffer: MAX_BUFFER,
         timeout,
         windowsHide: true

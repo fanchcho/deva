@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  findRepetition, trailingRepetition, watchRepetition, cutTrailingRepetition,
+  trailingRepetition, watchRepetition, cutTrailingRepetition,
 } from '../lib/repetition.mjs'
 import { runAgentTurn } from '../lib/loop.mjs'
 
@@ -59,15 +59,6 @@ async function stream(request, text) {
 }
 
 const input = { input: [{ type: 'text', text: '写点东西' }], history: [], instructions: [], options: {} }
-
-test('findRepetition flags verbatim loops but not incrementing lists', () => {
-  const hit = findRepetition(LOOPING)
-  assert.ok(hit)
-  assert.equal(hit.period, UNIT.length)
-  const list = Array.from({ length: 40 }, (_, i) => `${i + 1}. 第 ${i + 1} 项：内容各不相同`).join('\n')
-  assert.equal(findRepetition(list), null)
-  assert.equal(findRepetition('正常的一段回复，没有重复。'), null)
-})
 
 test('trailingRepetition only looks at the tail', () => {
   const text = `开头正常。\n${LOOPING}`

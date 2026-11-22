@@ -12,6 +12,7 @@
  */
 
 import { DsmlGuard, settleDsml } from './dsml.mjs'
+import { SseParser } from './sse.mjs'
 
 const ANTHROPIC_VERSION = '2023-06-01'
 
@@ -44,38 +45,22 @@ async function readError(response) {
   return `模型请求失败：HTTP ${response.status}${body ? ` ${body}` : ''}`
 }
 
-/** 逐帧读 SSE，容忍 CRLF 与跨块截断。 */
+/** 逐帧读 SSE，容忍 CRLF、跨块截断与没有空行收尾的尾帧。 */
 export async function* sseFrames(response) {
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
-  let buffer = ''
-  const drain = () => {
-    const frames = []
-    let index
-    while ((index = buffer.indexOf('\n\n')) >= 0) {
-      frames.push(buffer.slice(0, index))
-      buffer = buffer.slice(index + 2)
-    }
-    return frames
-  }
+  const parser = new SseParser()
+  const payloads = frames => frames
+    .map(frame => frame.data.trim())
+    .filter(data => data && data !== '[DONE]')
   try {
     while (true) {
       const { value, done } = await reader.read()
       if (done) break
-      buffer += decoder.decode(value, { stream: true }).replaceAll('\r\n', '\n')
-      for (const frame of drain()) {
-        const data = frame.split('\n').filter(line => line.startsWith('data:'))
-          .map(line => line.slice(5).trimStart()).join('\n').trim()
-        if (!data || data === '[DONE]') continue
-        yield data
-      }
+      for (const data of payloads(parser.push(decoder.decode(value, { stream: true })))) yield data
     }
-    buffer += decoder.decode()
-    for (const frame of drain()) {
-      const data = frame.split('\n').filter(line => line.startsWith('data:'))
-        .map(line => line.slice(5).trimStart()).join('\n').trim()
-      if (data && data !== '[DONE]') yield data
-    }
+    for (const data of payloads(parser.push(decoder.decode()))) yield data
+    for (const data of payloads(parser.flush())) yield data
   } finally {
     // 调用方提前 break（复读掐断）时真正关掉连接，别把剩下的流读完再丢。
     try { await reader.cancel() } catch { /* 已经结束或已释放 */ }
