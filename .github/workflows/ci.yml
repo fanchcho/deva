@@ -47,6 +47,9 @@ jobs:
 
       - run: pnpm typecheck
 
+      # 主进程纯逻辑单测（node --test + 原生 type stripping，electron 由 test/support 里的替身提供）。
+      - run: pnpm test:desktop
+
       - run: pnpm build
 
       # web 层构建：复用上一步产出的 renderer，把 preload 打成浏览器 shim、主进程服务打成 CJS bundle。

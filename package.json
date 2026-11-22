@@ -14,6 +14,7 @@
     "start": "pnpm --filter @deva/desktop start",
     "start:web": "pnpm --filter @deva/web start",
     "typecheck": "pnpm --filter @deva/desktop typecheck && pnpm --filter @deva/web typecheck",
+    "check:versions": "node out/check-versions.mjs",
     "lint": "eslint .",
     "package:win": "pnpm --filter @deva/desktop build:win",
     "package:mac": "pnpm --filter @deva/desktop build:mac",
