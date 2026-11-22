@@ -1,4 +1,5 @@
-# PR 与推到 main 时做类型检查 + 构建，挡住编不过的改动。打包与发版仍由 release.yml 负责。
+# PR 与推到 main 时做类型检查 + 构建 + lint + Web 层回归，挡住编不过 / 跑不对的改动。
+# 打包与发版仍由 release.yml 负责。
 name: CI
 
 on:
@@ -18,7 +19,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     env:
-      # 只做类型检查和 electron-vite 构建，用不到 Electron 二进制，跳过下载以加快安装
+      # 只做类型检查和 electron-vite / esbuild 构建，用不到 Electron 二进制，跳过下载以加快安装
       ELECTRON_SKIP_BINARY_DOWNLOAD: 1
     steps:
       - uses: actions/checkout@v5
@@ -32,6 +33,94 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # 语法兜底：.mjs 不经 tsc / 打包，单独做一次解析检查。范围 = 仓库内所有提交的脚本与源码
+      # （node_modules、构建产物、证据目录、插件里的第三方模板除外）。
+      - name: node --check (JS/ESM 语法)
+        run: |
+          mapfile -t files < <(git ls-files '*.mjs' '*.js' | grep -v -E '^(apps/desktop/out|out|\.tmp)/' || true)
+          echo "检查 ${#files[@]} 个文件"
+          for f in "${files[@]}"; do
+            node --check "$f" || { echo "语法错误: $f"; exit 1; }
+          done
+
+      - run: pnpm lint
+
       - run: pnpm typecheck
 
       - run: pnpm build
+
+      # web 层构建：复用上一步产出的 renderer，把 preload 打成浏览器 shim、主进程服务打成 CJS bundle。
+      - run: pnpm --filter @deva/web build
+
+      # 插件单测：plugins/deva-agent 不在 pnpm workspace 里（in-place node --test）。
+      # 全部用本地临时目录与假 host，不访问外网。
+      - name: deva-agent 插件单测
+        working-directory: plugins/deva-agent
+        run: node --test tests/*.test.mjs
+
+  # 端到端回归：起一个真实 Web 实例（不需要 Chromium：浏览器能力是惰性启动的；
+  # 终端用 @lydell/node-pty 的 linux-x64 预编译包，无 npm 编译步骤）。
+  web-e2e:
+    runs-on: ubuntu-latest
+    needs: check
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm build
+      - run: pnpm --filter @deva/web build
+
+      - name: 启动实例
+        run: |
+          node apps/web/server.mjs > /tmp/deva-web.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://127.0.0.1:7080/healthz; then break; fi
+            sleep 1
+          done
+          curl -fsS -o /dev/null http://127.0.0.1:7080/healthz || {
+            echo '实例未就绪'; tail -50 /tmp/deva-web.log; exit 1; }
+        env:
+          DEVA_WEB_DATA: ${{ runner.temp }}/deva-web-data
+          DEVA_WEB_ADMIN_PASSWORD: ci-pass
+          DEVA_UPDATE_CHECK_MINUTES: '-1'
+
+      - name: 冒烟（登录 / CSRF / 闸门 / 工作区读写 / 用户隔离 / PTY 回显）
+        env:
+          BASE: http://127.0.0.1:7080
+          ADMIN_USER: admin
+          ADMIN_PASSWORD: ci-pass
+          SMOKE_CREATE_USER: '1'
+        working-directory: apps/web
+        run: node test/smoke.mjs
+
+      - name: 路径闸门与安全回归探针
+        env:
+          BASE: http://127.0.0.1:7080
+          ADMIN_PASSWORD: ci-pass
+        run: |
+          node out/probe.mjs
+          node out/git-e2e.mjs
+          node out/channel-coverage.mjs
+          node out/browse-check.mjs
+          node out/icon-check.mjs
+
+      - name: 失败时输出服务日志
+        if: failure()
+        run: tail -200 /tmp/deva-web.log
+
+  # 明确不覆盖的部分（不是漏跑，是本环境确实跑不了）。这里只声明，不执行。
+  #   · 浏览器能力（Chromium/CDP）：Web 后端的 browser 模块在首次真正开页时才拉起系统 Chromium
+  #     （apps/web/src/backend/chromium.mjs 的 ensureBrowser 是惰性的），所以上面的启动 / 探针都不需要它；
+  #     但真正「开一个网页」的断言要 Chromium，runner 上没有预装，故未纳入 CI
+  #     （仓库现有探针/冒烟也都不含浏览器断言，所以本工作流没有任何「假装修过」的浏览器覆盖）。
+  #   · Docker 镜像：本仓库没有可用的 docker 服务，镜像构建与容器内降权 entrypoint 未实测。

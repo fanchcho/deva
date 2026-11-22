@@ -8,10 +8,25 @@ out/
 .vite/
 *.tsbuildinfo
 
-# Logs
-*.log
-npm-debug.log*
-pnpm-debug.log*
+# 根目录 out/ 是回归脚本与验证证据（apps/desktop/out 等构建产物仍整体忽略）。
+# 只放行脚本、报告与 out/logs 下的纯文本证据：CI 需要脚本，报告与日志用来复核结论。
+!/out/
+/out/*
+!/out/*.mjs
+!/out/*.md
+!/out/*.sh
+# Crash dumps
+core
+core.*
+
+# 生成的工程梳理快照：体积大、随代码很快过期，不入库。
+# 插件检测到工作区里有这些文件才把入口写进提示词（见 plugins/deva-agent/lib/project.mjs）。
+docs/FUNCTION-INDEX.md
+docs/PROJECT-MAP.md
+docs/PROJECT-MAP-FUNCTIONS-*.md
+
+# 验证证据（本地产物，不入库；CI 脚本与报告见根目录 out/）
+.evidence/
 
 # OS / Editor
 .DS_Store
