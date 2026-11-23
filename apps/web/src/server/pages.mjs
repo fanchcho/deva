@@ -124,7 +124,9 @@ export function adminPage({ user, users, audit = [], error = '', notice = '', cs
   const aheadText = up.aheadBy ? ` · 落后 ${up.aheadBy} 个提交` : ''
   const commitText = up.currentShort || up.current || 'unknown'
   const latestText = up.latestShort || up.latest || 'unknown'
-  const updateCommand = `DEVA_REF=${up.latest || '<new-sha>'} docker compose build && docker compose up -d`
+  // 默认部署形态跑 registry 镜像：先在服务器上拉起最新镜像，watchtower 会在下个轮询周期接管。
+  // 本地源码构建的另一条路是 scripts/redeploy.sh，不再把 build 命令直接塞给用户。
+  const updateCommand = 'docker compose pull deva-web && docker compose up -d'
 
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
@@ -157,7 +159,7 @@ ${ICON_LINKS}
     ${
       up.updateAvailable
         ? `<pre>${escapeHtml(updateCommand)}</pre>
-    <p class="sub" style="margin-top:-8px">Docker 镜像里的代码是构建时固化的，更新需要重新 build（不会动 <code>deva-data</code> 卷）。<a href="${escapeHtml(
+    <p class="sub" style="margin-top:-8px">镜像构建时固化了代码：上面这行拉取 registry 里的新镜像并重建容器（不会动 <code>deva-data</code> 卷）。<a href="${escapeHtml(
       up.compareUrl
     )}" target="_blank" rel="noreferrer">查看提交对比</a></p>`
         : ''

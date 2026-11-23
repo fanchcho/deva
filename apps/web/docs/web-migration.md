@@ -139,8 +139,9 @@ SMOKE_CREATE_USER=1 SMOKE_NEW_USER=smoke$(date +%H%M%S) node test/smoke.mjs
 - 结果三处消费：`GET /api/update`（仅管理员）、`/admin` 的「版本更新」卡片、
   管理员主界面左下角角标；配置 webhook 时同一 commit 只推一次（`state/update-state.json`）。
 
-只检测、不自动更新。更新 = 在仓库根 `git pull` 后 `cd apps/web && docker compose up -d --build`，
-数据卷 `deva-data` 不受影响。检查失败只写 `state.error`，不影响服务。
+只检测、不自动更新。更新走两条链路之一：CI 推送新镜像后由 `watchtower` 自动 pull + 重启；
+或在服务器上用 `scripts/redeploy.sh` 以当前源码构建部署。数据卷 `deva-data` 不受影响。
+检查失败只写 `state.error`，不影响服务。详见 `out/OPS.md`。
 
 ## 安全边界（必须读）
 
@@ -165,7 +166,7 @@ SMOKE_CREATE_USER=1 SMOKE_NEW_USER=smoke$(date +%H%M%S) node test/smoke.mjs
 - stdio MCP 依赖容器内可用的命令；桌面专属 MCP 需自行补依赖。
 - **Docker 镜像未在本机实跑**：开发环境没有 Docker 守护进程。Dockerfile 的每一步
   （COPY 源码 → pnpm install --frozen-lockfile → pnpm build → `pnpm --filter @deva/web build`
-  → 原生模块解引用 → 按同样绝对路径启动）已在本地等价验证；首次 `docker compose up -d --build` 请预留
+  → 原生模块解引用 → 按同样绝对路径启动）已在本地等价验证；首次 `scripts/redeploy.sh` 请预留
   构建时间并检查日志。入口脚本的「root 修属主 → 降权」用本地 uid 模拟验证过
   （root → nobody，含首次 chown 与二次跳过）。
 

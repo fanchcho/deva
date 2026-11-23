@@ -210,7 +210,7 @@ export class UpdateChecker {
       `最新: ${this.state.latestShort}${this.state.aheadBy ? ` (+${this.state.aheadBy})` : ''}`,
       this.state.latestMessage ? `提交: ${this.state.latestMessage}` : '',
       `对比: ${this.state.compareUrl}`,
-      `更新: DEVA_REF=${this.state.latest} docker compose build && docker compose up -d`
+      `更新: docker compose pull deva-web && docker compose up -d`
     ]
     return lines.filter(Boolean).join('\n')
   }
