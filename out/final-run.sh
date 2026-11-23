@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# 第三轮收尾整体复跑：与 CI 三个 job（check / web-e2e / docker）同一套命令，另加本机静态校验。
+# 整体复跑：与 CI 的 job（check / web-e2e）同一套命令，另加本机静态校验与镜像发布配置校验。
+# 默认把输出写到 out/logs/28-...，可用 OUT=out/logs/xx.txt 覆盖（新一轮别覆盖旧证据）。
 # 用法：bash out/final-run.sh            （默认端口 7215）
 #       PORT=7225 bash out/final-run.sh  （端口被占用时换一个）
 # 依赖：已在仓库根执行过 pnpm install；pnpm 可用（本机若无 pnpm 命令，见 REPORT §8.1 的 corepack 说明）。
@@ -9,7 +10,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
 
 PORT="${PORT:-7215}"
-OUT=out/logs/28-final-full-run-round3-close.txt
+OUT="${OUT:-out/logs/28-final-full-run-round3-close.txt}"
 LOG="${TMPDIR:-/tmp}/deva-web-${PORT}.log"
 
 if ! command -v pnpm >/dev/null 2>&1; then
@@ -18,7 +19,7 @@ if ! command -v pnpm >/dev/null 2>&1; then
 fi
 
 main() {
-echo "# 第三轮收尾整体复跑（与 CI 三个 job 同命令，本地执行）"
+echo "# 整体复跑（与 CI 同命令，本地执行）"
 echo "时间: $(date -Iseconds)  分支: $(git rev-parse --abbrev-ref HEAD)  HEAD: $(git rev-parse --short HEAD)"
 echo
 
@@ -98,10 +99,30 @@ kill "$SRV" 2>/dev/null
 wait "$SRV" 2>/dev/null
 
 echo
-echo '# Docker 资产静态校验（本机无 daemon，只做静态断言；真构建见 CI 的 docker job）'
+echo '# Docker / compose / 镜像发布静态校验（本机无 daemon，只做静态断言；真构建见 image.yml）'
 node out/docker-check.mjs > /tmp/docker-check.out 2>&1
 echo "exit=$?  $(grep -E 'RESULT' /tmp/docker-check.out | tail -1)"
 grep -q 'fail=0' /tmp/docker-check.out || { echo '!! Docker 静态校验有失败'; FAIL=1; tail -20 /tmp/docker-check.out; }
+echo
+
+# compose config：本机没有 compose 插件，但独立二进制（若已下载到 /tmp 或 PATH 里）也能解析。
+# 找不到就明确打印 SKIP，不假装跑过。
+COMPOSE_BIN=""
+if docker compose version >/dev/null 2>&1; then COMPOSE_BIN="docker compose"
+elif command -v docker-compose >/dev/null 2>&1; then COMPOSE_BIN="docker-compose"
+elif [ -x /tmp/composebin/docker-compose ]; then COMPOSE_BIN="/tmp/composebin/docker-compose"
+fi
+if [ -n "$COMPOSE_BIN" ]; then
+  for overlay in "" "-f docker-compose.build.yaml"; do
+    echo "\$ $COMPOSE_BIN -f docker-compose.yml $overlay config -q"
+    ( cd apps/web && $COMPOSE_BIN -f docker-compose.yml $overlay config -q )
+    rc=$?
+    echo "exit=$rc"
+    [ "$rc" -eq 0 ] || FAIL=1
+  done
+else
+  echo 'SKIP compose config：本机没有 docker compose 插件 / 独立二进制'
+fi
 echo
 echo '$ cd plugins/deva-agent && node --test tests/*.test.mjs'
 ( cd plugins/deva-agent && node --test tests/*.test.mjs 2>&1 | tail -12 )

@@ -391,6 +391,8 @@ BASE=http://127.0.0.1:7093 ADMIN_PASSWORD=smoke-pass SMOKE_CREATE_USER=1 node te
 | `logs/25-docker-static-check.txt` | 第三轮：Docker 资产静态校验 77 项全 PASS；附本机 `docker info` / `docker build` 的原始报错（无守护进程） |
 | `logs/26-desktop-tests-node22.txt` | 第三轮：同一套单测在 Node 22.22.0（= ci.yml 的 node-version）下 179/179 通过 |
 | `logs/27-desktop-coverage.txt` | 第三轮：desktop 247 个源文件的导入边界统计（92 可导入 / 155 不可，按 4 类原因归类）与已测模块清单 |
+| `logs/32-final-full-run-round4-close.txt` | 第四轮（compose 改造 / watchtower / 镜像发布）收尾整体复跑：install / lint / check:versions / test:desktop 179 / typecheck×2 / build×2 / node --check / 启动自检 22 步 162 channels / 6 个回归脚本 82 项 / Docker+compose+workflow 静态 133 项 / compose config ×2 / 插件 158 → `OVERALL_FAIL=0` |
+| `logs/31-compose-watchtower-static.txt` | 第四轮：本机 docker 能力、独立 compose v2.40.3 对基础/覆盖层/回滚变量三种 config 解析、133 项静态断言、两个 workflow 的结构解析 |
 | `logs/30-push-evidence.txt` | 第三轮：提交列表、`git push -u fork`（普通 push）原始输出、推送后 HEAD / 远端 ref 一致性的实测，以及 CI 不可读的原因排查命令 |
 | `logs/29-clean-checkout-verify.txt` | 第三轮：`git worktree --detach` 只含已提交文件的干净检出，`pnpm install --frozen-lockfile` 后 lint / check:versions / test:desktop（179）/ typecheck×2 / build×2 / docker-check（77）/ 插件单测（158）全部 exit=0 |
 | `logs/28-final-full-run-round3-close.txt` | 第三轮收尾整体复跑：install / lint / check:versions / test:desktop / typecheck×2 / build×2 / node --check 71 / 启动自检 22 步 + 162 channels / 6 个回归脚本 82 项 / Docker 静态 77 项 / 插件 158 项 → `OVERALL_FAIL=0` |
@@ -763,3 +765,111 @@ $ git rev-list --count fork/main..HEAD
 - 要看到真实 runner 结论，需要在 `sqfcyily/deva` 上对本分支开 PR（或合进 `main`），再用有权限的账号查看 run。本机能提供的只有「与 CI 同命令」的本地等价执行：`logs/28`（工作区，`OVERALL_FAIL=0`）与 `logs/29`（干净检出 worktree，全项 exit=0）。
 
 原始命令与输出另存：`out/logs/30-push-evidence.txt`。
+
+
+---
+
+## 9. 第四轮：源码改动 → 自动更新（镜像发布 + watchtower）
+
+### 9.1 物理事实（贯穿实现与文档）
+
+watchtower 只监视**镜像仓库里的 digest 变化**，看不到宿主机上的源码文件。因此「改源码
+自动更新」必须先把源码变成新镜像。本轮实现两条链路，缺一不可：
+
+- **A 主链路**：`git push` → `.github/workflows/image.yml` 构建并推送 `ghcr.io/<owner>/<repo>`
+  → watchtower 轮询 registry → digest 变 → `pull` + 重建容器。
+- **B 备用链路**：服务器本地 `scripts/redeploy.sh` → `docker compose build && up -d`，
+  产出 `deva-web:local` 镜像，不经过 registry（watchtower 看不到它）。
+
+### 9.2 只读对账结果（实测）
+
+| 项 | 实测值 |
+|---|---|
+| 仓库根 Dockerfile | **不存在**；镜像定义在 `apps/web/Dockerfile`（两阶段 `builder`/`runtime`） |
+| compose 文件 | 只有 `apps/web/docker-compose.yml`；仓库根无 `docker-compose*.yml` |
+| 原 compose 形态 | `build.context: ../..` + `image: deva-web:latest` —— 默认 `up` 就会本地构建 |
+| CI 原 docker job | `ci.yml` 里 `push: false`、无 login、无 tag，只证明能编译 |
+| 版本事实源 | `apps/desktop/package.json` = `0.1.16`，`apps/web` 跟随；`out/check-versions.mjs` 断言 |
+| `git remote -v` | `origin` = `https://github.com/sqfcyily/deva.git`；`fork` = `git@github.com:fanchcho/deva.git` |
+| ghcr 路径 | 取 `origin` 的真实 owner/repo：`ghcr.io/sqfcyily/deva` |
+| HEAD / dirty | `61f6a35`，工作区干净 |
+
+补充核对：`sqfcyily/deva` 是 public 仓库（GitHub API `visibility: public`），所以默认包也是
+public；`ghcr.io/v2/sqfcyily/deva/tags/list` 当前返回 `401 DENIED`——说明**这个包还不存在**
+（首次 `image.yml` 推送后才会创建），不是权限配置错误。
+
+### 9.3 交付物清单
+
+| # | 文件 | 内容 |
+|---|---|---|
+| 1 | `.github/workflows/image.yml`（新增） | ghcr 发布：`pull_request`（只构建）/ push `main` / push `feat/plugin-deva-agent` / `v*` / `workflow_dispatch`；tag 集 `latest`（仅 main）、`edge`（仅集成分支）、`sha-<short>`、`<version>`、`v*`；`packages: write` + `GITHUB_TOKEN`；buildx + gha 缓存；仅 `linux/amd64` |
+| 2 | `.github/workflows/ci.yml`（改） | 删除原有 `push:false` 的 `docker` job，避免两套构建漂移；尾部注释改为「镜像构建见 image.yml」并保留「容器运行期未实测」的声明 |
+| 3 | `apps/web/docker-compose.yml`（改） | `image: ${DEVA_WEB_IMAGE:-ghcr.io/sqfcyily/deva:latest}`、`pull_policy: always`、默认不含 `build`；新增 `watchtower` 服务；env/端口/卷/`shm_size`/`no-new-privileges` 全部保留 |
+| 4 | `apps/web/docker-compose.build.yaml`（新增） | 本地构建覆盖层：`build.context: ../..`、`image: deva-web:local`、`pull_policy: build` |
+| 5 | `scripts/redeploy.sh`（新增） | 备用链路 B：叠加覆盖层构建 + `up -d` + 等健康检查；`--pull` / `--no-cache` / `--help` |
+| 6 | `out/OPS.md`（新增） | 链路图、首次部署、两种更新方式、回滚（sha-/版本/digest）、私有包两种做法、常见故障、级联重启边界、本机不可自证项 |
+| 7 | `out/docker-check.mjs`（扩展 77 → **133** 项） | 新增：默认不含 build、镜像引用 ghcr、`pull_policy`、env 项完整性、卷名与 project name、watchtower（固定 tag / scope / label / socket ro / cleanup / 轮询 / 不自升级 / 无端口 / 无 depends_on）、build 覆盖层、image.yml 的触发/权限/tag/缓存/平台、ci.yml 不再重复构建、redeploy.sh 与 OPS.md 的存在性与关键内容、旧 `docker compose build` 提示不再残留 |
+| 8 | `apps/web/README.md`、`apps/web/docs/web-migration.md`（改） | 默认部署改为 `docker compose up -d`（不构建）；更新方式改为主线 A / 备用 B；补充卷名 `web_deva-data` 的坑 |
+| 9 | `apps/web/src/server/pages.mjs`、`src/server/updater.mjs`（改） | 管理页与 webhook 的更新提示由 `docker compose build && up -d` 改为 `docker compose pull deva-web && docker compose up -d` |
+
+### 9.4 关键设计取舍
+
+**watchtower 版本**：`containrrr/watchtower` 仓库已 archived（最后 push 2025-12-17），
+最后 release 是 **v1.7.1（2023-11-11）**。Hub 上 `1.7.1` 有 amd64/arm64/386/arm 多架构。
+用固定 tag `containrrr/watchtower:1.7.1` 而不是 `:latest`——否则 watchtower 镜像自身变更时
+可能在升级途中自我重启。这一点在 compose 注释里写明了。
+
+**scope 隔离**：`/var/run/docker.sock` 是共享的，没有 scope 的 watchtower 会扫同主机上
+所有容器。compose 里 `watchtower` 与 `deva-web` 都设 `com.centurylinklabs.watchtower.scope: deva`，
+watchtower 用 `WATCHTOWER_SCOPE=deva`，从而互不干扰。依据是 watchtower 源码
+`pkg/filters/filters.go` 的 `FilterByScope`（无 scope 的容器被视为 `none`）。
+
+**label 白名单**：`WATCHTOWER_LABEL_ENABLE=true` + `deva-web` 的
+`com.centurylinklabs.watchtower.enable: "true"`。双保险：即使 scope 写错，没有 enable label
+的容器也不会被动。watchtower 自身**不带** `enable=true`（`IsWatchtower()` 也会跳过它）。
+
+**私有包凭据**：核对 watchtower 1.7.1 的 `internal/flags/flags.go`，**不存在**
+`WATCHTOWER_REGISTRY_AUTH` 这个环境变量；凭据来源是 `DOCKER_CONFIG` 目录下的 `config.json`。
+因此 compose 预留了 `${HOME}/.docker/config.json:/config.json:ro` 的注释挂载 + `DOCKER_CONFIG=/config`，
+文档给了「改 public（最省事）」与「挂只读凭据」两种做法。
+
+**多架构**：只出 `linux/amd64`。加 arm64 需要 QEMU 模拟完整构建（pnpm install、apt 装
+chromium、electron-vite 构建），成本在 30–60 分钟量级，且会拖差缓存命中。成本已写进
+image.yml 的注释，需要时改 `platforms:` 即可。
+
+**project name 不改**：compose 的 project name 取目录名（`apps/web` → `web`），卷名因此是
+`web_deva-data`。曾试过显式加 `com.docker.compose.project: deva`，会让卷名变成 `deva_deva-data`
+——旧部署会挂上一个空的新卷，看起来像用户数据全丢。已撤销，并在 compose 注释、README、OPS 文档
+三处写明。
+
+### 9.5 验证结果（本机实测）
+
+| 检查 | 命令 | 结果 |
+|---|---|---|
+| compose 基础形态解析 | `docker-compose -f docker-compose.yml config -q` | exit=0 |
+| compose + 本地构建覆盖层 | `docker-compose -f docker-compose.yml -f docker-compose.build.yaml config -q` | exit=0 |
+| 回滚变量生效 | `DEVA_WEB_IMAGE=ghcr.io/sqfcyily/deva:sha-abc1234 ... config` | 解析出 `sha-abc1234` |
+| 静态断言 | `node out/docker-check.mjs` | **pass=133 fail=0** |
+| workflow 结构 | `js-yaml` 解析 ci.yml / image.yml | `ci.yml jobs=check,web-e2e`；`image.yml jobs=publish`，权限与触发符合预期 |
+| 版本一致性 | `pnpm check:versions` | exit=0（0.1.16） |
+| lint | `pnpm lint` | exit=0 |
+| typecheck | `pnpm typecheck`（desktop + web） | exit=0 |
+| desktop 单测 | `pnpm test:desktop` | 179 pass / 0 fail |
+| 双构建 | `pnpm build` + `pnpm --filter @deva/web build` | exit=0 / exit=0 |
+| 整体复跑 | `OUT=out/logs/32-... bash out/final-run.sh` | **OVERALL_FAIL=0**（含启动自检、82 项回归、插件 158） |
+
+**compose 二进制说明**：本机 `docker` 没有 compose 插件、也没有独立 `docker-compose`。
+为做真实解析（而不是只靠 YAML 语法），下载了官方独立二进制 **v2.40.3（linux-aarch64）** 到
+`/tmp/composebin/docker-compose`。它只做配置解析，不连接 daemon，因此不影响「无 daemon」的事实判定。
+
+### 9.6 本机无法自证的部分（单列）
+
+1. **镜像实际构建与推送**：`image.yml` 只在 GitHub runner 上跑；本机无 docker daemon
+   （`Cannot connect to the Docker daemon at unix:///var/run/docker.sock`），也没有 run id 可查。
+2. **watchtower 真实拉取与重启**：需要真实 registry digest 变化 + 运行中的容器；本机两者都没有。
+   scope / label / cleanup 的语义只按 watchtower 1.7.1 源码与文档做了静态核对，未实跑。
+3. **healthcheck 在容器内的表现**：`HEALTHCHECK` 定义在镜像里，本机无法执行；`redeploy.sh`
+   的健康等待逻辑也没有真实容器可测。
+4. **私有包 401 的真实复现**：本地无凭据、无 daemon，只按 watchtower 文档与 flags 源码确认了
+   凭据来源（`DOCKER_CONFIG` + `config.json`），未做端到端拉取实验。
+5. **CI 在 GitHub runner 上的 run id**：同上，本机无 `gh` / token。

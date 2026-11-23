@@ -1,0 +1,61 @@
+# 第五轮：compose 改造 + watchtower + 镜像发布 workflow 的静态校验记录
+# 时间/分支/HEAD
+时间: 2026-11-23T09:47:54+08:00
+分支: feat/plugin-deva-agent  HEAD: 61f6a35
+dirty: 12 个未提交改动
+
+# 1) 只读对账
+$ git remote -v
+fork	git@github.com:fanchcho/deva.git (fetch)
+fork	git@github.com:fanchcho/deva.git (push)
+origin	https://github.com/sqfcyily/deva.git (fetch)
+origin	https://github.com/sqfcyily/deva.git (push)
+$ git rev-parse --abbrev-ref --symbolic-full-name @{u}
+fork/feat/plugin-deva-agent
+$ node -p "require("./apps/desktop/package.json").version"
+0.1.16
+$ node -p "require("./apps/web/package.json").version"
+0.1.16
+
+# 2) 本机 docker 能力
+$ docker --version
+Docker version 26.1.5+dfsg1, build a72d7cd
+$ docker compose version
+docker: 'compose' is not a docker command.
+See 'docker --help'
+$ docker info (尾部)
+Server:
+ERROR: Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+errors pretty printing info
+
+# 3) 用独立 compose v2.40.3 二进制解析（本机无 compose 插件）
+$ /tmp/composebin/docker-compose version
+Docker Compose version v2.40.3
+$ docker-compose -f docker-compose.yml config -q
+exit=0
+$ docker-compose -f docker-compose.yml -f docker-compose.build.yaml config -q
+exit=0
+$ DEVA_WEB_IMAGE=ghcr.io/sqfcyily/deva:sha-abc1234 ... config（验证回滚用法）
+name: web
+    image: ghcr.io/sqfcyily/deva:sha-abc1234
+    image: containrrr/watchtower:1.7.1
+exit=0
+
+# 4) 静态校验脚本（扩展后）
+$ node out/docker-check.mjs
+PASS OPS.md 给出回滚到 sha- 的方法
+PASS OPS.md 覆盖私有包 401
+PASS pages.mjs 不再提示 docker compose build
+PASS pages.mjs 提示改为 pull + up
+PASS updater.mjs 不再提示 docker compose build
+PASS updater.mjs 提示改为 pull + up
+
+RESULT pass=133 fail=0
+
+# 5) 工作流结构校验
+$ node -e "yaml.parse ci.yml / image.yml"
+.github/workflows/ci.yml jobs= check,web-e2e
+.github/workflows/image.yml jobs= publish
+  on= {"pull_request":null,"push":{"branches":["main","feat/plugin-deva-agent"],"tags":["v*"]},"workflow_dispatch":null}
+  permissions= {"contents":"read","packages":"write"}
+  steps= actions/checkout@v5 | 校验并读取版本号 | docker/setup-buildx-action@v3 | docker/login-action@v3 | docker/metadata-action@v5 | docker/build-push-action@v6 | 输出镜像摘要（回滚时用 digest）
