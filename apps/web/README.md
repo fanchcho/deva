@@ -37,7 +37,7 @@ server.mjs ── 登录 / 用户管理 / 静态托管 / 审计 / 路径闸门
 | `preload/index.ts` + `ipcRenderer` | `dist/shim.js`：`invoke` → `POST /api/invoke`，`on` → `GET /api/events`（SSE） |
 | `app` / `BrowserWindow` / `dialog` / `safeStorage` / `webContents` | `src/backend/electron-shim.mjs` + `chromium.mjs` |
 
-渲染层通过 `window.deva.*` 访问后端的 154 个 IPC 通道，签名与桌面版一致。
+渲染层通过 `window.deva.*` 访问后端的 162 个 IPC 通道，签名与桌面版一致。
 
 ---
 
@@ -45,10 +45,12 @@ server.mjs ── 登录 / 用户管理 / 静态托管 / 审计 / 路径闸门
 
 ### Docker（推荐）
 
+默认跑 registry 里的镜像，不在服务器上编译：
+
 ```bash
 cd apps/web
 export DEVA_WEB_ADMIN_PASSWORD='换成你的强密码'
-docker compose up -d --build
+docker compose up -d
 
 # 首次启动若没设密码，日志里会打印随机初始密码
 docker compose logs deva-web | grep -A2 初始管理员
@@ -56,7 +58,17 @@ docker compose logs deva-web | grep -A2 初始管理员
 
 打开 `http://<服务器IP>:7080`，用 `admin` + 上面的密码登录，然后到 `/admin` 建用户。
 
-镜像构建会：
+compose 里同时起了 `watchtower`：它轮询 `ghcr.io/sqfcyily/deva` 的 digest，
+变了就 pull + 重建 `deva-web`。**watchtower 看不到源码文件**，只认镜像 digest，
+所以「改源码 → 自动更新」的前提是 CI 已经把新镜像推上去（见 `.github/workflows/image.yml`）。
+
+要在服务器上用当前源码自己构建（不经过 registry）：
+
+```bash
+scripts/redeploy.sh          # 等价于叠加 docker-compose.build.yaml 后 build + up -d
+```
+
+镜像构建（CI 或 redeploy）会：
 
 1. 以**仓库根为构建上下文**，直接使用当前 checkout 的源码，不再 `git clone`；
 2. `pnpm install --frozen-lockfile && pnpm build` 构建桌面 renderer；
@@ -67,12 +79,8 @@ docker compose logs deva-web | grep -A2 初始管理员
 避免把本地产物和 core dump 塞进构建上下文；`.git` 保留，用于把 commit 写进
 `dist/build-info.json`。
 
-指定其他版本（先切到对应 commit 再构建）：
-
-```bash
-git checkout <commit>
-cd apps/web && docker compose up -d --build
-```
+指定其他版本：改 `DEVA_WEB_IMAGE`，或用 `scripts/redeploy.sh` 在某个 checkout 上构建。
+完整的更新链路、回滚与故障排查见 [out/OPS.md](../../out/OPS.md)。
 
 ### 有新提交时怎么知道
 
@@ -85,13 +93,12 @@ cd apps/web && docker compose up -d --build
 - 需要主动推送时配 `DEVA_UPDATE_WEBHOOK`（支持 json / slack / discord / telegram），
   同一个 commit 只推一次，记录在 `$DEVA_WEB_DATA/state/update-state.json`。
 
-更新动作本身**不会自动执行**，镜像里的代码是构建时固化的，必须重新 build：
+镜像里的代码是构建时固化的；更新有两种方式：
 
 ```bash
-# 先把仓库拉到最新（Web 与桌面同源）
-git pull
-cd apps/web
-docker compose up -d --build
+# A. 主线：等 CI 把新镜像推到 ghcr，watchtower 在轮询间隔内自动 pull + 重启。
+# B. 备用：在服务器上用当前源码直接构建部署。
+scripts/redeploy.sh --pull
 ```
 
 `deva-data` 卷不动，用户、会话、密钥都保留；工程目录是宿主 bind mount，不受影响。
@@ -170,6 +177,9 @@ services:
       - /srv/projects:/projects
 ```
 
+注意卷名带 compose 的 project 前缀（目录是 `apps/web`，所以实际叫 `web_deva-data`）。
+不要为了「好看」改 project name，否则会挂上一个空的新卷、看起来用户数据全丢了。
+
 老部署如果仍想把工程放在配置卷里，显式设 `DEVA_WEB_ROOTS=/data/workspaces` 即可。
 
 多个宿主目录可以挂成子目录，再把 `/projects` 当根浏览：
@@ -233,7 +243,7 @@ $DEVA_WEB_DATA/
 | 项 | 结果 |
 |---|---|
 | 上游版本 | `109937f` / v0.1.15（renderer、preload shim、主进程 bundle 全部重建） |
-| 后端模块注册 | 21 个模块全部 ok，`154 channels` |
+| 后端模块注册 | 22 个注册步骤全部 ok，`ready: 162 channels` |
 | 冒烟回归 | `test/smoke.mjs`：pass=14 fail=0 |
 | 原 renderer 渲染 | 零改动，登录后完整 UI |
 | 登录 / 会话 / CSRF | 未登录 302，无 CSRF 403，重启服务后旧 Cookie 仍有效 |
@@ -270,10 +280,10 @@ SMOKE_CREATE_USER=1 node test/smoke.mjs
 - rootless Docker 的 uid 映射和镜像里的 1000 对不上。
 
 镜像入口脚本会以 root 起步，把 `$DEVA_WEB_DATA` 的属主修成运行用户后立刻降权，
-所以重建镜像即可自愈：
+所以重建容器即可自愈（镜像本身不用变）：
 
 ```bash
-docker compose up -d --build
+docker compose up -d --force-recreate
 ```
 
 不想重建，直接修现有卷：

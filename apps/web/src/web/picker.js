@@ -357,7 +357,7 @@
       try {
         var msg = JSON.parse(event.data)
         if (msg && msg.channel === 'deva:dir-pick') show(msg.payload)
-      } catch (error) {
+      } catch {
         /* 其他通道的事件忽略 */
       }
     }

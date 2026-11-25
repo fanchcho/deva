@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url'
 import { AuditLog, SessionStore, UserStore, csrfOk, verifyPassword } from './src/server/auth.mjs'
 import { BackendPool } from './src/server/backend-pool.mjs'
 import { adminPage, errorPage, loginPage } from './src/server/pages.mjs'
+import { createStaticHandler } from './src/server/static.mjs'
 import { UpdateChecker } from './src/server/updater.mjs'
 import {
   isInside,
@@ -288,24 +289,6 @@ const pool = new BackendPool({
   }
 })
 
-const MIME = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-  '.woff2': 'font/woff2',
-  '.woff': 'font/woff',
-  '.ttf': 'font/ttf',
-  '.ico': 'image/x-icon',
-  '.map': 'application/json; charset=utf-8'
-}
-
 function sessionOf(req) {
   const cookies = parseCookies(req.headers.cookie)
   const session = sessions.get(cookies[COOKIE])
@@ -438,55 +421,12 @@ function shellScript(username, role) {
 })` 
 }
 
-// Web 层自有静态资源（Renderer 产物之外的那些），统一放 src/web，按扩展名给 MIME。
-const WEB_ASSETS = new Set(['/mobile.css', '/picker.css', '/picker.js', '/favicon.svg', '/favicon.ico'])
-
-async function serveStatic(req, res, urlPath) {
-  if (WEB_ASSETS.has(urlPath)) {
-    try {
-      const file = path.join(here, 'src', 'web', urlPath.slice(1))
-      const body = await fsp.readFile(file)
-      res.writeHead(200, {
-        'content-type': MIME[path.extname(urlPath).toLowerCase()] ?? 'application/octet-stream',
-        // 样式/脚本随版本变化，不许缓存；图标是静态标识，允许短缓存。
-        'cache-control': urlPath.endsWith('.css') || urlPath.endsWith('.js') ? 'no-store' : 'public, max-age=3600',
-        'x-content-type-options': 'nosniff'
-      })
-      res.end(body)
-    } catch {
-      json(res, 404, { ok: false, error: 'not found' })
-    }
-    return
-  }
-  let decoded
-  try {
-    decoded = urlPath === '/' ? 'index.html' : decodeURIComponent(urlPath)
-  } catch {
-    // 畸形百分号转义（/%E0%A4%A）是客户端错误，不是 500
-    json(res, 400, { ok: false, error: 'bad request path' })
-    return
-  }
-  const rel = decoded.replace(/^\/+/, '')
-  const root = path.resolve(manifest.rendererDir)
-  const abs = path.resolve(root, rel)
-  if (!isInside(root, abs)) {
-    json(res, 403, { ok: false, error: 'forbidden' })
-    return
-  }
-  try {
-    const data = await fsp.readFile(abs)
-    const ext = path.extname(abs).toLowerCase()
-    const type = MIME[ext] ?? 'application/octet-stream'
-    res.writeHead(200, {
-      'content-type': type,
-      'cache-control': ext === '.html' ? 'no-store' : 'public, max-age=3600',
-      'x-content-type-options': 'nosniff'
-    })
-    res.end(ext === '.html' ? injectIndex(data.toString('utf8')) : data)
-  } catch {
-    json(res, 404, { ok: false, error: 'not found' })
-  }
-}
+// 静态资源（renderer 产物 + src/web 自有文件）：ETag/304 + 流式读取，见 src/server/static.mjs。
+const serveStatic = createStaticHandler({
+  rendererDir: manifest.rendererDir,
+  assetsDir: path.join(here, 'src', 'web'),
+  injectIndex
+})
 
 /**
  * 路径闸门：渲染层发起的 fs / git 通道与终端 cwd 只能落在

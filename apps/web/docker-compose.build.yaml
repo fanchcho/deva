@@ -1,0 +1,25 @@
+# 本地源码构建覆盖层（备用链路 B）。
+#
+# 默认的 docker-compose.yml 只跑 registry 里的镜像，不带 build 段——这是刻意的：
+# 服务器上一条 `docker compose up -d` 不应意外触发几分钟的本地编译。
+# 需要「用当前 checkout 的源码重新构建并部署」时，两文件叠加使用：
+#
+#   cd apps/web
+#   docker compose -f docker-compose.yml -f docker-compose.build.yaml up -d --build
+#
+# 或直接跑封装好的脚本（推荐）：
+#   scripts/redeploy.sh
+#
+# 注意 pull_policy：基础文件是 always（每次核对远程 digest），本地构建必须改成 build，
+# 否则 compose 会先拉一遍远程镜像再把刚构建的镜像丢掉。
+
+services:
+  deva-web:
+    build:
+      # 构建上下文是仓库根：renderer / preload / 主进程都来自同一份源码。
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+    # 本地构建产物用独立 tag，避免覆盖 registry 的 latest 语义：
+    # 服务器上「这个镜像是不是我本地编的」一眼能分辨。
+    image: ${DEVA_WEB_LOCAL_IMAGE:-deva-web:local}
+    pull_policy: build

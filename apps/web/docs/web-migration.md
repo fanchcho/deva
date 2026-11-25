@@ -12,7 +12,7 @@
 | 同步 IPC | 1 处（`config:get-sync`） |
 | 引入 `electron` 的主进程文件 | 32 个 |
 | 渲染层 | React 18，49 个 ts/tsx，零 Electron API 直接调用 |
-| Web 版实际注册通道 | **154 个**（21 个业务模块全部 ok） |
+| Web 版实际注册通道 | **162 个**（22 个注册步骤全部 ok） |
 
 渲染层只通过 `window.deva.*` 一个对象访问后端，因此**前端一行没改**。
 
@@ -34,7 +34,7 @@
 server.mjs
   ├─ /login /logout /admin        账号、角色、密码重置
   ├─ 静态托管 out/renderer        原前端产物，零改动
-  ├─ /api/invoke                  154 通道路由 + 路径闸门 + 审计
+  ├─ /api/invoke                  162 通道路由 + 路径闸门 + 审计
   ├─ /api/events                  按用户隔离的 SSE 事件流
   └─ /healthz
   │  IPC（fork，按用户懒启动，空闲回收）
@@ -102,8 +102,8 @@ worker-host.mjs × N（每用户一个进程）
 | 项 | 证据 |
 |---|---|
 | 上游版本 | `109937f` / v0.1.15，renderer + preload + 主进程 bundle 重建后全部通过 |
-| 后端模块注册 | 21 个模块全部 ok，日志 `ready: 154 channels`，无 failed |
-| 通道清单 | `GET /api/channels` 返回 154 |
+| 后端模块注册 | 22 个注册步骤全部 ok，日志 `ready: 162 channels`，无 failed |
+| 通道清单 | `GET /api/channels` 返回 162 |
 | 冒烟回归 | `test/smoke.mjs`：**pass=14 fail=0** |
 | 登录 / CSRF | 未登录 302；缺 `x-deva-csrf` → 403 |
 | 会话持久化 | 登录后重启服务，旧 Cookie 调 `/api/me` 仍返回 admin |
@@ -139,8 +139,9 @@ SMOKE_CREATE_USER=1 SMOKE_NEW_USER=smoke$(date +%H%M%S) node test/smoke.mjs
 - 结果三处消费：`GET /api/update`（仅管理员）、`/admin` 的「版本更新」卡片、
   管理员主界面左下角角标；配置 webhook 时同一 commit 只推一次（`state/update-state.json`）。
 
-只检测、不自动更新。更新 = 在仓库根 `git pull` 后 `cd apps/web && docker compose up -d --build`，
-数据卷 `deva-data` 不受影响。检查失败只写 `state.error`，不影响服务。
+只检测、不自动更新。更新走两条链路之一：CI 推送新镜像后由 `watchtower` 自动 pull + 重启；
+或在服务器上用 `scripts/redeploy.sh` 以当前源码构建部署。数据卷 `deva-data` 不受影响。
+检查失败只写 `state.error`，不影响服务。详见 `out/OPS.md`。
 
 ## 安全边界（必须读）
 
@@ -165,7 +166,7 @@ SMOKE_CREATE_USER=1 SMOKE_NEW_USER=smoke$(date +%H%M%S) node test/smoke.mjs
 - stdio MCP 依赖容器内可用的命令；桌面专属 MCP 需自行补依赖。
 - **Docker 镜像未在本机实跑**：开发环境没有 Docker 守护进程。Dockerfile 的每一步
   （COPY 源码 → pnpm install --frozen-lockfile → pnpm build → `pnpm --filter @deva/web build`
-  → 原生模块解引用 → 按同样绝对路径启动）已在本地等价验证；首次 `docker compose up -d --build` 请预留
+  → 原生模块解引用 → 按同样绝对路径启动）已在本地等价验证；首次 `scripts/redeploy.sh` 请预留
   构建时间并检查日志。入口脚本的「root 修属主 → 降权」用本地 uid 模拟验证过
   （root → nobody，含首次 chown 与二次跳过）。
 

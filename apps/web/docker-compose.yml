@@ -1,10 +1,21 @@
+# 生产部署形态：跑的是 registry 里的镜像，不在服务器上编译源码。
+#
+# 更新链路（两条，互相独立）：
+#   A. 主链路：源码 → CI 构建并推送 ghcr.io/sqfcyily/deva → watchtower 轮询 registry
+#      → digest 变了就 pull + 用新镜像重建容器。
+#   B. 备用链路：服务器上直接改源码 → scripts/redeploy.sh（compose build + up -d）。
+#      本地构建要用 compose.build.yaml 覆盖本文件，见该脚本。
+#
+# 物理事实（不要在文档/注释里含糊）：watchtower 只看镜像仓库里的 digest，
+# 它看不到宿主机上的源码文件。所以「改完源码自动生效」必须先把源码变成新镜像（A 或 B），
+# watchtower 只负责 A 里「新镜像已在 registry 里」之后的拉取与重启。
+
 services:
   deva-web:
-    build:
-      # 构建上下文是仓库根：renderer / preload / 主进程都来自同一份源码。
-      context: ../..
-      dockerfile: apps/web/Dockerfile
-    image: deva-web:latest
+    # 默认拉远程镜像。DEVA_WEB_IMAGE 可覆盖成私有 registry / 指定 sha- 版本（回滚用）。
+    image: ${DEVA_WEB_IMAGE:-ghcr.io/sqfcyily/deva:latest}
+    # 每次 up 都去 registry 核对 digest：服务器重启 / 手动 up 时不会用到过期的本地镜像。
+    pull_policy: always
     container_name: deva-web
     restart: unless-stopped
     init: true
@@ -31,7 +42,8 @@ services:
       DEVA_UPDATE_TELEGRAM_CHAT_ID: ${DEVA_UPDATE_TELEGRAM_CHAT_ID:-}
       TZ: ${TZ:-Asia/Shanghai}
     volumes:
-      # 配置目录：用户、会话、审计、每用户 .deva（DEVA_HOME），跟工程目录分开
+      # 配置目录：用户、会话、审计、每用户 .deva（DEVA_HOME），跟工程目录分开。
+      # 换镜像/重建容器都不动它。
       - deva-data:/data
       # 工程目录：宿主真实目录直接挂进来，同时作为默认工作区
       - ${DEVA_PROJECTS_DIR:-./projects}:/projects
@@ -39,6 +51,56 @@ services:
     shm_size: "1gb"
     security_opt:
       - no-new-privileges:true
+    labels:
+      # 注意：compose 的 project name 取目录名（apps/web → web），卷名是 web_deva-data。
+      # 这里不覆盖 project name，避免现有部署的数据卷被换成另一个名字而「看不见」旧数据。
+      # ① scope：同一个 docker socket 上可能还有别的栈的 watchtower。
+      #    watcher 只认同 scope 的容器，这条 label 必须和下面 watchtower 的 WATCHTOWER_SCOPE 一致。
+      com.centurylinklabs.watchtower.scope: deva
+      # ② enable 白名单：只有 true 的容器会被更新（watchtower 打开 WATCHTOWER_LABEL_ENABLE）。
+      #    即使 scope 写错，没有这条 label 的容器也不会被动。
+      com.centurylinklabs.watchtower.enable: "true"
+
+  # watchtower：只监视本栈的 deva-web 容器，digest 变化时 pull + 重建。
+  watchtower:
+    # 固定 tag：不要用 :latest，否则 watchtower 自己的镜像变了会在升级途中自我重启。
+    # 1.7.1 是 containrrr/watchtower 的最后一个 release（仓库已 archived），多架构。
+    image: containrrr/watchtower:1.7.1
+    container_name: deva-watchtower
+    restart: unless-stopped
+    # 不给 watchtower 更新自己：固定 tag + 不在 scope/label 白名单里，
+    # 而且它带着固定 label，watchtower 自身会跳过 IsWatchtower 容器。
+    volumes:
+      # 只读挂 docker.sock：watchtower 需要 pull / stop / start，写权限是必须的，
+      # 这里 ro 只是防止它误改 socket 文件本身（Docker 的 sock 权限由 daemon 决定）。
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # 私有包才需要：把宿主 ~/.docker/config.json 只读挂进来，watchtower 用它拉私有镜像。
+      # 包设为 public 时这行可以整段注释掉（见 out/OPS.md「私有包」一节）。
+      # - ${HOME}/.docker/config.json:/config.json:ro
+    environment:
+      # 轮询间隔（秒）。默认 300 秒太频繁，GitHub CDN 也有缓存；15 分钟是折中。
+      WATCHTOWER_POLL_INTERVAL: ${WATCHTOWER_POLL_INTERVAL:-900}
+      # 更新后删掉旧镜像，避免磁盘被 history 撑满。
+      WATCHTOWER_CLEANUP: "true"
+      # 打开 label 白名单：只更新带 com.centurylinklabs.watchtower.enable=true 的容器。
+      WATCHTOWER_LABEL_ENABLE: "true"
+      # scope 隔离：socket 是共享的，没有 scope 的 watchtower 会扫到同主机上所有容器
+      # （包括别的栈的、以及系统里的）。两边 scope 都设为 deva，互不干扰。
+      WATCHTOWER_SCOPE: deva
+      # 拉私有镜像时的 DOCKER_CONFIG 目录（config.json 在 / 也可以，见上面挂载注释）。
+      # 不挂凭据时这行无害，留着方便你直接取消挂载注释即可生效。
+      DOCKER_CONFIG: /config
+      TZ: ${TZ:-Asia/Shanghai}
+    labels:
+      # watchtower 自身也带 scope label，否则会被别的 scope 的实例当成「无 scope」容器。
+      com.centurylinklabs.watchtower.scope: deva
+      # 不给 enable=true：不让任何 watchtower 更新它自己（我们靠固定 tag 手动升级）。
+      # 另：watchtower 源码里 IsWatchtower() 会跳过带 com.centurylinklabs.watchtower=true
+      # 的容器；这里额外注明，避免有人加 enable=true 后误以为它会自升级。
+    # 无端口、无 healthcheck：watchtower 是后台进程，健康与否看日志。
+    # 注意：watchtower 更新容器后不会级联重启 depends_on 依赖的容器。
+    # 本栈目前没有 depends_on；若以后加（比如独立 db），需要给 watchtower 加
+    # --rolling-restart 或者把依赖也放进同一个更新单元，否则 db 更新后 app 不会自动重连。
 
 volumes:
   deva-data:

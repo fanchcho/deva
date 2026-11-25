@@ -4,9 +4,7 @@
  * 这里保持同样的调用形态，底层走 HTTP + SSE。
  */
 
-const pending = new Map()
 const listeners = new Map()
-let nextId = 1
 
 function csrf() {
   return globalThis.__DEVA_CSRF__ ?? ''

@@ -23,9 +23,18 @@ RUN apt-get update \
 RUN corepack enable && corepack prepare pnpm@10.8.0 --activate
 
 WORKDIR /src
-COPY . .
+# 依赖层只依赖清单与 lockfile：源码改动不会让 pnpm install 的缓存失效。
+# .npmrc 必须在 install 之前就位（镜像源与 node-linker=hoisted 都靠它）。
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY apps/desktop/package.json apps/desktop/package.json
+COPY apps/relay/package.json apps/relay/package.json
+COPY apps/relay-node/package.json apps/relay-node/package.json
+COPY apps/web/package.json apps/web/package.json
 
 RUN pnpm install --frozen-lockfile
+
+# 源码放在 install 之后：改任意源文件只会让下面的构建层失效。
+COPY . .
 RUN pnpm build
 RUN pnpm --filter @deva/web build
 
