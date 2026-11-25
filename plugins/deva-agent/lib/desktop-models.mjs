@@ -109,7 +109,7 @@ export function readDesktopRoute(config = {}) {
 }
 
 /** Resolve the same references as Desktop; strip invalid/sensitive URL components from public settings. */
-export function desktopModelState(config = {}) {
+export function desktopModelState(config = {}, { includeDisabled = false } = {}) {
   const snapshot = readDesktopConfig(config)
   const { models, providers } = readModels(snapshot.value)
   const resolve = ref => {
@@ -124,7 +124,7 @@ export function desktopModelState(config = {}) {
     return { ...route, ...lengths, ref: ref ?? models.activeModelId, adapter, baseUrl }
   }
   const choices = providers.flatMap(p => (Array.isArray(p.models) ? p.models : [])
-    .filter(m => p.enabled === true && (p.purpose ?? 'llm') === 'llm' && m?.enabled === true && typeof m.id === 'string')
+    .filter(m => (includeDisabled || (p.enabled === true && m?.enabled === true)) && (p.purpose ?? 'llm') === 'llm' && typeof m?.id === 'string')
     .map(m => resolve(`${p.id}:${m.id}`)).filter(Boolean))
   return { snapshot, models, providers, active: resolve(models.activeModelId ?? null), resolve, choices }
 }

@@ -321,3 +321,9 @@ modelSettingsView.desktopWriteMessage 是可选拒绝提示，含当前调用账
 `list-provider-models`：输入 `modelDiscoveryInput`（baseUrl 必填，apiKey/modelRef 可省略），输出 `modelDiscoveryView` 的 models 数组。省略 modelRef 使用当前桌面默认引用，空串表示新提供方、不复用存储 Key。apiKey 省略时仅从当前用户/Profile 同一 provider/Base URL 读取；显式空串使用无 Key 请求。操作不写配置/凭据、不查询宿主模型目录。HTTP、解析、超时和网络批准错误由 RPC 抛出可读原因，空数组作为空态显示。
 
 `modelSettingsInput` 新增可选 `contextWindow` / `maxOutput` / `maxInput`，单位 tokens，正安全整数记录，省略保留已有值，0 表示删除该字段（0 不写成模型长度）。`modelSettingsView` 及 desktopModels 只返回有效正整数，未知时省略。模型选择的表单草稿变更才发送这些字段；旧客户端无字段时保持已有记录。记录位于桌面 config 的 provider.models 项，不迁移密钥，不改变对话请求参数。
+
+## 0.8.26 桌面模型优先
+
+模型页和「获取模型列表」读取桌面 config.json，不依赖 API Key。另设「刷新远端模型列表」作为补充，失败保留桌面候选。modelSettingsView.desktopDiagnostics 为 JSON 文本，包含 path/source/exists/stat/providerCount/modelCount/error；计数未知为 null。credentialError 只说明凭据读取错误，不使桌面列表失效。设置页展示已配置但未启用的模型，运行时启用过滤保持不变。
+
+路径优先级：显式 sharedDevaHome、AI_UPPER_HOME、DEVA_HOME、默认 ~/.deva。当前仓库桌面 config.ts 只支持 DEVA_HOME；AI_UPPER_HOME 是插件兼容项，不能声称桌面此版本已支持。诊断明确标明 env 来源。secrets.json 继续由桌面 safeStorage 管理，插件不解密、不覆盖，不把其不可读视为 config 模型不存在；远端请求使用服务端可用凭据。

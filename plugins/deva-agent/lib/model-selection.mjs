@@ -1,3 +1,4 @@
+import { desktopDiagnostics } from './desktop-diagnostics.mjs'
 /** Desktop owns the route and the default; Studio owns only its server-side credentials. */
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
@@ -179,29 +180,51 @@ function isTrustedBase(run, baseUrl) {
 }
 
 export async function readModelSelection(run) {
+  const diagnostic = desktopDiagnostics(run.config)
+  try {
+    const result = await readDesktopSelection(run)
+    return { ...result, desktopDiagnostics: diagnostic }
+  } catch (error) {
+    return { baseUrl: '', modelName: '', hasApiKey: false, legacyNeedsSetup: false,
+      desktopModels: [], personaModels: [], desktopWriteRequired: true,
+      desktopDiagnostics: diagnostic + '\n' + safeReadError(error) }
+  }
+}
+
+function safeReadError(error) {
+  // Never forward storage payloads or credential values across the RPC boundary.
+  return String(error?.message || error).replace(/(Bearer\s+|(?:api[_-]?key|token|secret|password)["']?\s*[:=]\s*["']?)[^\s"',}]+/gi, '$1[REDACTED]')
+}
+
+async function readDesktopSelection(run) {
   const root = resolveDevaRoot(run.config)
-  const store = modelStore(run)
-  const empty = { baseUrl: '', modelName: '', hasApiKey: false, legacyNeedsSetup: Boolean((await store.get('model'))?.modelId) }
+  const empty = { baseUrl: '', modelName: '', hasApiKey: false, legacyNeedsSetup: false }
+  try { empty.legacyNeedsSetup = Boolean((await modelStore(run).get('model'))?.modelId) } catch { /* metadata is optional */ }
   // Settings reads must never migrate legacy routes or require write authorization.
-  const desktop = desktopModelState(run.config)
+  const desktop = desktopModelState(run.config, { includeDisabled: true })
   const location = desktopConfigLocation(run.config)
+  let hasApiKey = false, credentialError = ''
+  try { hasApiKey = Boolean(await readCredential(run, desktop.active)) }
+  catch (error) { credentialError = safeReadError(error) + '；凭据读取失败；桌面模型仍可选择，远端刷新需要可用 Key。桌面 secrets.json 不由插件解密。' }
   const base = {
     ...empty,
     ...desktopRouteView(desktop),
     desktopWriteRequired: !sharedDevaWritePath(run),
     ...(!sharedDevaWritePath(run) ? { desktopWriteMessage: desktopWriteDenial(run) } : {}),
-    hasApiKey: Boolean(await readCredential(run, desktop.active)),
+    hasApiKey,
+    ...(credentialError ? { credentialError } : {}),
     sharedConfigPath: join(root, 'config.json'),
     desktopConfigPath: location.path,
     desktopConfigExists: location.exists,
     desktopOwnership: location.ownership,
     desktopModels: desktop.choices.map(route => publishableRoute({ ...route, providerName: desktop.providers.find(item => item.id === route.providerId)?.name })),
-    personaModels: listPersonas(run.config).list.map(({ id, name, model }) => ({ id, name, model })),
+    personaModels: [],
     ...(unresolvedActiveRef(desktop) ? { unresolvedModelRef: unresolvedActiveRef(desktop) } : {}),
     ...(needsNetworkApproval(run, desktop.active) ? { needsNetworkApproval: true } : {}),
     ...(isTrustedBase(run, desktop.active?.baseUrl) ? { allowNonPublic: true } : {}),
     ...(defaultEffort(desktop) ? { reasoningEffort: defaultEffort(desktop) } : {}),
   }
+  try { base.personaModels = listPersonas(run.config).list.map(({ id, name, model }) => ({ id, name, model })) } catch { /* model settings remain available */ }
   return base
 }
 

@@ -317,6 +317,14 @@
           "minimum": 1,
           "maximum": 9007199254740991,
           "description": "最大输入长度，单位 tokens，仅展示和记录。未知时省略，不推断。"
+        },
+        "desktopDiagnostics": {
+          "type": "string",
+          "description": "桌面配置实际路径、解析来源、stat、provider/model 条数和读取错误；无凭据。"
+        },
+        "credentialError": {
+          "type": "string",
+          "description": "凭据不可用提示，不阻止桌面模型显示。"
         }
       },
       "required": [

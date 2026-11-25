@@ -193,3 +193,24 @@ test('拿不到 POSIX 归属的宿主（Windows）仍可读桌面配置，并如
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('desktop settings survive unavailable credential storage and expose read diagnostics', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'desktop-first-'))
+  try {
+    const config = configFor(dir)
+    await mkdir(config.sharedDevaHome, { mode: 0o700 })
+    await writeFile(configFile(dir), JSON.stringify({ models: { activeModelId: 'p:m:one', providers: [{ id: 'p', adapter: 'openai', apiHost: 'https://example.com/v1', enabled: false, models: [{ id: 'm:one', enabled: false }] }] } }), { mode: 0o600 })
+    const run = { config, identity: { userId: 1 }, state: { profile: { namespace() { throw Error('credential store unavailable') } } } }
+    const result = await readModelSelection(run)
+    assert.equal(result.modelRef, 'p:m:one')
+    assert.equal(result.desktopModels.length, 1)
+    assert.equal(result.hasApiKey, false)
+    assert.ok(result.credentialError)
+    assert.equal(JSON.parse(result.desktopDiagnostics).modelCount, 1)
+    await writeFile(configFile(dir), '{invalid')
+    const broken = await readModelSelection(run)
+    assert.equal(broken.desktopWriteRequired, true)
+    assert.match(broken.desktopDiagnostics, /config.json/)
+    assert.match(broken.desktopDiagnostics, /JSON/)
+  } finally { await rm(dir, { recursive: true, force: true }) }
+})

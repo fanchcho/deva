@@ -33,7 +33,7 @@ const hasPosixOwnership = () => typeof process.getuid === 'function'
  */
 export function resolveDevaRootSource(config = {}) {
   const configured = typeof config?.sharedDevaHome === 'string' ? config.sharedDevaHome.trim() : ''
-  const fromEnv = process.env.DEVA_HOME?.trim() || ''
+  const fromEnv = process.env.AI_UPPER_HOME?.trim() || process.env.DEVA_HOME?.trim() || ''
   const root = configured || fromEnv || join(homedir(), '.deva')
   if (!isAbsolute(root)) throw new DevaIdentityError('DEVA_HOME_NOT_ABSOLUTE', `Deva 配置目录必须是绝对路径：${root}`)
   const path = resolve(root)

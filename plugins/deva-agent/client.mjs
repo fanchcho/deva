@@ -1083,6 +1083,7 @@ export async function mount(root, ctx) {
   else await mountIdentity(container, ctx, text, identityLabels[locale])
 }
 
+
 // The discovery panel stays inside the existing form; manual model entry remains available.
 function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syncPreview, setBusy, saveSelected }) {
   const zh = pickLocale(ctx.locale).startsWith('zh')
@@ -1099,7 +1100,8 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
   choices.ariaLabel = copy('可用模型', 'Available models')
   const detail = el('p', 'deva-value-preview')
   search.hidden = choices.hidden = detail.hidden = true
-  body.append(fetchModels, message, search, choices, detail)
+  const remote = button(copy('刷新远端模型列表', 'Refresh remote models'), 'deva-btn deva-model-discover')
+  body.append(fetchModels, remote, message, search, choices, detail)
   const commitSelection = button(copy('保存所选模型并设为默认', 'Save selected model as default'), 'deva-btn primary deva-model-discover')
   commitSelection.hidden = true
   commitSelection.onclick = () => saveSelected()
@@ -1119,10 +1121,11 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
     return [id, input]
   }))
   body.append(el('p', 'deva-value-preview', copy('长度只展示和记录，不改变对话请求参数。', 'Limits are recorded only; chat request parameters stay unchanged.')))
-  let models = [], dirty = false, busy = false, storedKey = false, storedBase = ''
+  let models = [], desktopLocal = [], dirty = false, busy = false, storedKey = false, storedBase = ''
   const refresh = () => {
     const ready = address.value.trim() && (key.value || (storedKey && address.value.trim().replace(/\/+$/, '') === storedBase))
-    fetchModels.disabled = busy || !ready
+    fetchModels.disabled = busy
+    remote.disabled = busy || !ready
     search.disabled = choices.disabled = busy
     commitSelection.disabled = busy
     for (const input of Object.values(limits)) input.disabled = busy
@@ -1131,7 +1134,7 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
     for (const [id, input] of Object.entries(limits)) input.value = model?.[id] ?? ''
   }
   const invalidate = () => {
-    models = []
+    models = desktopLocal = []
     search.value = ''
     search.hidden = choices.hidden = detail.hidden = true
     choices.innerHTML = ''
@@ -1159,9 +1162,8 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
     detail.textContent = model.id + '\n' + Object.entries(limits).map(([id, input]) => `${input.ariaLabel}: ${model[id] ?? copy('未提供', 'Not provided')}`).join('\n')
     syncPreview()
   }
-  fetchModels.onclick = async () => {
-    if (fetchModels.disabled || ctx.signal?.aborted) return
-    invalidate()
+  remote.onclick = async () => {
+    if (remote.disabled || ctx.signal?.aborted) return
     setBusy(true)
     message.textContent = copy('正在获取模型列表…', 'Fetching models…')
     try {
@@ -1170,7 +1172,7 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
         ...(key.value ? { apiKey: key.value } : {}),
       })
       if (ctx.signal?.aborted) return
-      models = result.models
+      models = [...desktopLocal, ...result.models.filter(m => !desktopLocal.some(local => local.id === m.id))]
       message.textContent = models.length ? copy(`已获取 ${models.length} 个模型，请选择；仍可手动填写。`, `${models.length} models available; select one or enter manually.`) : copy('接口返回空模型列表，请手动输入模型名或检查供应商。', 'The provider returned an empty list. Enter a model manually or check the provider.')
       search.hidden = choices.hidden = !models.length
       filter()
@@ -1178,16 +1180,36 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
       if (!ctx.signal?.aborted) message.textContent = copy('获取失败：', 'Fetch failed: ') + errorText(error)
     } finally { if (!ctx.signal?.aborted) setBusy(false) }
   }
+  fetchModels.onclick = async () => {
+    if (busy || ctx.signal?.aborted) return
+    setBusy(true)
+    try {
+      const settings = await ctx.rpc.call('get-model-selection')
+      setDesktop(settings)
+    } catch (error) { message.textContent = copy('读取桌面失败：', 'Desktop read failed: ') + errorText(error) }
+    finally { setBusy(false) }
+  }
+  const setDesktop = settings => {
+    const rows = settings.desktopModels || []
+    models = rows.filter(m => m.baseUrl === address.value.trim().replace(/\/+$/, '')).map(m => ({ ...m, id: m.modelName }))
+    desktopLocal = models
+    search.hidden = choices.hidden = !models.length
+    filter()
+    message.textContent = copy(`桌面已配置 ${rows.length} 个模型；当前地址 ${models.length} 个。`, `${rows.length} desktop models; ${models.length} for this address.`)
+      + '\n' + (settings.desktopDiagnostics || '') + '\n' + (settings.credentialError || '')
+  }
   address.oninput = () => { fillLimits(); dirty = true; invalidate(); syncPreview() }
-  key.oninput = invalidate
+  key.oninput = refresh
   name.oninput = () => { fillLimits(); dirty = true; detail.hidden = true; commitSelection.hidden = true; syncPreview() }
   return {
+    setDesktop,
     fields: limits,
     input: () => dirty ? Object.fromEntries(Object.entries(limits).map(([id, input]) => [id, input.value ? Number(input.value) : 0])) : {},
     reset(model, hasApiKey) { storedKey = hasApiKey; storedBase = model?.baseUrl || ''; dirty = false; commitSelection.hidden = true; fillLimits(model); invalidate() },
     setBusy(value) { busy = value; refresh() },
   }
 }
+
 
 async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLabel, configured, clearLabel, legacy, effortLabel, effortDefault],
   [sharedHint, desktopLabel, newProvider, bindingsLabel, follow, notSelected, accessRequired, confirmNeeded,
@@ -1336,11 +1358,14 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
     choose.value = ref
     fill({ ...settings, ref })
     choose.onchange = () => fill(choose.value && choose.value === ref ? { ...settings, ref } : models.find(model => model.ref === choose.value))
+    discovery.setDesktop(settings)
     effort.value = settings.reasoningEffort || ''
     setProblem(null)
     status.className = 'deva-status'
-    shared.hidden = !settings.desktopConfigPath
+    shared.hidden = !settings.desktopConfigPath && !settings.desktopDiagnostics
     shared.textContent = settings.desktopConfigPath ? label(modelCopy.reading, { path: settings.desktopConfigPath }) : ''
+    if (settings.desktopDiagnostics) shared.textContent += '\n' + settings.desktopDiagnostics
+    if (settings.credentialError) shared.textContent += '\n' + settings.credentialError
     // 每段提示只说一件事：未授权 / 批准 / 引用失效 / 桌面空态。不要把“读取桌面既有选择”判成授权失败。
     if (settings.desktopAccessRequired) {
       status.className = 'deva-status error'

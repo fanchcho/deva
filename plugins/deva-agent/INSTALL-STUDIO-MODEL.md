@@ -166,3 +166,9 @@ OpenAI 官方 `/models` 的标准响应只提供基本模型信息，不保证�
 Windows 自检：安装 0.8.25，关闭重开 Studio 的 Deva 模型页；下拉选新增 → 填 URL/Key → 获取 → 点模型 → 点击列表旁保存所选模型。重开后默认下拉应选中该模型，hasApiKey=true。核对页面显示的 config 路径；PowerShell 读取该路径的 models.providers 和 activeModelId，前后比较。保存失败请保留页面错误与 save-model-selection 的 HTTP 状态/错误体（不要导出含 Key 的请求体），以及 get-model-selection 的 desktopWriteRequired、desktopWriteMessage、desktopConfigPath。正确所有者字段是 sharedDevaUserId，不是 sharedDevUserId。网络批准仍只约束获取/直连；本地保存仍需写权限，批准网络不授予文件写权限。
 
 若提示保存后读回不一致，退出独立桌面端并重试；若重开仍丢失，应检查哪一进程在重写该 config。目标 Windows/cpa/角色/面板本轮未实测。回滚通过官方安装 API 重装备份 0.8.24（或 previousVersion 确为 0.8.24 时 rollback），不回滚 config 或凭据。
+
+### 0.8.26 桌面内容自检（含 Windows）
+
+打开模型页，先核对桌面默认模型下拉和读取诊断，再点「获取模型列表」。该按钮重新读取桌面配置；「刷新远端模型列表」才发起网络请求。无 Key 或远端失败仍可选择已有模型并保存。
+
+Windows 请比较桌面与 Studio 进程的 AI_UPPER_HOME / DEVA_HOME，以及运行账号的用户目录。若 Studio 在另一机器，默认 ~/.deva 指的是 Studio 服务器，无法读取 Windows 本地配置；必须使用在该设备运行的宿主或明确配置其可访问的 sharedDevaHome。核对页面 path、exists、stat、providerCount、modelCount；不存在、权限拒绝或 JSON 错误均按页面诊断处理，不要提交 secrets.json 或 API Key。桌面 Electron 的 safeStorage 密文不由插件解密。

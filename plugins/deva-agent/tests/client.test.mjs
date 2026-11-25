@@ -86,7 +86,7 @@ test('model discovery selects explicit limits, retains manual input, and shows e
     if (response instanceof Error) throw response
     return response
   }, { view: 'model' }))
-  const fetch = findAll(root, n => n.tag === 'button' && n.textContent === '获取模型列表')[0]
+  const fetch = findAll(root, n => n.tag === 'button' && n.textContent === '刷新远端模型列表')[0]
   const select = findAll(root, n => n.tag === 'select' && n.size === 5)[0]
   const model = findAll(root, n => n.tag === 'input' && n.type === 'text')[0]
   const key = findAll(root, n => n.type === 'password')[0]
@@ -720,4 +720,27 @@ test('new provider cancel restores the desktop route without saving or exposing 
   assert.equal(choose.value, 'p:model')
   assert.equal(cancel.hidden, true)
   assert.equal(saves, 0)
+})
+
+test('desktop discovery works without credentials and retains local choices on remote failure', async () => {
+  const calls = []
+  const settings = { baseUrl: 'https://example.com/v1', modelName: 'local', modelRef: 'p:local', hasApiKey: false,
+    desktopDiagnostics: 'config.json: providers=1 models=1', desktopModels: [{ ref: 'p:local', modelName: 'local', baseUrl: 'https://example.com/v1' }] }
+  const root = await mountPage(fakeContext('zh', async name => { calls.push(name); if (name === 'get-model-selection') return settings; throw Error('HTTP 401') }, { view: 'model' }))
+  const fetch = findAll(root, n => n.tag === 'button' && n.textContent === '获取模型列表')[0]
+  const remote = findAll(root, n => n.tag === 'button' && n.textContent === '刷新远端模型列表')[0]
+  const select = findAll(root, n => n.tag === 'select' && n.size === 5)[0]
+  assert.equal(fetch.disabled, false)
+  await fetch.onclick()
+  assert.equal(select.hidden, false)
+  assert.equal(select.children[0].value, 'local')
+  assert.ok(calls.every(n => n === 'get-model-selection'))
+  assert.equal(remote.disabled, true)
+  const key = findAll(root, n => n.type === 'password')[0]
+  key.value = 'fixture'; key.oninput()
+  await fetch.onclick()
+  await remote.onclick()
+  assert.equal(select.hidden, false)
+  assert.equal(select.children[0].value, 'local')
+  assert.ok(findAll(root, n => /获取失败.*401/.test(n.textContent)).length)
 })
