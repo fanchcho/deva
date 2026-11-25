@@ -35,7 +35,7 @@ export function resolveCustomEndpoint(run, baseUrl) {
   return customModelEndpoint(baseUrl, trustedBases(run))
 }
 
-async function readCredential(run, route) {
+export async function readCredential(run, route) {
   if (!route?.baseUrl) return ''
   const record = await credentialStore(run).get(credentialId(route))
   if (!record) return ''
@@ -141,6 +141,9 @@ function desktopRouteView(desktop) {
     modelRef: route?.ref ?? '',
     providerId: route?.providerId ?? '',
     providerName: String(provider?.name || route?.providerId || ''),
+    ...(route?.contextWindow ? { contextWindow: route.contextWindow } : {}),
+    ...(route?.maxOutput ? { maxOutput: route.maxOutput } : {}),
+    ...(route?.maxInput ? { maxInput: route.maxInput } : {}),
     adapter: route?.adapter ?? '',
   }
 }
@@ -152,7 +155,8 @@ function unresolvedActiveRef(desktop) {
 }
 
 function publishableRoute(route) {
-  return { ref: route.ref, adapter: route.adapter, baseUrl: displayBaseUrl(route.baseUrl), modelName: route.modelName, providerId: route.providerId, providerName: String(route.providerName || route.providerId || '') }
+  const lengths = Object.fromEntries(['contextWindow', 'maxOutput', 'maxInput'].filter(k => route[k] !== undefined).map(k => [k, route[k]]))
+  return { ref: route.ref, adapter: route.adapter, baseUrl: displayBaseUrl(route.baseUrl), modelName: route.modelName, providerId: route.providerId, providerName: String(route.providerName || route.providerId || ''), ...lengths }
 }
 
 /**
@@ -233,7 +237,7 @@ export async function saveModelSelection(run, input) {
   let route
   try {
     // Selecting an existing Desktop model does not approve its Base URL for network use.
-    if (existing && existing.baseUrl === options.baseUrl && existing.modelName === options.modelName && !options.apiKey) {
+    if (existing && existing.baseUrl === options.baseUrl && existing.modelName === options.modelName && !options.apiKey && !['contextWindow', 'maxOutput', 'maxInput'].some(k => options[k] !== undefined)) {
       if (options.reasoningEffort && !REASONING_EFFORTS.includes(options.reasoningEffort)) {
         throw new ModelInputError('reasoningEffort', 'reasoning-effort-invalid', '模型强度无效')
       }
@@ -256,7 +260,7 @@ export async function saveModelSelection(run, input) {
     if (!(error instanceof ModelInputError)) throw error
     return { ...await readModelSelection(run), error: { field: error.field, code: error.code, message: error.message } }
   }
-  const saved = writeDesktopModel(run.config, desktop, { route, ref: route ? ref : '', effort: options.reasoningEffort })
+  const saved = writeDesktopModel(run.config, desktop, { route, ref: route ? ref : '', effort: options.reasoningEffort, lengths: options })
   if (saved && options.apiKey !== undefined) await writeCredential(run, saved, options.apiKey)
   await removeLegacyId(store)
   return readModelSelection(run)

@@ -119,7 +119,9 @@ export function desktopModelState(config = {}) {
     let baseUrl = ''
     try { baseUrl = normalizeBaseUrl(route.baseUrl) } catch { /* unsupported/implicit Desktop endpoint */ }
     const adapter = provider.adapter === 'openai' || provider.adapter === 'responses' ? provider.adapter : 'anthropic'
-    return { ...route, ref: ref ?? models.activeModelId, adapter, baseUrl }
+    const definition = provider.models.find(m => m.id === route.modelName)
+    const lengths = Object.fromEntries(['contextWindow', 'maxOutput', 'maxInput'].filter(k => Number.isSafeInteger(definition?.[k]) && definition[k] > 0).map(k => [k, definition[k]]))
+    return { ...route, ...lengths, ref: ref ?? models.activeModelId, adapter, baseUrl }
   }
   const choices = providers.flatMap(p => (Array.isArray(p.models) ? p.models : [])
     .filter(m => p.enabled === true && (p.purpose ?? 'llm') === 'llm' && m?.enabled === true && typeof m.id === 'string')
@@ -136,7 +138,7 @@ export function writeDesktopDefaults(config, snapshot, models) {
 
 /** Edit the selected existing provider, or reuse/add a custom provider for a new Base URL.
  * Selection, migration and credential-save retries are idempotent and preserve other settings. */
-export function writeDesktopModel(config, state, { route, ref = '', select = true, effort } = {}) {
+export function writeDesktopModel(config, state, { route, ref = '', select = true, effort, lengths = {} } = {}) {
   const { providers, models, snapshot } = state
   if (!route) {
     if (!select || (!snapshot.exists && !effort) || (models.activeModelId == null && effort === undefined)) return null
@@ -156,12 +158,16 @@ export function writeDesktopModel(config, state, { route, ref = '', select = tru
     throw new Error('该提供方在桌面端已有密钥；换 Base URL 请先在桌面端修改（或先清除该提供方密钥）')
   }
   const previous = (provider?.models ?? []).find(m => m.id === route.modelName)
-  const model = { name: route.modelName, ...previous, id: route.modelName, enabled: true }
+  const model = { name: route.modelName, ...previous, id: route.modelName, enabled: candidate && previous ? previous.enabled : true }
+  for (const k of ['contextWindow', 'maxOutput', 'maxInput']) {
+    if (lengths[k] === 0) delete model[k]
+    else if (lengths[k] !== undefined) model[k] = lengths[k]
+  }
   const nextProvider = {
     id: providerId, name: 'Deva Studio', kind: 'custom', purpose: 'llm', accent: '#8a8a94',
     adapter: 'openai', ...provider, enabled: candidate && previous ? provider.enabled : true,
     apiHost: route.baseUrl, models: previous
-      ? provider.models.map(m => m === previous ? (candidate ? previous : model) : m)
+      ? provider.models.map(m => m === previous ? model : m)
       : [...(provider?.models ?? []), model],
   }
   const next = {

@@ -50,6 +50,48 @@ function fakeContext(locale, rpc, { view = 'mcp', navigate, identity } = {}) {
   }
 }
 
+test('model discovery selects explicit limits, retains manual input, and shows empty/failure/loading states', async () => {
+  const saved = [], calls = []
+  let response = { models: [{ id: 'with-length', contextWindow: 128000, maxOutput: 4096 }, { id: 'unknown-length' }] }
+  const current = { baseUrl: 'https://example.com/v1', modelName: 'manual', modelRef: 'p:manual', hasApiKey: true, legacyNeedsSetup: false }
+  const root = await mountPage(fakeContext('zh', async (name, input) => {
+    calls.push([name, input])
+    if (name === 'get-model-selection') return current
+    if (name === 'save-model-selection') { saved.push(input); return { ...current, ...input } }
+    if (response instanceof Error) throw response
+    return response
+  }, { view: 'model' }))
+  const fetch = findAll(root, n => n.tag === 'button' && n.textContent === '获取模型列表')[0]
+  const select = findAll(root, n => n.tag === 'select' && n.size === 5)[0]
+  const model = findAll(root, n => n.tag === 'input' && n.type === 'text')[0]
+  const key = findAll(root, n => n.type === 'password')[0]
+  const save = findAll(root, n => n.tag === 'button' && n.textContent === '保存')[0]
+  const fetchPromise = fetch.onclick()
+  assert.equal(fetch.disabled, true)
+  assert.ok(findAll(root, n => /正在获取/.test(n.textContent)).length)
+  await fetchPromise
+  assert.equal(calls.at(-1)[1].apiKey, undefined, 'saved key stays on the server')
+  assert.equal(key.value, '')
+  select.value = 'with-length'; select.onchange()
+  await save.onclick()
+  assert.equal(saved[0].contextWindow, 128000)
+  assert.equal(saved[0].maxInput, 0)
+  await fetch.onclick()
+  select.value = 'unknown-length'; select.onchange()
+  assert.ok(findAll(root, n => n.textContent.includes('未提供')).length)
+  await save.onclick()
+  assert.equal(saved[1].contextWindow, 0)
+  model.value = 'manually-entered'; model.oninput()
+  await save.onclick()
+  assert.equal(saved[2].modelName, 'manually-entered')
+  response = { models: [] }; await fetch.onclick()
+  assert.ok(findAll(root, n => /空模型列表/.test(n.textContent)).length)
+  response = new Error('HTTP 401'); await fetch.onclick()
+  assert.ok(findAll(root, n => /获取失败.*401/.test(n.textContent)).length)
+  assert.equal(select.hidden, true)
+  assert.equal(save.disabled, false)
+})
+
 const server = (name, extra = {}) => ({ name, transport: 'stdio', managed: false, enabled: true, ...extra })
 
 async function mountPage(ctx) {
@@ -192,15 +234,15 @@ test('model view reads custom settings, keeps the key field empty and saves via 
     return { baseUrl: input.baseUrl, modelName: input.modelName, hasApiKey: false, legacyNeedsSetup: false }
   }, { view: 'model' })
   const root = await mountPage(ctx)
-  const selects = findAll(root, node => node.tag === 'select')
+  const selects = findAll(root, node => node.tag === 'select' && node.size !== 5)
   assert.equal(selects.length, 2, '模型设置包含桌面默认模型和强度下拉')
   assert.deepEqual(selects[1].children.map(option => option.value), ['', 'low', 'medium', 'high', 'xhigh', 'max'])
-  const [address, model, password, clear] = findAll(root, node => node.tag === 'input')
+  const [address, model, password, clear] = findAll(root, node => node.tag === 'input' && !['search', 'number'].includes(node.type))
   assert.deepEqual([address.type, model.type, password.type, clear.type], ['url', 'text', 'password', 'checkbox'])
   assert.equal(password.autocomplete, 'new-password')
   assert.equal(password.value, '')
   assert.match(password.placeholder, /已设置/)
-  const [save] = findAll(root, node => node.tag === 'button')
+  const [save] = findAll(root, node => node.tag === 'button' && !node.className?.includes('deva-model-discover'))
   address.value = 'https://replacement.example/v1'
   model.value = 'new'
   await save.onclick()
@@ -227,10 +269,10 @@ test('model view displays the admin network gate without a self-approval checkbo
       return { ...settings, error: { field: 'allowNonPublic', code: 'confirmation-required', message: 'server zh' } }
     }, { view: 'model' })
     const root = await mountPage(ctx)
-    const [address, model, , clear, allow] = findAll(root, node => node.tag === 'input')
+    const [address, model, , clear, allow] = findAll(root, node => node.tag === 'input' && !['search', 'number'].includes(node.type))
     assert.equal(clear.type, 'checkbox')
     assert.equal(allow, undefined)
-    const [save] = findAll(root, node => node.tag === 'button')
+    const [save] = findAll(root, node => node.tag === 'button' && !node.className?.includes('deva-model-discover'))
     address.value = 'http://127.0.0.1:9/v1'
     model.value = 'local'
     await save.onclick()
@@ -257,15 +299,15 @@ test('model view selects an existing Desktop ref and updates the persona binding
     if (name === 'save-persona-model') return { ...original, personaModels: [{ id: 'qa', name: 'QA', model: input.modelRef }] }
     return original
   }, { view: 'model' }))
-  let [choice, , binding] = findAll(root, node => node.tag === 'select')
+  let [choice, , binding] = findAll(root, node => node.tag === 'select' && node.size !== 5)
   assert.equal(choice.value, 'alpha:a')
   assert.equal(binding.value, 'beta:b')
   choice.value = 'beta:b'
   choice.onchange()
-  const [save] = findAll(root, node => node.tag === 'button')
+  const [save] = findAll(root, node => node.tag === 'button' && !node.className?.includes('deva-model-discover'))
   await save.onclick()
   assert.deepEqual(calls.at(-1), ['save-model-selection', { modelRef: 'beta:b', baseUrl: 'https://beta.example/v1', modelName: 'b', reasoningEffort: '' }])
-  binding = findAll(root, node => node.tag === 'select')[2]
+  binding = findAll(root, node => node.tag === 'select' && node.size !== 5)[2]
   binding.value = ''
   await binding.onchange()
   assert.deepEqual(calls.at(-1), ['save-persona-model', { personaId: 'qa', modelRef: '' }])
@@ -282,8 +324,8 @@ test('model view loads, saves and reports the reasoning effort in each locale', 
       return { ...base, ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}) }
     }, { view: 'model' })
     const root = await mountPage(ctx)
-    const [, effort] = findAll(root, node => node.tag === 'select')
-    const [save] = findAll(root, node => node.tag === 'button')
+    const [, effort] = findAll(root, node => node.tag === 'select' && node.size !== 5)
+    const [save] = findAll(root, node => node.tag === 'button' && !node.className?.includes('deva-model-discover'))
     const texts = findAll(root, node => node.textContent).map(node => node.textContent)
     assert.ok(!texts.join(' ').includes('undefined'))
     assert.ok(effort.children[0].textContent, '默认项有本地化文案')
@@ -311,7 +353,7 @@ test('model view shows an old catalog selection as inactive without populating t
   }, { view: 'model' })
   const root = await mountPage(ctx)
   assert.ok(findAll(root, node => node.className === 'deva-status' && /旧版 Studio 目录模型已停用/.test(node.textContent)).length)
-  assert.ok(findAll(root, node => node.tag === 'input').every(input => !input.value))
+  assert.ok(findAll(root, node => node.tag === 'input' && !['search', 'number'].includes(node.type)).every(input => !input.value))
 })
 
 test('model settings show the shared file and per-app credential warning in each locale', async () => {
@@ -627,13 +669,13 @@ test('model view separates "desktop has no model" from "reference is broken"', a
  test('read-only model mirror displays route while disabling writes', async () => {
   const root = await mountPage(fakeContext('zh', async () => ({ baseUrl: 'http://127.0.0.1:7863/v1', modelName: 'cn:m', modelRef: 'custom:cn:m', providerName: 'cpa', desktopWriteRequired: true, desktopWriteMessage: '只读模式 userId=2 sharedDevaUserId=1；修改后重新打开模型页', hasApiKey: false, legacyNeedsSetup: false }), { view: 'model' }))
   assert.equal(findAll(root, node => node.tag === 'select')[0].value, 'custom:cn:m')
-  assert.equal(findAll(root, node => node.tag === 'button')[0].disabled, true)
+  assert.equal(findAll(root, node => node.tag === 'button' && node.textContent === '保存')[0].disabled, true)
   assert.match(findAll(root, node => node.textContent).map(node => node.textContent).join(' '), /只读模式/)
 })
 
 test('authorized desktop model remains saveable while network approval is pending', async () => {
   const root = await mountPage(fakeContext('zh', async () => ({ baseUrl: 'http://127.0.0.1:7863/v1', modelName: 'cn:m', modelRef: 'custom:cn:m', providerName: 'cpa', desktopWriteRequired: false, needsNetworkApproval: true, hasApiKey: false, legacyNeedsSetup: false }), { view: 'model' }))
-  assert.equal(findAll(root, node => node.tag === 'button')[0].disabled, false)
+  assert.equal(findAll(root, node => node.tag === 'button' && node.textContent === '保存')[0].disabled, false)
   assert.match(findAll(root, node => node.textContent).map(node => node.textContent).join(' '), /modelTrustedBases/)
 })
 

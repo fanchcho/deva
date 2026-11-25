@@ -315,3 +315,9 @@ MCP/Skill 清单必须包含 servers/skills 数组，支持文件清单必须包
 ## 0.8.21 模型写入
 
 modelSettingsView.desktopWriteMessage 是可选拒绝提示，含当前调用账号、配置所有者、宿主激活账号和重试步骤；与 desktopWriteRequired 同时用于前端禁用说明。未配置 sharedDevaUserId 时仅宿主激活账号可写本机 profile/.deva 的普通配置文件；实际网络请求授权不变。保存模型不检查 modelTrustedBases，直连时仍检查。
+
+## 0.8.24 模型列表与长度
+
+`list-provider-models`：输入 `modelDiscoveryInput`（baseUrl 必填，apiKey/modelRef 可省略），输出 `modelDiscoveryView` 的 models 数组。省略 modelRef 使用当前桌面默认引用，空串表示新提供方、不复用存储 Key。apiKey 省略时仅从当前用户/Profile 同一 provider/Base URL 读取；显式空串使用无 Key 请求。操作不写配置/凭据、不查询宿主模型目录。HTTP、解析、超时和网络批准错误由 RPC 抛出可读原因，空数组作为空态显示。
+
+`modelSettingsInput` 新增可选 `contextWindow` / `maxOutput` / `maxInput`，单位 tokens，正安全整数记录，省略保留已有值，0 表示删除该字段（0 不写成模型长度）。`modelSettingsView` 及 desktopModels 只返回有效正整数，未知时省略。模型选择的表单草稿变更才发送这些字段；旧客户端无字段时保持已有记录。记录位于桌面 config 的 provider.models 项，不迁移密钥，不改变对话请求参数。

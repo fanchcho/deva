@@ -58,7 +58,7 @@ export function customModelEndpoint(baseUrl, trustedBases = []) {
 }
 
 // Direct requests only. Pin DNS for this connection so it cannot change between validation and connect.
-export async function requestCustomModel({ url, trusted, hostname, family }, { headers, body, signal }) {
+export async function requestCustomModel({ url, trusted, hostname, family }, { headers, body, signal, method = 'POST', json = false }) {
   signal?.throwIfAborted()
   let addresses
   try { addresses = family ? [{ address: hostname, family }] : await lookup(hostname, { all: true }) }
@@ -70,8 +70,8 @@ export async function requestCustomModel({ url, trusted, hostname, family }, { h
   const send = url.protocol === 'https:' ? httpsRequest : httpRequest
   return new Promise((resolve, reject) => {
     const request = send(url, {
-      method: 'POST', agent: false, signal,
-      headers: { ...headers, 'content-length': Buffer.byteLength(body) },
+      method, agent: false, signal,
+      headers: { ...headers, ...(body === undefined ? {} : { 'content-length': Buffer.byteLength(body) }) },
       lookup: (_hostname, options, done) => {
         const results = addresses.filter(item => !options.family || item.family === options.family)
         if (!results.length) return done(new Error('No approved address for this family'))
@@ -83,6 +83,18 @@ export async function requestCustomModel({ url, trusted, hostname, family }, { h
       if (status < 200 || status >= 300) {
         response.destroy()
         reject(new Error(`自定义模型 API 返回 HTTP ${status}；未回退`))
+      } else if (json) {
+        let raw = '', bytes = 0
+        response.setEncoding('utf8')
+        response.on('data', chunk => {
+          bytes += Buffer.byteLength(chunk)
+          if (bytes > 2 * 1024 * 1024) { response.destroy(); reject(new Error('模型列表超过 2 MiB 限制')) }
+          else raw += chunk
+        })
+        response.on('error', () => reject(new Error('模型列表读取中断')))
+        response.on('end', () => {
+          try { resolve(JSON.parse(raw)) } catch { reject(new Error('模型列表接口返回非 JSON')) }
+        })
       } else if (!/^text\/event-stream(?:\s*;|$)/i.test(response.headers['content-type'] || '')) {
         response.destroy()
         reject(new Error('自定义模型 API 未返回 Chat Completions SSE；未回退'))

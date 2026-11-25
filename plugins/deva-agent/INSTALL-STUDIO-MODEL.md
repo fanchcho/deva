@@ -106,3 +106,47 @@ Remove-Item Env:STUDIO_API_TOKEN
 升级：通过官方插件安装接口/入口安装 0.8.23，无需重启 Studio；关闭重开 Deva 模型页，选择「新增 Chat Completions 提供方」，320–520px 面板应显示单列字段、40px 保存/取消按钮和可换行 URL/模型预览。填写地址和模型名，保存后应回显桌面选择；取消应恢复原选择而不写文件。Key 仍仅显示已设置状态，网络批准与运行解析不变。
 
 本机 Chromium 的 320/360/420/768 等价宽度截图和量测另存报告；harness 使用真实 client.mjs/样式与真实 readModelSelection/saveModelSelection，仅替换宿主 RPC 传输、账号存储和通知接口，并使用隔离 config。不是 Studio/Windows 真机验收。宿主面板宽度因无授权 Desktop 浏览器未知。回滚使用官方插件 rollback 或重装备份 0.8.22；不回滚用户 config。
+
+## 0.8.24：从供应商获取模型及长度
+
+现象：0.8.23 的「新增 Chat Completions 提供方」只有手填模型名，没有向供应商查询模型列表。0.8.24 在同一表单加入「获取模型列表」、名称过滤和模型选择，保留手填兜底。版本递增，不覆盖 0.8.23。
+
+实现位置：`server.mjs:44` 登记 `list-provider-models`；`lib/model-discovery.mjs:7` 解析供应商响应、`:24` 发起获取；`client.mjs:1087` 是表单内的获取/选择组件；`lib/desktop-models.mjs:141` 保存长度。获取调用与对话共用 `lib/model-selection.mjs` 的 `readCredential` / `resolveCustomEndpoint` 和 `lib/custom-model-network.mjs:61` 的直连传输。没有访问宿主模型目录，也没有回退请求。
+
+请求为 `GET {规范化 Base URL}/models`，有凭据时使用 `Authorization: Bearer`。表单新填 Key 只发往插件服务端并用于本次请求，获取操作不保存 Key；点击保存才按既有方式保存到当前用户/Profile 的服务端凭据。已有 Key 由服务端按相同 provider + Base URL 读取，前端只见「已设置」。不同地址、不同账号不能复用原 Key。错误不回传上游正文，避免上游回显凭据；模型 ID 回显当前 Key 时整批拒绝。无自动跳转，响应上限 2 MiB，获取超时 15 秒。
+
+支持 `{data:[{id,...}]}` 与裸数组。仅接受实际返回的正安全整数，忽略未知字段、无效条目和重复 ID：
+
+| 返回字段 | 表单/桌面记录 | 含义 |
+| --- | --- | --- |
+| context_length / max_model_len / context_window / top_provider.context_length（按序取首个有效值） | contextWindow | 上下文总长度 |
+| max_output_tokens / max_completion_tokens / top_provider.max_completion_tokens | maxOutput | 最大输出长度 |
+| max_input_tokens | maxInput | 最大输入长度，不等同总上下文 |
+
+OpenAI 官方 `/models` 的标准响应只提供基本模型信息，不保证长度；OpenRouter 的模型目录有 `context_length` 和 `top_provider` 等元数据。兼容代理是否透传这些字段，以该地址实测返回为准。缺失时显示「未提供，可手动填写」，不会按模型名查表或猜数值。切换模型或修改地址会清掉旧的长度草稿；手动填写仍可保存。长度仅用于本插件展示和记录，不增加/更改 `/chat/completions` 的 `max_tokens`、`max_completion_tokens` 或其他负载字段。
+
+网络边界不变：公网 HTTPS 在通过 DNS 公网地址检查后可请求；本机/内网/HTTP 需管理员将**完整 Base URL** 精确加入 `modelTrustedBases`，沿用上方批准脚本和配置位置。`/models` 与 `/chat/completions` 共用同一批准项，不需另加 `/models`，不允许通配。只读桌面配置依旧免网络批准。401/403 明确报 Key/权限错误，404 提示检查 Base URL 或手填，超时/非 JSON 明确报错；空数组显示空列表，不当作成功选中模型。
+
+### Windows 升级与自检
+
+1. 将 `studio-plugin-deva-0.8.24.tgz` 下载到目标机并解包。通过 Studio 官方插件安装入口安装解包目录；或者管理员在 PowerShell 使用官方 API（`STUDIO_API_TOKEN` 仅在当前进程设置，勿贴到聊天或写文件）：
+
+   ```powershell
+   tar -xzf .\studio-plugin-deva-0.8.24.tgz
+   $studio = 'http://localhost:3000' # 换成这台设备的实际 Studio 地址
+   $headers = @{ Authorization = "Bearer $env:STUDIO_API_TOKEN" }
+   $registry = Invoke-RestMethod "$studio/api/studio/plugins" -Headers $headers
+   $body = @{ source = (Resolve-Path .\package).Path; revision = $registry.revision; trusted = $true; pluginId = 'deva'; expectedVersion = '0.8.24' } | ConvertTo-Json
+   Invoke-RestMethod "$studio/api/studio/plugins/install" -Method Post -Headers $headers -ContentType 'application/json' -Body $body
+   Remove-Item Env:STUDIO_API_TOKEN
+   ```
+
+2. 核对版本 0.8.24、`status=active`、`enabled=true`；关闭重开 Deva 模型页，无需重启 Studio。原默认模型与「已设置」应保留。
+3. 在原「新增 Chat Completions 提供方」填写 Base URL 与 Key，点击「获取模型列表」。若选择已有提供方且显示已设置，可直接使用服务端保存的 Key。127.0.0.1:7863 地址未批准时按上方步骤精确批准；先确认 Studio 服务确实运行在这台 Windows 上。
+4. 输入关键词过滤并选择模型。模型名回填，有长度则显示真实数值，没有则显示未提供；仍可手填。保存后重新打开应保留模型与已填写长度，Key 框保持空白且显示已设置。
+5. 开发者工具 Network 中核对 `POST /api/studio/plugins/deva/invoke`，`kind=rpc,name=list-provider-models` 的结果只有模型和长度，没有 Key；随后 `get-model-selection` 应回显保存的 `modelName`、可选长度及 `hasApiKey=true`。不要导出包含新填 Key 的请求体。
+6. 下一轮用 Agent 默认模型发送一句普通消息，在代理端确认 `POST /v1/chat/completions` 的 model 正确并收到真实回答；本轮只有 mock 端点验证此负载，没有代替 Windows 代理验收。身份有单独模型绑定时仍优先使用身份绑定。
+
+回滚：读取实时 registry revision，经官方 `PATCH /api/studio/plugins/deva` 发送 `{"revision":当前值,"action":"rollback"}` 回到 previousVersion，或重装备份 0.8.23 包。不要回滚用户 config/凭据；长度是可选模型字段，旧插件忽略它们。回滚后获取列表入口消失，手填继续可用。
+
+本轮验证边界：真实 Chromium 加载原始 client.mjs 和样式；桥接夹具替换宿主 RPC 传输、账号/存储、通知和外部模型服务，读取/保存/获取逻辑均调用真实服务端函数。它不是 Studio/Windows 真机。真实 Studio 热装和 RPC 单独记录在交付报告；Windows 的实际布局、代理返回字段、角色和连通性必须在该设备验收。

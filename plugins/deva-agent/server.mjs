@@ -1,3 +1,4 @@
+import { discoverModels } from './lib/model-discovery.mjs'
 import { registerCompression } from './lib/compression.mjs'
 /**
  * 插件入口：一个 Deva Agent、身份/模型/MCP RPC 和一条会话身份命令。
@@ -40,6 +41,7 @@ export function apply(ctx) {
   const activationUserId = ctx.identity?.userId
   ctx.log.info(`deva: 激活通道 ctx.host.request=${typeof ctx.host?.request === 'function'}`)
   registerCompression(ctx)
+  registerRpc(ctx, contract, 'list-provider-models', (input, run) => discoverModels(run, input))
   registerRpc(ctx, contract, 'get-model-selection', (_input, run) => readModelSelection({ ...run, desktopActivationUserId: activationUserId }))
   registerRpc(ctx, contract, 'save-model-selection', (input, run) => saveModelSelection({ ...run, desktopActivationUserId: activationUserId }, input))
   registerRpc(ctx, contract, 'save-persona-model', (input, run) => savePersonaModel({ ...run, desktopActivationUserId: activationUserId }, input))

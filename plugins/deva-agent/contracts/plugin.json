@@ -42,6 +42,24 @@
           "type": "string",
           "description": "模型强度，作为 Chat Completions 的 reasoning_effort 原样下发：low / medium / high / xhigh / max。空字符串表示不发送该参数；省略表示保留桌面 activeEffort。其它取值返回字段级 error，不写入。",
           "maxLength": 32
+        },
+        "contextWindow": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "上下文总长度，单位 tokens，仅展示和记录。省略保留已有值，0 清除记录。"
+        },
+        "maxOutput": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "最大输出长度，单位 tokens，仅展示和记录。省略保留已有值，0 清除记录。"
+        },
+        "maxInput": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "最大输入长度，单位 tokens，仅展示和记录。省略保留已有值，0 清除记录。"
         }
       },
       "required": [
@@ -76,8 +94,14 @@
           "type": "string",
           "description": "仅授权账号可见；Studio 进程解析的共享 config.json 绝对路径。"
         },
-        "desktopWriteMessage": { "type": "string", "description": "写入拒绝原因、当前调用和激活账号、配置所有者及重试步骤；无密钥。" },
-        "desktopWriteRequired": { "type": "boolean", "description": "只读镜像正常；当前账号未获 sharedDevaUserId 写入授权。" },
+        "desktopWriteMessage": {
+          "type": "string",
+          "description": "写入拒绝原因、当前调用和激活账号、配置所有者及重试步骤；无密钥。"
+        },
+        "desktopWriteRequired": {
+          "type": "boolean",
+          "description": "只读镜像正常；当前账号未获 sharedDevaUserId 写入授权。"
+        },
         "desktopAccessRequired": {
           "type": "boolean",
           "description": "当前 Studio 账号不是管理员指定的桌面配置所有者（sharedDevaUserId）；不返回共享数据。页面据此写明缺哪一项配置。"
@@ -120,6 +144,24 @@
               "providerName": {
                 "type": "string",
                 "description": "provider 显示名。"
+              },
+              "contextWindow": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991,
+                "description": "上下文总长度，单位 tokens，仅展示和记录。未知时省略，不推断。"
+              },
+              "maxOutput": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991,
+                "description": "最大输出长度，单位 tokens，仅展示和记录。未知时省略，不推断。"
+              },
+              "maxInput": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991,
+                "description": "最大输入长度，单位 tokens，仅展示和记录。未知时省略，不推断。"
               }
             },
             "required": [
@@ -257,6 +299,24 @@
           "type": "integer",
           "description": "管理员配置的共享账号 ID；仅未授权时回显，供页面写明“需要谁批准”。",
           "minimum": 1
+        },
+        "contextWindow": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991,
+          "description": "上下文总长度，单位 tokens，仅展示和记录。未知时省略，不推断。"
+        },
+        "maxOutput": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991,
+          "description": "最大输出长度，单位 tokens，仅展示和记录。未知时省略，不推断。"
+        },
+        "maxInput": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991,
+          "description": "最大输入长度，单位 tokens，仅展示和记录。未知时省略，不推断。"
         }
       },
       "required": [
@@ -1924,6 +1984,77 @@
         "text"
       ],
       "additionalProperties": true
+    },
+    "modelDiscoveryInput": {
+      "type": "object",
+      "description": "从指定地址获取模型，省略 Key 仅复用相同地址及提供方的服务端 Key",
+      "properties": {
+        "baseUrl": {
+          "type": "string",
+          "description": "请求 GET {Base URL}/models；完整 http(s) 地址，使用与 Chat Completions 相同的批准和 DNS 校验。",
+          "maxLength": 2048
+        },
+        "apiKey": {
+          "type": "string",
+          "description": "临时用于服务端 Bearer 请求；本操作不持久化，不回传。省略时只复用当前用户/Profile、同一 provider 和 Base URL 已存的凭据。",
+          "maxLength": 4096
+        },
+        "modelRef": {
+          "type": "string",
+          "description": "要选择或编辑的桌面 providerId:modelId；空串新增独立提供方，省略使用当前默认。",
+          "maxLength": 512
+        }
+      },
+      "required": [
+        "baseUrl"
+      ],
+      "additionalProperties": false
+    },
+    "modelDiscoveryView": {
+      "type": "object",
+      "description": "不含凭据的模型清单",
+      "properties": {
+        "models": {
+          "type": "array",
+          "description": "接口实际返回的有效模型，可为空",
+          "items": {
+            "type": "object",
+            "description": "模型 ID 与接口明确提供的长度",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "模型标识"
+              },
+              "contextWindow": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991,
+                "description": "上下文总长度，单位 tokens，仅展示和记录。未知时省略，不推断。"
+              },
+              "maxOutput": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991,
+                "description": "最大输出长度，单位 tokens，仅展示和记录。未知时省略，不推断。"
+              },
+              "maxInput": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991,
+                "description": "最大输入长度，单位 tokens，仅展示和记录。未知时省略，不推断。"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "models"
+      ],
+      "additionalProperties": false
     }
   },
   "rpc": {
@@ -2021,6 +2152,11 @@
       "description": "让 Studio 连一次该 MCP 服务并列出工具（POST /api/ekko/mcp/servers/:name/test）。服务停用或连不上时抛错，不返回空表。",
       "input": "mcpServerTarget",
       "output": "mcpTools"
+    },
+    "list-provider-models": {
+      "description": "通过批准的 Base URL 获取模型列表，不回退宿主目录",
+      "input": "modelDiscoveryInput",
+      "output": "modelDiscoveryView"
     }
   },
   "tools": {},

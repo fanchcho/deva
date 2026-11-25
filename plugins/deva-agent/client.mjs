@@ -1083,6 +1083,106 @@ export async function mount(root, ctx) {
   else await mountIdentity(container, ctx, text, identityLabels[locale])
 }
 
+// The discovery panel stays inside the existing form; manual model entry remains available.
+function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syncPreview, setBusy }) {
+  const zh = pickLocale(ctx.locale).startsWith('zh')
+  const copy = (cn, en) => zh ? cn : en
+  body.append(el('h3', 'deva-section-title', copy('从供应商获取模型', 'Discover provider models')))
+  const fetchModels = button(copy('获取模型列表', 'Fetch models'), 'deva-btn deva-model-discover')
+  const message = el('div', 'deva-value-preview')
+  message.role = 'status'
+  const search = el('input', 'deva-select')
+  search.type = 'search'
+  search.placeholder = search.ariaLabel = copy('过滤模型名称', 'Filter models')
+  const choices = el('select', 'deva-select')
+  choices.size = 5
+  choices.ariaLabel = copy('可用模型', 'Available models')
+  const detail = el('p', 'deva-value-preview')
+  search.hidden = choices.hidden = detail.hidden = true
+  body.append(fetchModels, message, search, choices, detail)
+  const missing = copy('未提供，可手动填写', 'Not provided; enter manually')
+  const limits = Object.fromEntries([
+    ['contextWindow', copy('上下文长度（tokens）', 'Context window (tokens)')],
+    ['maxOutput', copy('最大输出长度（tokens）', 'Maximum output (tokens)')],
+    ['maxInput', copy('最大输入长度（tokens）', 'Maximum input (tokens)')],
+  ].map(([id, label]) => {
+    const input = field(label, 'number')
+    input.min = '1'
+    input.step = '1'
+    input.placeholder = missing
+    input.ariaLabel = label
+    input.oninput = () => { dirty = true }
+    return [id, input]
+  }))
+  body.append(el('p', 'deva-value-preview', copy('长度只展示和记录，不改变对话请求参数。', 'Limits are recorded only; chat request parameters stay unchanged.')))
+  let models = [], dirty = false, busy = false, storedKey = false, storedBase = ''
+  const refresh = () => {
+    const ready = address.value.trim() && (key.value || (storedKey && address.value.trim().replace(/\/+$/, '') === storedBase))
+    fetchModels.disabled = busy || !ready
+    search.disabled = choices.disabled = busy
+    for (const input of Object.values(limits)) input.disabled = busy
+  }
+  const fillLimits = model => {
+    for (const [id, input] of Object.entries(limits)) input.value = model?.[id] ?? ''
+  }
+  const invalidate = () => {
+    models = []
+    search.value = ''
+    search.hidden = choices.hidden = detail.hidden = true
+    choices.innerHTML = ''
+    message.textContent = copy('填写 Base URL 和 API Key，或使用此地址已设置的 Key。也可直接手填模型名。', 'Enter a Base URL and API key, or use the saved key for this address. Manual model entry is also available.')
+    refresh()
+  }
+  const filter = () => {
+    choices.innerHTML = ''
+    for (const model of models.filter(m => m.id.toLowerCase().includes(search.value.toLowerCase()))) {
+      const item = el('option', '', model.id)
+      item.value = model.id
+      choices.append(item)
+    }
+    choices.value = name.value
+  }
+  search.oninput = filter
+  choices.onchange = () => {
+    const model = models.find(m => m.id === choices.value)
+    if (!model) return
+    name.value = model.id
+    fillLimits(model)
+    dirty = true
+    detail.hidden = false
+    detail.textContent = model.id + '\n' + Object.entries(limits).map(([id, input]) => `${input.ariaLabel}: ${model[id] ?? copy('未提供', 'Not provided')}`).join('\n')
+    syncPreview()
+  }
+  fetchModels.onclick = async () => {
+    if (fetchModels.disabled || ctx.signal?.aborted) return
+    invalidate()
+    setBusy(true)
+    message.textContent = copy('正在获取模型列表…', 'Fetching models…')
+    try {
+      const result = await ctx.rpc.call('list-provider-models', {
+        baseUrl: address.value.trim(), modelRef: choose.value === '__deva_new_provider__' ? '' : choose.value,
+        ...(key.value ? { apiKey: key.value } : {}),
+      })
+      if (ctx.signal?.aborted) return
+      models = result.models
+      message.textContent = models.length ? copy(`已获取 ${models.length} 个模型，请选择；仍可手动填写。`, `${models.length} models available; select one or enter manually.`) : copy('接口返回空模型列表，请手动输入模型名或检查供应商。', 'The provider returned an empty list. Enter a model manually or check the provider.')
+      search.hidden = choices.hidden = !models.length
+      filter()
+    } catch (error) {
+      if (!ctx.signal?.aborted) message.textContent = copy('获取失败：', 'Fetch failed: ') + errorText(error)
+    } finally { if (!ctx.signal?.aborted) setBusy(false) }
+  }
+  address.oninput = () => { fillLimits(); dirty = true; invalidate(); syncPreview() }
+  key.oninput = invalidate
+  name.oninput = () => { fillLimits(); dirty = true; detail.hidden = true; syncPreview() }
+  return {
+    fields: limits,
+    input: () => dirty ? Object.fromEntries(Object.entries(limits).map(([id, input]) => [id, input.value ? Number(input.value) : 0])) : {},
+    reset(model, hasApiKey) { storedKey = hasApiKey; storedBase = model?.baseUrl || ''; dirty = false; fillLimits(model); invalidate() },
+    setBusy(value) { busy = value; refresh() },
+  }
+}
+
 async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLabel, configured, clearLabel, legacy, effortLabel, effortDefault],
   [sharedHint, desktopLabel, newProvider, bindingsLabel, follow, notSelected, accessRequired, confirmNeeded,
     unresolvedRef, unverifiableOwnership, reading, pathUnknown, activeNow, noDesktopModel]) {
@@ -1126,6 +1226,7 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
   body.append(el('h3', 'deva-section-title', keyLabel))
   const key = field(keyLabel, 'password', 4096)
   key.autocomplete = 'new-password'
+  const discovery = mountModelDiscovery(body, ctx, { address, key, name, choose, field, syncPreview: () => syncPreview(), setBusy: value => setBusy(value) })
   // 档位值就是下发给上游的 reasoning_effort，原样显示；空值表示不发送。
   const effort = el('select', 'deva-select')
   for (const value of ['', ...REASONING_EFFORTS]) {
@@ -1145,7 +1246,7 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
   const ownership = el('p', 'deva-muted')
   ownership.hidden = true
   body.append(ownership)
-  const fields = { baseUrl: address, modelName: name, apiKey: key, reasoningEffort: effort }
+  const fields = { baseUrl: address, modelName: name, apiKey: key, reasoningEffort: effort, ...discovery.fields }
   const bindings = el('div', 'deva-card-body deva-model-form')
   let current
   const option = (select, value, title) => {
@@ -1172,7 +1273,6 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
     title.textContent = choose.value === custom ? newProvider : desktopLabel
     cancel.hidden = choose.value !== custom
   }
-  address.oninput = name.oninput = syncPreview
   container.append(header, card)
 
   const setBusy = busy => {
@@ -1181,6 +1281,7 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
     choose.disabled = address.disabled = name.disabled = key.disabled = effort.disabled = clear.disabled = busy || readOnly
     save.disabled = busy || readOnly
     cancel.disabled = busy
+    discovery.setBusy(busy || readOnly)
   }
   /** 字段级错误：标在出错的输入项下方；传 null 清空。占位符必须填好再看，不能把 {baseUrl} 直接显示给用户。 */
   const problemText = error => (error.code === 'confirmation-required'
@@ -1216,6 +1317,7 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
       key.value = ''
       key.placeholder = model?.ref === settings.modelRef && settings.hasApiKey ? configured : ''
       clear.checked = false
+      discovery.reset(model, model?.ref === settings.modelRef && settings.hasApiKey)
       syncPreview()
     }
     choose.innerHTML = ''
@@ -1300,6 +1402,7 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
       baseUrl, modelName: !choose.value && !baseUrl ? '' : name.value, modelRef: choose.value === custom ? '' : choose.value,
       ...(clear.checked ? { apiKey: '' } : key.value ? { apiKey: key.value } : {}),
       reasoningEffort: effort.value,
+      ...discovery.input(),
     }
     key.value = ''
     try {
