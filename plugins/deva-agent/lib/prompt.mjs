@@ -7,9 +7,9 @@
 
 export const TOOL_RULES = `## 工具与工作区
 
-- 所有路径都相对工作区根目录；越界路径会被拒绝。先用 list_dir / glob / grep 定位，再读文件。
+- 文件工具的路径默认相对工作区根目录；write_file / edit_file 拒绝越界，read_file / grep 另允许本轮运行目录。先用 list_dir / glob / grep 定位，再读文件。
 - read_file 带行号返回；改动用 edit_file（精确字符串替换，保留原有换行与 BOM），整份重写才用 write_file。
-- run_command 在工作区根目录执行 bash；长任务给足 timeout_ms（默认 120000，上限 600000），不要用交互式命令。
+- run_command 在工作区根目录执行 bash，cwd 不构成文件系统沙箱，命令仍拥有宿主进程权限；操作必须遵守本轮授权范围。长任务给足 timeout_ms（默认 120000，上限 600000），不要用交互式命令。
 - 改完代码至少跑一次相关检查：\`pnpm typecheck\`（node + web 两段）、需要时 \`pnpm build\`。失败就把原始报错贴出来并修到通过。
 - 不要碰与本任务无关的文件；不要提交 git、不要推送、不要改用户本机配置（~/.deva、~/.dsh 之类），除非用户明确要求。
 - 项目里未提交的改动可能属于用户正在做的工作：改同一个文件前先看当前内容，不要整份覆盖。

@@ -1,8 +1,9 @@
+import { safeMcpError } from './mcp-secrets.mjs'
 /**
  * 插件自带的 MCP 客户端：stdio / Streamable HTTP / 旧版 SSE 三种传输。
  *
- * 为什么需要它：Studio 只在「任务计划运行」里给 Agent 注入 run.mcpServers，
- * 普通插件运行拿到的是空对象，所以插件无法依赖宿主把 MCP 接进来。这里用零依赖实现
+ * 为什么需要它：Studio 是否注入 run.mcpServers 由运行入口决定，
+ * 因此插件不能只依赖注入配置，仍需按已选名字读取 Studio 服务表。这里用零依赖实现
  * JSON-RPC 2.0（stdio 走按行分帧，HTTP 走 POST + SSE），把发现到的工具并入本插件的工具表。
  *
  * 安全约定：
@@ -172,6 +173,7 @@ class RpcClient {
 
   request(method, params, { signal, timeout = CALL_TIMEOUT } = {}) {
     if (this.closed) return Promise.reject(new McpError(`${this.label} 已断开`))
+    if (signal?.aborted) return Promise.reject(abortError())
     const id = this.nextId()
     const promise = new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject })
@@ -571,7 +573,7 @@ export class McpPool {
     } catch (error) {
       try { client?.close() } catch { /* 已经关闭 */ }
       if (this.closed || this.connecting.get(config.name) !== entry) return
-      const message = error?.message || String(error)
+      const message = safeMcpError(error).message
       this.failures.set(config.name, message)
       this.problems.push(`${config.name}: ${message}`)
       this.log.warn?.(`deva: MCP ${config.name} 连接失败：${message}`)
@@ -585,10 +587,12 @@ export class McpPool {
     if (!tool) throw new McpError(`未知的 MCP 工具：${fqName}`)
     const client = this.clients.get(tool.server)
     if (!client) throw new McpError(`MCP 服务 ${tool.server} 未连接（${this.failures.get(tool.server) || '原因未知'}）`)
-    const result = await client.request('tools/call', { name: tool.original, arguments: input || {} }, { signal, timeout: CALL_TIMEOUT })
+    let result
+    try { result = await client.request('tools/call', { name: tool.original, arguments: input || {} }, { signal, timeout: CALL_TIMEOUT }) }
+    catch (error) { throw safeMcpError(error) }
     const flat = flattenResult(result)
     // 错误文本原样抛出（调用方记成 tool.failed）；成功结果超长时全文落盘、只回首尾预览。
-    if (flat.isError) throw new McpError(await spillText(flat.text, MAX_TEXT, { runtimeDir, label: 'mcp' }))
+    if (flat.isError) throw safeMcpError(new Error(flat.text))
     return await spillText(flat.text, MAX_TEXT, { runtimeDir, label: 'mcp' })
   }
 

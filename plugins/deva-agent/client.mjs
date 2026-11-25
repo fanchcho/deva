@@ -1,18 +1,19 @@
-/**
- * Agent 设置页：两个独立页面，同一个 client 入口按 ctx.view 分流。
- *
- *  · identity：选这个 Agent 用哪个人设说话（存 user+profile 作用域）。
- *  · mcp：直接管理 Studio 自己的 MCP 服务表——新增、改配置、启停、测试、删除，
- *         与 Studio 的「MCP」页面是同一份数据；再勾选本 Agent 用哪些服务。
- *
- * 版式对齐 Studio 原生 MCP 页（McpView + McpServerCard）：汇总卡、搜索/添加工具行、
- * 服务卡片网格（名称 + 传输/来源/状态徽章 + 工具列表 + 文字按钮），新增/编辑用
- * JSON 配置弹窗。颜色的来源只有宿主主题桥那一份变量，深浅色主题都跟着 Studio 走。
- *
- * 页面只做展示与调用 RPC：MCP 连接配置只有 Studio 一份，读写都走 Studio 的
- * /api/ekko/mcp/servers（经宿主通道）；插件只存「用哪些服务名」（user+profile 作用域）。
- * 连接配置每轮运行时现取，所以在这里或 Studio 里改完，下一轮对话就生效。
- */
+/** Deva 设置页：按宿主 ctx.view 渲染身份、模型和 MCP。 */
+const identityLabels = {
+  "zh": ["选择 Deva 的默认身份，或新增、编辑与桌面端共用的身份。", "设为默认", "新增身份", "编辑身份", "名称", "描述", "提示词正文", "已保存身份：{name}", "请填写名称和提示词正文。", "无提示词；请先编辑。", "已在桌面启用"],
+  "en": ["Choose a default identity for Deva, or add and edit identities shared with the desktop app.", "Set as default", "Add identity", "Edit identity", "Name", "Description", "Prompt", "Identity saved: {name}", "Enter a name and a prompt.", "No prompt. Edit this identity first.", "Enabled on desktop"],
+  "zh-tw": ["選擇 Deva 的預設身分，或新增、編輯與桌面版共用的身分。", "設為預設", "新增身分", "編輯身分", "名稱", "描述", "提示詞正文", "已儲存身分：{name}", "請填寫名稱與提示詞正文。", "沒有提示詞；請先編輯。", "已在桌面版啟用"],
+  "ja": ["Deva の既定のアイデンティティを選ぶか、デスクトップ版と共有するアイデンティティを追加・編集します。", "既定にする", "アイデンティティを追加", "アイデンティティを編集", "名前", "説明", "プロンプト", "保存しました：{name}", "名前とプロンプトを入力してください。", "プロンプトがありません。先に編集してください。", "デスクトップ版で有効"],
+  "ko": ["Deva의 기본 아이덴티티를 선택하거나 데스크톱과 공유하는 아이덴티티를 추가·편집합니다.", "기본값으로 설정", "아이덴티티 추가", "아이덴티티 편집", "이름", "설명", "프롬프트", "저장된 아이덴티티: {name}", "이름과 프롬프트를 입력하세요.", "프롬프트가 없습니다. 먼저 편집하세요.", "데스크톱에서 사용 중"],
+  "fr": ["Choisissez une identité par défaut pour Deva ou ajoutez et modifiez les identités partagées avec l’application de bureau.", "Définir par défaut", "Ajouter une identité", "Modifier l’identité", "Nom", "Description", "Prompt", "Identité enregistrée : {name}", "Saisissez un nom et un prompt.", "Aucun prompt. Modifiez d’abord cette identité.", "Activée sur le bureau"],
+  "es": ["Elige la identidad predeterminada de Deva o añade y edita las identidades compartidas con la aplicación de escritorio.", "Establecer como predeterminada", "Añadir identidad", "Editar identidad", "Nombre", "Descripción", "Prompt", "Identidad guardada: {name}", "Introduce un nombre y un prompt.", "No hay prompt. Edita primero esta identidad.", "Activada en el escritorio"],
+  "de": ["Wähle Devas Standardidentität oder füge mit der Desktop-App geteilte Identitäten hinzu und bearbeite sie.", "Als Standard festlegen", "Identität hinzufügen", "Identität bearbeiten", "Name", "Beschreibung", "Prompt", "Identität gespeichert: {name}", "Gib einen Namen und einen Prompt ein.", "Kein Prompt. Bearbeite zuerst diese Identität.", "In der Desktop-App aktiviert"],
+  "pt": ["Escolha a identidade padrão do Deva ou adicione e edite identidades compartilhadas com o aplicativo de desktop.", "Definir como padrão", "Adicionar identidade", "Editar identidade", "Nome", "Descrição", "Prompt", "Identidade salva: {name}", "Informe um nome e um prompt.", "Sem prompt. Edite esta identidade primeiro.", "Ativada no desktop"],
+  "ru": ["Выберите идентичность Deva по умолчанию или добавляйте и редактируйте идентичности, общие с настольным приложением.", "Выбрать по умолчанию", "Добавить идентичность", "Редактировать идентичность", "Имя", "Описание", "Промпт", "Идентичность сохранена: {name}", "Введите имя и промпт.", "Нет промпта. Сначала отредактируйте эту идентичность.", "Включена в настольном приложении"],
+  "ar": ["اختر الهوية الافتراضية لـ Deva أو أضف وحرّر الهويات المشتركة مع تطبيق سطح المكتب.", "تعيين كافتراضية", "إضافة هوية", "تحرير الهوية", "الاسم", "الوصف", "الموجّه", "حُفظت الهوية: {name}", "أدخل الاسم والموجّه.", "لا يوجد موجّه. حرّر هذه الهوية أولاً.", "مفعّلة في تطبيق سطح المكتب"],
+  "tr": ["Deva için varsayılan bir kimlik seçin veya masaüstü uygulamasıyla paylaşılan kimlikleri ekleyip düzenleyin.", "Varsayılan yap", "Kimlik ekle", "Kimliği düzenle", "Ad", "Açıklama", "İstem", "Kimlik kaydedildi: {name}", "Bir ad ve istem girin.", "İstem yok. Önce bu kimliği düzenleyin.", "Masaüstünde etkin"],
+}
+
 const labels = {
   "zh": {
     "title": "身份",
@@ -21,14 +22,14 @@ const labels = {
     "saved": "已保存：{name}",
     "none": "未读取到身份目录",
     "mcpTitle": "MCP 服务器",
-    "mcpHint": "服务配置只有一份，存在 Studio 里：这里增删改与 Studio 的「MCP」页面完全等价。勾选本 Agent 要用的服务，连接配置每轮现取，下一轮生效。",
+    "mcpHint": "这些是 Deva 插件自带（独立存储）的 MCP 服务，增删改只影响本插件；Studio 自己的 MCP 列表在 Studio 的「MCP」页，两边互不影响。启用后下一轮连接。",
     "search": "搜索服务器...",
     "add": "+ 添加服务器",
     "reload": "刷新",
     "openStudio": "在 Studio 中打开",
     "summaryTotal": "总计",
     "summaryEnabled": "已启用",
-    "summaryManaged": "Studio 管理",
+    "summaryManaged": "插件自带",
     "summaryTools": "工具",
     "selectionCount": "已勾选 {count} 个服务",
     "connectedStatus": "已连接",
@@ -54,14 +55,24 @@ const labels = {
     "mcpGone": "Studio 里已不存在",
     "addTitle": "添加服务",
     "editTitle": "编辑服务",
-    "configHint": "本地 MCP 使用 command/args/env；远程 MCP 使用 type: streamable_http、url 和可选 headers。",
+    "configHint": "本地 MCP 使用 command/args/env；远程 MCP 使用 type: streamable_http、url 和可选 headers。 密钥掩码保持原值；输入新字符串替换，null 清除。",
     "invalidJson": "JSON 格式错误",
     "invalidConfig": "配置格式错误",
     "invalidServerConfig": "服务器配置无效",
     "missingCommandOrUrl": "必须包含 command 或 url",
     "saveAction": "保存",
     "cancel": "取消",
-    "confirmRemove": "确定从 Studio 删除 MCP 服务「{name}」？"
+    "identityFile": "身份选择文件：{path}",
+    "identityCreated": "身份文件不存在，已按当前身份创建：{path}",
+    "identityRepaired": "已把身份文件/目录权限收紧到 0600/0700",
+    "personasDir": "身份内容目录（与桌面端共用）：{path}",
+    "identityMigrated": "已从旧版身份文件迁移到桌面 persona：{path}",
+    "confirmRemove": "确定从 Studio 删除 MCP 服务「{name}」？",
+    "loading": "加载中…",
+    "applySession": "应用到当前会话",
+    "clearSession": "清除会话身份",
+    "sessionCurrent": "当前会话身份：{name}",
+    "sessionNoContext": "会话内可用 @deva:<id> 或 /deva:identity <id> 切换；新建会话默认用这里保存的身份。",
   },
   "en": {
     "title": "Identity",
@@ -70,14 +81,14 @@ const labels = {
     "saved": "Saved: {name}",
     "none": "No identities available",
     "mcpTitle": "MCP servers",
-    "mcpHint": "There is one copy of every server config, and it lives in Studio: changes here are the same as on Studio’s MCP page. Tick the servers this agent should use; connection config is read fresh each turn.",
+    "mcpHint": "These MCP servers belong to the Deva plugin (stored separately). Changes here never touch Studio’s own MCP list (Studio → MCP). Enabled servers are connected next turn.",
     "search": "Search servers...",
     "add": "+ Add Server",
     "reload": "Refresh",
     "openStudio": "Open in Studio",
     "summaryTotal": "Total",
     "summaryEnabled": "Enabled",
-    "summaryManaged": "Studio-managed",
+    "summaryManaged": "Plugin-owned",
     "summaryTools": "Tools",
     "selectionCount": "Selected {count} of them",
     "connectedStatus": "Connected",
@@ -103,30 +114,40 @@ const labels = {
     "mcpGone": "Missing from Studio",
     "addTitle": "Add server",
     "editTitle": "Edit server",
-    "configHint": "Local MCP uses command/args/env; remote MCP uses type: streamable_http, url and optional headers.",
+    "configHint": "Local MCP uses command/args/env; remote MCP uses type: streamable_http, url and optional headers. Secret masks preserve values; enter a new string to replace, or null to clear.",
     "invalidJson": "Invalid JSON",
     "invalidConfig": "Invalid config shape",
     "invalidServerConfig": "Invalid server config",
     "missingCommandOrUrl": "Needs a non-empty command or url",
     "saveAction": "Save",
     "cancel": "Cancel",
-    "confirmRemove": "Delete MCP server “{name}” from Studio?"
+    "identityFile": "Identity selection file: {path}",
+    "identityCreated": "Identity file was missing; created it now: {path}",
+    "identityRepaired": "Tightened identity file/directory permissions to 0600/0700",
+    "personasDir": "Persona directory (shared with desktop): {path}",
+    "identityMigrated": "Migrated from the old identity file to desktop personas: {path}",
+    "confirmRemove": "Delete MCP server “{name}” from Studio?",
+    "loading": "Loading…",
+    "applySession": "Apply to this session",
+    "clearSession": "Clear session identity",
+    "sessionCurrent": "Current session identity: {name}",
+    "sessionNoContext": "In a session use @deva:<id> or /deva:identity <id>; new sessions default to the identity saved here.",
   },
-  "zh-TW": {
+  "zh-tw": {
     "title": "身分",
     "hint": "選擇這個 Agent 使用哪個人設。儲存後下一輪生效。",
     "save": "儲存",
     "saved": "已儲存：{name}",
     "none": "未讀取到身分目錄",
     "mcpTitle": "MCP 伺服器",
-    "mcpHint": "服務設定只有一份，存在 Studio 裡：這裡增刪改與 Studio 的「MCP」頁面完全等價。勾選本 Agent 要用的服務，連線設定每輪現取，下一輪生效。",
+    "mcpHint": "這些是 Deva 外掛內建（獨立儲存）的 MCP 服務，增刪改只影響本外掛；Studio 自己的 MCP 清單在 Studio 的「MCP」頁，兩邊互不影響。啟用後下一輪連線。",
     "search": "搜尋伺服器...",
     "add": "+ 新增伺服器",
     "reload": "重新整理",
     "openStudio": "在 Studio 中開啟",
     "summaryTotal": "總計",
     "summaryEnabled": "已啟用",
-    "summaryManaged": "Studio 管理",
+    "summaryManaged": "外掛內建",
     "summaryTools": "工具",
     "selectionCount": "已勾選 {count} 個服務",
     "connectedStatus": "已連線",
@@ -152,14 +173,24 @@ const labels = {
     "mcpGone": "Studio 裡已不存在",
     "addTitle": "新增服務",
     "editTitle": "編輯服務",
-    "configHint": "本地 MCP 使用 command/args/env；遠端 MCP 使用 type: streamable_http、url 與選填 headers。",
+    "configHint": "本地 MCP 使用 command/args/env；遠端 MCP 使用 type: streamable_http、url 與選填 headers。 金鑰遮罩保留原值；輸入新字串替換，null 清除。",
     "invalidJson": "JSON 格式錯誤",
     "invalidConfig": "設定格式錯誤",
     "invalidServerConfig": "伺服器設定無效",
     "missingCommandOrUrl": "必須包含 command 或 url",
     "saveAction": "儲存",
     "cancel": "取消",
-    "confirmRemove": "確定從 Studio 刪除 MCP 服務「{name}」？"
+    "identityFile": "身分選擇檔案：{path}",
+    "identityCreated": "身分檔案不存在，已依目前身分建立：{path}",
+    "identityRepaired": "已把身分檔案/目錄權限收緊為 0600/0700",
+    "personasDir": "身分內容目錄（與桌面端共用）：{path}",
+    "identityMigrated": "已從舊版身分檔案遷移到桌面 persona：{path}",
+    "confirmRemove": "確定從 Studio 刪除 MCP 服務「{name}」？",
+    "loading": "載入中…",
+    "applySession": "套用到目前會話",
+    "clearSession": "清除會話身分",
+    "sessionCurrent": "目前會話身分：{name}",
+    "sessionNoContext": "會話內可用 @deva:<id> 或 /deva:identity <id> 切換；新會話預設使用這裡儲存的身分。",
   },
   "ja": {
     "title": "アイデンティティ",
@@ -168,14 +199,14 @@ const labels = {
     "saved": "保存しました：{name}",
     "none": "アイデンティティが見つかりません",
     "mcpTitle": "MCP サーバー",
-    "mcpHint": "サーバー設定は Studio に 1 つだけあります。ここでの変更は Studio の MCP ページと完全に同じです。この Agent が使うサーバーにチェックを入れてください。接続設定は毎ターン読み直されます。",
+    "mcpHint": "これらは Deva プラグイン内蔵（独立保存）の MCP サーバーです。ここでの変更は Studio 自身の MCP リスト（Studio → MCP）に影響しません。有効化すると次ターンで接続します。",
     "search": "サーバーを検索...",
     "add": "+ サーバーを追加",
     "reload": "更新",
     "openStudio": "Studio で開く",
     "summaryTotal": "合計",
     "summaryEnabled": "有効",
-    "summaryManaged": "Studio 管理",
+    "summaryManaged": "プラグイン内蔵",
     "summaryTools": "ツール",
     "selectionCount": "{count} 件選択",
     "connectedStatus": "接続済み",
@@ -201,14 +232,24 @@ const labels = {
     "mcpGone": "Studio に存在しません",
     "addTitle": "サーバーを追加",
     "editTitle": "サーバーを編集",
-    "configHint": "ローカル MCP は command/args/env、リモート MCP は type: streamable_http、url と任意の headers を使います。",
+    "configHint": "ローカル MCP は command/args/env、リモート MCP は type: streamable_http、url と任意の headers を使います。 秘密値のマスクは値を保持します。新しい文字列で置換、null で削除します。",
     "invalidJson": "JSON の形式が正しくありません",
     "invalidConfig": "設定の形式が正しくありません",
     "invalidServerConfig": "サーバー設定が無効です",
     "missingCommandOrUrl": "command または url が必要です",
     "saveAction": "保存",
     "cancel": "キャンセル",
-    "confirmRemove": "Studio から MCP サーバー「{name}」を削除しますか？"
+    "identityFile": "アイデンティティ選択ファイル：{path}",
+    "identityCreated": "アイデンティティファイルが無いため作成しました：{path}",
+    "identityRepaired": "アイデンティティファイル/ディレクトリの権限を 0600/0700 にしました",
+    "personasDir": "ペルソナディレクトリ（デスクトップと共用）：{path}",
+    "identityMigrated": "旧アイデンティティファイルからデスクトップ persona へ移行しました：{path}",
+    "confirmRemove": "Studio から MCP サーバー「{name}」を削除しますか？",
+    "loading": "読み込み中…",
+    "applySession": "このセッションに適用",
+    "clearSession": "セッションのアイデンティティを解除",
+    "sessionCurrent": "このセッションのアイデンティティ：{name}",
+    "sessionNoContext": "セッション内では @deva:<id> または /deva:identity <id> で切替。新しいセッションはここで保存した既定を使用します。",
   },
   "ko": {
     "title": "아이덴티티",
@@ -217,14 +258,14 @@ const labels = {
     "saved": "저장됨: {name}",
     "none": "아이덴티티를 불러오지 못했습니다",
     "mcpTitle": "MCP 서버",
-    "mcpHint": "서버 설정은 Studio에 한 벌만 있습니다. 여기서의 변경은 Studio의 MCP 페이지와 완전히 같습니다. 이 Agent가 사용할 서버를 선택하세요. 연결 설정은 매 턴 새로 읽습니다.",
+    "mcpHint": "이 MCP 서버는 Deva 플러그인 내장(별도 저장)입니다. 여기서의 변경은 Studio 자체 MCP 목록(Studio → MCP)에 영향을 주지 않습니다. 활성화하면 다음 턴에 연결됩니다.",
     "search": "서버 검색...",
     "add": "+ 서버 추가",
     "reload": "새로고침",
     "openStudio": "Studio에서 열기",
     "summaryTotal": "전체",
     "summaryEnabled": "사용 중",
-    "summaryManaged": "Studio 관리",
+    "summaryManaged": "플러그인 내장",
     "summaryTools": "도구",
     "selectionCount": "{count}개 선택",
     "connectedStatus": "연결됨",
@@ -250,14 +291,24 @@ const labels = {
     "mcpGone": "Studio에 없음",
     "addTitle": "서버 추가",
     "editTitle": "서버 편집",
-    "configHint": "로컬 MCP는 command/args/env, 원격 MCP는 type: streamable_http, url과 선택적 headers를 사용합니다.",
+    "configHint": "로컬 MCP는 command/args/env, 원격 MCP는 type: streamable_http, url과 선택적 headers를 사용합니다. 비밀 값 마스크는 기존 값을 유지합니다. 새 문자열로 교체하거나 null로 삭제하세요.",
     "invalidJson": "JSON 형식 오류",
     "invalidConfig": "설정 형식 오류",
     "invalidServerConfig": "서버 설정이 올바르지 않습니다",
     "missingCommandOrUrl": "command 또는 url이 필요합니다",
     "saveAction": "저장",
     "cancel": "취소",
-    "confirmRemove": "Studio에서 MCP 서버 “{name}”을(를) 삭제할까요?"
+    "identityFile": "아이덴티티 선택 파일: {path}",
+    "identityCreated": "아이덴티티 파일이 없어 새로 만들었습니다: {path}",
+    "identityRepaired": "아이덴티티 파일/디렉터리 권한을 0600/0700으로 조정했습니다",
+    "personasDir": "페르소나 디렉터리(데스크톱과 공유): {path}",
+    "identityMigrated": "이전 아이덴티티 파일에서 데스크톱 persona로 마이그레이션했습니다: {path}",
+    "confirmRemove": "Studio에서 MCP 서버 “{name}”을(를) 삭제할까요?",
+    "loading": "불러오는 중…",
+    "applySession": "이 세션에 적용",
+    "clearSession": "세션 아이덴티티 지우기",
+    "sessionCurrent": "현재 세션 아이덴티티: {name}",
+    "sessionNoContext": "세션에서는 @deva:<id> 또는 /deva:identity <id> 로 전환합니다. 새 세션은 여기 저장한 기본값을 사용합니다.",
   },
   "fr": {
     "title": "Identité",
@@ -266,14 +317,14 @@ const labels = {
     "saved": "Enregistré : {name}",
     "none": "Aucune identité disponible",
     "mcpTitle": "Serveurs MCP",
-    "mcpHint": "La configuration de chaque serveur n’existe qu’une fois, dans Studio : les modifications ici sont identiques à celles de la page MCP de Studio. Cochez les serveurs à utiliser ; la configuration est relue à chaque tour.",
+    "mcpHint": "Ces serveurs MCP appartiennent au plugin Deva (stockage séparé). Les modifications ici ne touchent pas la liste MCP de Studio (Studio → MCP). Les serveurs activés sont connectés au tour suivant.",
     "search": "Rechercher un serveur...",
     "add": "+ Ajouter un serveur",
     "reload": "Actualiser",
     "openStudio": "Ouvrir dans Studio",
     "summaryTotal": "Total",
     "summaryEnabled": "Activés",
-    "summaryManaged": "Gérés par Studio",
+    "summaryManaged": "Fourni par le plugin",
     "summaryTools": "Outils",
     "selectionCount": "{count} sélectionnés",
     "connectedStatus": "Connecté",
@@ -299,14 +350,24 @@ const labels = {
     "mcpGone": "Absent de Studio",
     "addTitle": "Ajouter un serveur",
     "editTitle": "Modifier le serveur",
-    "configHint": "MCP local : command/args/env ; MCP distant : type: streamable_http, url et headers facultatifs.",
+    "configHint": "MCP local : command/args/env ; MCP distant : type: streamable_http, url et headers facultatifs. Le masque conserve le secret ; une nouvelle chaîne le remplace, null le supprime.",
     "invalidJson": "JSON invalide",
     "invalidConfig": "Structure de configuration invalide",
     "invalidServerConfig": "Configuration de serveur invalide",
     "missingCommandOrUrl": "Un command ou une url non vide est requis",
     "saveAction": "Enregistrer",
     "cancel": "Annuler",
-    "confirmRemove": "Supprimer le serveur MCP « {name} » de Studio ?"
+    "identityFile": "Fichier de sélection d’identité : {path}",
+    "identityCreated": "Fichier d’identité absent ; créé maintenant : {path}",
+    "identityRepaired": "Permissions du fichier/dossier d’identité resserrées à 0600/0700",
+    "personasDir": "Dossier des personas (partagé avec le bureau) : {path}",
+    "identityMigrated": "Migré de l’ancien fichier d’identité vers les personas du bureau : {path}",
+    "confirmRemove": "Supprimer le serveur MCP « {name} » de Studio ?",
+    "loading": "Chargement…",
+    "applySession": "Appliquer à cette session",
+    "clearSession": "Effacer l’identité de la session",
+    "sessionCurrent": "Identité de la session : {name}",
+    "sessionNoContext": "Dans une session, utilisez @deva:<id> ou /deva:identity <id> ; les nouvelles sessions utilisent l’identité enregistrée ici.",
   },
   "es": {
     "title": "Identidad",
@@ -315,14 +376,14 @@ const labels = {
     "saved": "Guardado: {name}",
     "none": "No se encontraron identidades",
     "mcpTitle": "Servidores MCP",
-    "mcpHint": "La configuración de cada servidor existe una sola vez, en Studio: los cambios aquí son idénticos a los de la página MCP de Studio. Marca los servidores que usará este Agent; la configuración se lee en cada turno.",
+    "mcpHint": "Estos servidores MCP pertenecen al plugin Deva (almacenamiento aparte). Los cambios aquí no afectan a la lista MCP de Studio (Studio → MCP). Los servidores activados se conectan en el siguiente turno.",
     "search": "Buscar servidores...",
     "add": "+ Añadir servidor",
     "reload": "Actualizar",
     "openStudio": "Abrir en Studio",
     "summaryTotal": "Total",
     "summaryEnabled": "Activados",
-    "summaryManaged": "Gestionados por Studio",
+    "summaryManaged": "Incluido en el plugin",
     "summaryTools": "Herramientas",
     "selectionCount": "{count} seleccionados",
     "connectedStatus": "Conectado",
@@ -348,14 +409,24 @@ const labels = {
     "mcpGone": "Ya no existe en Studio",
     "addTitle": "Añadir servidor",
     "editTitle": "Editar servidor",
-    "configHint": "MCP local usa command/args/env; MCP remoto usa type: streamable_http, url y headers opcionales.",
+    "configHint": "MCP local usa command/args/env; MCP remoto usa type: streamable_http, url y headers opcionales. La máscara conserva el secreto; una cadena nueva lo reemplaza y null lo elimina.",
     "invalidJson": "JSON no válido",
     "invalidConfig": "Formato de configuración no válido",
     "invalidServerConfig": "Configuración de servidor no válida",
     "missingCommandOrUrl": "Requiere command o url no vacío",
     "saveAction": "Guardar",
     "cancel": "Cancelar",
-    "confirmRemove": "¿Eliminar el servidor MCP «{name}» de Studio?"
+    "identityFile": "Archivo de selección de identidad: {path}",
+    "identityCreated": "No existía el archivo de identidad; se creó ahora: {path}",
+    "identityRepaired": "Permisos del archivo/carpeta de identidad ajustados a 0600/0700",
+    "personasDir": "Carpeta de personas (compartida con el escritorio): {path}",
+    "identityMigrated": "Migrado del archivo de identidad anterior a los personas del escritorio: {path}",
+    "confirmRemove": "¿Eliminar el servidor MCP «{name}» de Studio?",
+    "loading": "Cargando…",
+    "applySession": "Aplicar a esta sesión",
+    "clearSession": "Borrar identidad de la sesión",
+    "sessionCurrent": "Identidad de la sesión: {name}",
+    "sessionNoContext": "En una sesión usa @deva:<id> o /deva:identity <id>; las sesiones nuevas usan la identidad guardada aquí.",
   },
   "de": {
     "title": "Identität",
@@ -364,14 +435,14 @@ const labels = {
     "saved": "Gespeichert: {name}",
     "none": "Keine Identitäten gefunden",
     "mcpTitle": "MCP-Server",
-    "mcpHint": "Die Konfiguration jedes Servers existiert nur einmal, in Studio: Änderungen hier entsprechen genau denen auf Studios MCP-Seite. Hake die Server an, die dieser Agent nutzen soll; die Konfiguration wird in jedem Turn neu gelesen.",
+    "mcpHint": "Diese MCP-Server gehören zum Deva-Plugin (separater Speicher). Änderungen hier betreffen nicht die MCP-Liste von Studio (Studio → MCP). Aktivierte Server werden im nächsten Turn verbunden.",
     "search": "Server suchen...",
     "add": "+ Server hinzufügen",
     "reload": "Aktualisieren",
     "openStudio": "In Studio öffnen",
     "summaryTotal": "Gesamt",
     "summaryEnabled": "Aktiv",
-    "summaryManaged": "Studio-verwaltet",
+    "summaryManaged": "Vom Plugin mitgeliefert",
     "summaryTools": "Werkzeuge",
     "selectionCount": "{count} ausgewählt",
     "connectedStatus": "Verbunden",
@@ -397,14 +468,24 @@ const labels = {
     "mcpGone": "In Studio nicht mehr vorhanden",
     "addTitle": "Server hinzufügen",
     "editTitle": "Server bearbeiten",
-    "configHint": "Lokales MCP nutzt command/args/env; entferntes MCP nutzt type: streamable_http, url und optionale headers.",
+    "configHint": "Lokales MCP nutzt command/args/env; entferntes MCP nutzt type: streamable_http, url und optionale headers. Die Maske behält Geheimnisse bei; eine neue Zeichenfolge ersetzt sie, null löscht sie.",
     "invalidJson": "Ungültiges JSON",
     "invalidConfig": "Ungültiges Konfigurationsformat",
     "invalidServerConfig": "Ungültige Serverkonfiguration",
     "missingCommandOrUrl": "command oder url erforderlich",
     "saveAction": "Speichern",
     "cancel": "Abbrechen",
-    "confirmRemove": "MCP-Server „{name}“ aus Studio löschen?"
+    "identityFile": "Identitätsauswahl-Datei: {path}",
+    "identityCreated": "Identitätsdatei fehlte und wurde angelegt: {path}",
+    "identityRepaired": "Rechte von Identitätsdatei/-ordner auf 0600/0700 verschärft",
+    "personasDir": "Persona-Verzeichnis (mit Desktop geteilt): {path}",
+    "identityMigrated": "Vom alten Identitätsfile zu Desktop-Personas migriert: {path}",
+    "confirmRemove": "MCP-Server „{name}“ aus Studio löschen?",
+    "loading": "Wird geladen…",
+    "applySession": "Auf diese Sitzung anwenden",
+    "clearSession": "Sitzungsidentität löschen",
+    "sessionCurrent": "Aktuelle Sitzungsidentität: {name}",
+    "sessionNoContext": "In einer Sitzung @deva:<id> oder /deva:identity <id> verwenden; neue Sitzungen nutzen die hier gespeicherte Identität.",
   },
   "pt": {
     "title": "Identidade",
@@ -413,14 +494,14 @@ const labels = {
     "saved": "Salvo: {name}",
     "none": "Nenhuma identidade encontrada",
     "mcpTitle": "Servidores MCP",
-    "mcpHint": "A configuração de cada servidor existe uma única vez, no Studio: alterações aqui são idênticas às da página MCP do Studio. Marque os servidores que este Agent deve usar; a configuração é lida a cada turno.",
+    "mcpHint": "Estes servidores MCP pertencem ao plugin Deva (armazenamento separado). Alterações aqui não afetam a lista MCP do Studio (Studio → MCP). Servidores ativados conectam no próximo turno.",
     "search": "Pesquisar servidores...",
     "add": "+ Adicionar servidor",
     "reload": "Atualizar",
     "openStudio": "Abrir no Studio",
     "summaryTotal": "Total",
     "summaryEnabled": "Ativos",
-    "summaryManaged": "Gerenciados pelo Studio",
+    "summaryManaged": "Do plugin",
     "summaryTools": "Ferramentas",
     "selectionCount": "{count} selecionados",
     "connectedStatus": "Conectado",
@@ -446,14 +527,24 @@ const labels = {
     "mcpGone": "Não existe mais no Studio",
     "addTitle": "Adicionar servidor",
     "editTitle": "Editar servidor",
-    "configHint": "MCP local usa command/args/env; MCP remoto usa type: streamable_http, url e headers opcionais.",
+    "configHint": "MCP local usa command/args/env; MCP remoto usa type: streamable_http, url e headers opcionais. A máscara mantém o segredo; uma nova string substitui, null remove.",
     "invalidJson": "JSON inválido",
     "invalidConfig": "Formato de configuração inválido",
     "invalidServerConfig": "Configuração de servidor inválida",
     "missingCommandOrUrl": "Requer command ou url não vazio",
     "saveAction": "Salvar",
     "cancel": "Cancelar",
-    "confirmRemove": "Excluir o servidor MCP “{name}” do Studio?"
+    "identityFile": "Arquivo de seleção de identidade: {path}",
+    "identityCreated": "O arquivo de identidade não existia e foi criado agora: {path}",
+    "identityRepaired": "Permissões do arquivo/pasta de identidade ajustadas para 0600/0700",
+    "personasDir": "Pasta de personas (compartilhada com o desktop): {path}",
+    "identityMigrated": "Migrado do arquivo de identidade antigo para as personas do desktop: {path}",
+    "confirmRemove": "Excluir o servidor MCP “{name}” do Studio?",
+    "loading": "Carregando…",
+    "applySession": "Aplicar a esta sessão",
+    "clearSession": "Limpar identidade da sessão",
+    "sessionCurrent": "Identidade da sessão: {name}",
+    "sessionNoContext": "Na sessão use @deva:<id> ou /deva:identity <id>; novas sessões usam a identidade salva aqui.",
   },
   "ru": {
     "title": "Идентичность",
@@ -462,14 +553,14 @@ const labels = {
     "saved": "Сохранено: {name}",
     "none": "Идентичности не найдены",
     "mcpTitle": "MCP-серверы",
-    "mcpHint": "Конфигурация каждого сервера существует в единственном экземпляре — в Studio: изменения здесь полностью совпадают с изменениями на странице MCP в Studio. Отметьте серверы для этого Agent; конфигурация читается заново каждый ход.",
+    "mcpHint": "Эти MCP-серверы принадлежат плагину Deva (отдельное хранилище). Изменения здесь не затрагивают список MCP Studio (Studio → MCP). Включённые серверы подключаются в следующем ходе.",
     "search": "Поиск серверов...",
     "add": "+ Добавить сервер",
     "reload": "Обновить",
     "openStudio": "Открыть в Studio",
     "summaryTotal": "Всего",
     "summaryEnabled": "Включено",
-    "summaryManaged": "Управляется Studio",
+    "summaryManaged": "Встроено в плагин",
     "summaryTools": "Инструменты",
     "selectionCount": "Выбрано: {count}",
     "connectedStatus": "Подключён",
@@ -495,14 +586,24 @@ const labels = {
     "mcpGone": "Отсутствует в Studio",
     "addTitle": "Добавить сервер",
     "editTitle": "Изменить сервер",
-    "configHint": "Локальный MCP использует command/args/env; удалённый — type: streamable_http, url и необязательные headers.",
+    "configHint": "Локальный MCP использует command/args/env; удалённый — type: streamable_http, url и необязательные headers. Маска сохраняет секрет; новая строка заменяет его, null удаляет.",
     "invalidJson": "Неверный JSON",
     "invalidConfig": "Неверный формат конфигурации",
     "invalidServerConfig": "Недопустимая конфигурация сервера",
     "missingCommandOrUrl": "Требуется непустой command или url",
     "saveAction": "Сохранить",
     "cancel": "Отмена",
-    "confirmRemove": "Удалить MCP-сервер «{name}» из Studio?"
+    "identityFile": "Файл выбора идентичности: {path}",
+    "identityCreated": "Файл идентичности отсутствовал и создан сейчас: {path}",
+    "identityRepaired": "Права файла/каталога идентичности ужесточены до 0600/0700",
+    "personasDir": "Каталог персон (общий с десктопом): {path}",
+    "identityMigrated": "Мигрировано из старого файла идентичности в персоны десктопа: {path}",
+    "confirmRemove": "Удалить MCP-сервер «{name}» из Studio?",
+    "loading": "Загрузка…",
+    "applySession": "Применить к сессии",
+    "clearSession": "Очистить идентичность сессии",
+    "sessionCurrent": "Текущая идентичность сессии: {name}",
+    "sessionNoContext": "В сессии используйте @deva:<id> или /deva:identity <id>; новые сессии используют сохранённую здесь идентичность.",
   },
   "ar": {
     "title": "الهوية",
@@ -511,14 +612,14 @@ const labels = {
     "saved": "تم الحفظ: {name}",
     "none": "لم يتم العثور على هويات",
     "mcpTitle": "خوادم MCP",
-    "mcpHint": "لكل خادم نسخة واحدة من الإعدادات، وهي في Studio: التغييرات هنا مطابقة تمامًا لصفحة MCP في Studio. حدّد الخوادم التي يستخدمها هذا الوكيل؛ تُقرأ الإعدادات من جديد في كل جولة.",
+    "mcpHint": "خوادم MCP هذه تابعة لإضافة Deva (تخزين منفصل). التغييرات هنا لا تؤثر على قائمة MCP الخاصة بـ Studio (Studio → MCP). يتم الاتصال بالخوادم الممكّنة في الدور التالي.",
     "search": "بحث في الخوادم...",
     "add": "+ إضافة خادم",
     "reload": "تحديث",
     "openStudio": "فتح في Studio",
     "summaryTotal": "الإجمالي",
     "summaryEnabled": "المفعّلة",
-    "summaryManaged": "تديرها Studio",
+    "summaryManaged": "مضمّن في الإضافة",
     "summaryTools": "الأدوات",
     "selectionCount": "المحدد: {count}",
     "connectedStatus": "متصل",
@@ -544,14 +645,24 @@ const labels = {
     "mcpGone": "لم يعد موجودًا في Studio",
     "addTitle": "إضافة خادم",
     "editTitle": "تعديل الخادم",
-    "configHint": "يستخدم MCP المحلي command/args/env؛ ويستخدم MCP البعيد type: streamable_http وurl وheaders اختيارية.",
+    "configHint": "يستخدم MCP المحلي command/args/env؛ ويستخدم MCP البعيد type: streamable_http وurl وheaders اختيارية. القناع يحفظ السر؛ استبدله بنص جديد أو استخدم null لحذفه.",
     "invalidJson": "صيغة JSON غير صحيحة",
     "invalidConfig": "صيغة الإعدادات غير صحيحة",
     "invalidServerConfig": "إعدادات الخادم غير صالحة",
     "missingCommandOrUrl": "يلزم وجود command أو url غير فارغ",
     "saveAction": "حفظ",
     "cancel": "إلغاء",
-    "confirmRemove": "حذف خادم MCP «{name}» من Studio؟"
+    "identityFile": "ملف اختيار الهوية: {path}",
+    "identityCreated": "لم يكن ملف الهوية موجودًا وتم إنشاؤه الآن: {path}",
+    "identityRepaired": "تم تشديد أذونات ملف/مجلد الهوية إلى 0600/0700",
+    "personasDir": "مجلد الشخصيات (مشترك مع سطح المكتب): {path}",
+    "identityMigrated": "تم الترحيل من ملف الهوية القديم إلى شخصيات سطح المكتب: {path}",
+    "confirmRemove": "حذف خادم MCP «{name}» من Studio؟",
+    "loading": "جارٍ التحميل…",
+    "applySession": "تطبيق على هذه الجلسة",
+    "clearSession": "مسح هوية الجلسة",
+    "sessionCurrent": "هوية الجلسة الحالية: {name}",
+    "sessionNoContext": "داخل الجلسة استخدم @deva:<id> أو /deva:identity <id>؛ الجلسات الجديدة تستخدم الهوية المحفوظة هنا.",
   },
   "tr": {
     "title": "Kimlik",
@@ -560,14 +671,14 @@ const labels = {
     "saved": "Kaydedildi: {name}",
     "none": "Kimlik bulunamadı",
     "mcpTitle": "MCP sunucuları",
-    "mcpHint": "Her sunucunun yapılandırması yalnızca bir yerde, Studio’da bulunur: buradaki değişiklikler Studio’nun MCP sayfasıyla birebir aynıdır. Bu Agent’ın kullanacağı sunucuları işaretleyin; bağlantı yapılandırması her turda yeniden okunur.",
+    "mcpHint": "Bu MCP sunucuları Deva eklentisine aittir (ayrı depolama). Buradaki değişiklikler Studio’nun kendi MCP listesini (Studio → MCP) etkilemez. Etkinleştirilen sunucular sonraki turda bağlanır.",
     "search": "Sunucu ara...",
     "add": "+ Sunucu ekle",
     "reload": "Yenile",
     "openStudio": "Studio’da aç",
     "summaryTotal": "Toplam",
     "summaryEnabled": "Etkin",
-    "summaryManaged": "Studio yönetiminde",
+    "summaryManaged": "Eklenti ile gelir",
     "summaryTools": "Araçlar",
     "selectionCount": "{count} seçili",
     "connectedStatus": "Bağlı",
@@ -593,15 +704,59 @@ const labels = {
     "mcpGone": "Studio’da artık yok",
     "addTitle": "Sunucu ekle",
     "editTitle": "Sunucuyu düzenle",
-    "configHint": "Yerel MCP command/args/env kullanır; uzak MCP type: streamable_http, url ve isteğe bağlı headers kullanır.",
+    "configHint": "Yerel MCP command/args/env kullanır; uzak MCP type: streamable_http, url ve isteğe bağlı headers kullanır. Maske gizli değeri korur; yeni metin değiştirir, null siler.",
     "invalidJson": "JSON biçimi hatalı",
     "invalidConfig": "Yapılandırma biçimi hatalı",
     "invalidServerConfig": "Sunucu yapılandırması geçersiz",
     "missingCommandOrUrl": "Boş olmayan command veya url gerekir",
     "saveAction": "Kaydet",
     "cancel": "İptal",
-    "confirmRemove": "MCP sunucusu “{name}” Studio’dan silinsin mi?"
+    "identityFile": "Kimlik seçim dosyası: {path}",
+    "identityCreated": "Kimlik dosyası yoktu, şimdi oluşturuldu: {path}",
+    "identityRepaired": "Kimlik dosyası/klasörü izinleri 0600/0700 olarak sıkılaştırıldı",
+    "personasDir": "Persona klasörü (masaüstüyle ortak): {path}",
+    "identityMigrated": "Eski kimlik dosyasından masaüstü personalarına taşındı: {path}",
+    "confirmRemove": "MCP sunucusu “{name}” Studio’dan silinsin mi?",
+    "loading": "Yükleniyor…",
+    "applySession": "Bu oturuma uygula",
+    "clearSession": "Oturum kimliğini temizle",
+    "sessionCurrent": "Geçerli oturum kimliği: {name}",
+    "sessionNoContext": "Oturumda @deva:<id> veya /deva:identity <id> kullanın; yeni oturumlar burada kayıtlı kimliği kullanır.",
   }
+}
+
+const sharedModelLabels = {
+  en: ["Address and model are shared with Desktop. Quit Desktop before saving here, then reopen it. Set API keys separately in each app.", "Review the previous Studio settings and save once to finish the migration."],
+  zh: ["地址和模型与桌面端共用。请先退出桌面端，保存后再打开。API Key 要在两端分别设置。", "请核对原 Studio 设置并保存一次，完成迁移。"],
+  "zh-tw": ["位址和模型與桌面端共用。請先退出桌面端，儲存後再開啟。API Key 須在兩端分別設定。", "請核對原 Studio 設定並儲存一次，完成遷移。"],
+  ja: ["URL とモデルはデスクトップ版と共有します。保存前にデスクトップ版を終了し、保存後に再起動してください。API キーは個別に設定します。", "以前の Studio 設定を確認して一度保存すると移行が完了します。"],
+  ko: ["주소와 모델은 데스크톱 앱과 공유합니다. 여기서 저장하기 전에 데스크톱 앱을 종료하고 저장 후 다시 여세요. API 키는 각 앱에서 따로 설정합니다.", "이전 Studio 설정을 확인하고 한 번 저장해 마이그레이션을 완료하세요."],
+  fr: ["L’URL et le modèle sont partagés avec l’application de bureau. Fermez-la avant d’enregistrer ici, puis relancez-la. Configurez la clé API dans chaque application.", "Vérifiez les anciens réglages de Studio et enregistrez une fois pour terminer la migration."],
+  es: ["La URL y el modelo se comparten con la aplicación de escritorio. Ciérrala antes de guardar aquí y vuelve a abrirla. Configura la clave API por separado en cada aplicación.", "Revisa los ajustes anteriores de Studio y guarda una vez para completar la migración."],
+  de: ["URL und Modell werden mit der Desktop-App geteilt. Beende sie vor dem Speichern und öffne sie danach erneut. API-Schlüssel werden getrennt eingerichtet.", "Prüfe die bisherigen Studio-Einstellungen und speichere einmal, um die Migration abzuschließen."],
+  pt: ["O endereço e o modelo são compartilhados com o aplicativo de desktop. Feche-o antes de salvar aqui e reabra-o depois. Configure a chave de API separadamente em cada aplicativo.", "Confira as configurações anteriores do Studio e salve uma vez para concluir a migração."],
+  ru: ["Адрес и модель общие с настольным приложением. Закройте его перед сохранением и откройте снова после. Ключ API настраивается отдельно в каждом приложении.", "Проверьте прежние настройки Studio и сохраните их один раз для завершения переноса."],
+  ar: ["عنوان URL والنموذج مشتركان مع تطبيق سطح المكتب. أغلقه قبل الحفظ ثم أعد فتحه. اضبط مفتاح API بشكل منفصل في كل تطبيق.", "راجع إعدادات Studio السابقة واحفظ مرة واحدة لإكمال الترحيل."],
+  tr: ["Adres ve model masaüstü uygulamasıyla paylaşılır. Burada kaydetmeden önce masaüstü uygulamasını kapatıp ardından yeniden açın. API anahtarını her uygulamada ayrı ayarlayın.", "Taşımayı tamamlamak için önceki Studio ayarlarını kontrol edip bir kez kaydedin."],
+}
+
+/** 与 lib/model-selection.mjs 的 REASONING_EFFORTS 一致（前端不能引 node 模块）。 */
+const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh']
+
+// [标题, API 地址, 模型名, 密钥, 已设置, 清除密钥, 说明, 旧版提示, 跟随会话, 确认本机/内网/HTTP, 需确认的提示, 模型强度, 强度默认项]
+const modelLabels = {
+  en: ["Model", "Base URL", "Model name", "API Key", "Set — leave blank to keep for this address", "Clear saved key", "Leave the address empty to follow the current session. With an address, Deva sends conversation data directly to that Chat Completions API from the next turn. The session selector stays unchanged.", "The previous Studio catalog selection is inactive. Enter a Base URL and model name to use a custom API.", "Follow the current session selection", "I confirm Deva may connect directly to this local, private-network or HTTP address", "This is a local, private-network or HTTP address. Tick the confirmation below and save again, or use a public HTTPS address.", "Reasoning effort", "Default (not sent)"],
+  zh: ["模型", "API 地址（Base URL）", "模型名", "API Key", "已设置；地址不变时留空可保留", "清除已保存的密钥", "地址留空时跟随当前会话。填写后，下一轮起 Deva 会将对话数据直发到该 Chat Completions API；会话选模栏不变。", "旧版 Studio 目录模型已停用。如需自定义 API，请重新填写地址和模型名。", "跟随会话当前选择", "我确认允许 Deva 直连此本机/内网/HTTP 地址", "这是本机、内网或 HTTP 地址。请勾选下方确认后再保存，或改用公网 HTTPS 地址。", "模型强度", "默认（不发送）"],
+  "zh-tw": ["模型", "API 位址（Base URL）", "模型名稱", "API Key", "已設定；位址不變時留空可保留", "清除已儲存的金鑰", "位址留空時跟隨目前的工作階段。填寫後，Deva 從下一輪起將對話資料直接傳送至該 Chat Completions API；工作階段選模不變。", "舊版 Studio 目錄設定已停用。若要使用自訂 API，請重新填寫位址與模型名稱。", "跟隨目前的工作階段選擇", "我確認允許 Deva 直連此本機/內網/HTTP 位址", "這是本機、內網或 HTTP 位址。請勾選下方確認後再儲存，或改用公網 HTTPS 位址。", "模型強度", "預設（不傳送）"],
+  ja: ["モデル", "API ベース URL", "モデル名", "API キー", "設定済み。同じ URL なら空欄で保持", "保存したキーを削除", "URL が空ならセッションの選択に従います。指定した場合は、次のターンから対話データを Chat Completions API に直接送信します。セッションの選択は変わりません。", "以前の Studio カタログの設定は無効です。カスタム API の URL とモデル名を入力してください。", "現在のセッションの選択に従う", "このローカル／内部ネットワーク／HTTP の URL への Deva の直接接続を許可します", "ローカル、内部ネットワークまたは HTTP の URL です。下の確認にチェックを入れて保存し直すか、公開 HTTPS の URL を使用してください。", "推論強度", "既定（送信しない）"],
+  ko: ["모델", "API 기본 URL", "모델 이름", "API 키", "설정됨. 주소가 같으면 비워 두어 유지", "저장된 키 삭제", "주소를 비우면 현재 세션 선택을 따릅니다. 입력하면 다음 턴부터 대화 데이터를 해당 Chat Completions API에 직접 전송합니다. 세션 선택은 바뀌지 않습니다.", "이전 Studio 모델 목록 선택은 비활성화되었습니다. 사용자 지정 API 주소와 모델 이름을 입력하세요.", "현재 세션 선택 따르기", "이 로컬/내부망/HTTP 주소에 Deva가 직접 연결하는 것을 허용합니다", "로컬, 내부망 또는 HTTP 주소입니다. 아래 확인란을 선택한 뒤 다시 저장하거나 공용 HTTPS 주소를 사용하세요.", "추론 강도", "기본값(전송 안 함)"],
+  fr: ["Modèle", "URL de base de l’API", "Nom du modèle", "Clé API", "Configurée — laisser vide pour conserver la clé de cette adresse", "Effacer la clé enregistrée", "Laissez l’adresse vide pour suivre le choix de la session. Sinon, Deva envoie les données de conversation directement à cette API Chat Completions dès le prochain tour, sans modifier le choix de session.", "L’ancien choix du catalogue Studio est inactif. Renseignez l’URL de base et le nom du modèle.", "Suivre le choix actuel de la session", "Je confirme que Deva peut se connecter directement à cette adresse locale, privée ou HTTP", "Cette adresse est locale, privée ou en HTTP. Cochez la confirmation ci-dessous puis enregistrez de nouveau, ou utilisez une adresse HTTPS publique.", "Effort de raisonnement", "Par défaut (non envoyé)"],
+  es: ["Modelo", "URL base de la API", "Nombre del modelo", "Clave API", "Configurada: déjala vacía para conservarla en esta dirección", "Borrar la clave guardada", "Deja la dirección vacía para seguir la selección de la sesión. Si la indicas, Deva enviará los datos de la conversación a esa API de Chat Completions a partir del próximo turno, sin cambiar la selección de la sesión.", "La selección anterior del catálogo de Studio está inactiva. Introduce la URL base y el nombre del modelo.", "Seguir la selección actual de la sesión", "Confirmo que Deva puede conectarse directamente a esta dirección local, de red privada o HTTP", "Esta dirección es local, de red privada o HTTP. Marca la confirmación de abajo y guarda de nuevo, o usa una dirección HTTPS pública.", "Esfuerzo de razonamiento", "Predeterminado (no se envía)"],
+  de: ["Modell", "API-Basis-URL", "Modellname", "API-Schlüssel", "Gesetzt – bei gleicher Adresse leer lassen, um ihn zu behalten", "Gespeicherten Schlüssel löschen", "Ohne Adresse gilt die Sitzungsauswahl. Andernfalls sendet Deva Gesprächsdaten ab der nächsten Runde direkt an diese Chat Completions API. Die Sitzungsauswahl bleibt unverändert.", "Die alte Studio-Katalogauswahl ist inaktiv. Gib Basis-URL und Modellnamen für die eigene API ein.", "Aktueller Sitzungsauswahl folgen", "Ich bestätige, dass Deva diese lokale, private oder HTTP-Adresse direkt aufrufen darf", "Dies ist eine lokale, private oder HTTP-Adresse. Aktiviere die Bestätigung unten und speichere erneut, oder verwende eine öffentliche HTTPS-Adresse.", "Reasoning-Aufwand", "Standard (nicht gesendet)"],
+  pt: ["Modelo", "URL base da API", "Nome do modelo", "Chave de API", "Configurada: deixe vazia para mantê-la neste endereço", "Apagar a chave salva", "Deixe o endereço em branco para seguir a seleção da sessão. Caso contrário, no próximo turno Deva enviará os dados da conversa diretamente à API Chat Completions sem alterar a seleção da sessão.", "A seleção antiga do catálogo Studio está inativa. Informe a URL base e o nome do modelo.", "Seguir a seleção atual da sessão", "Confirmo que Deva pode se conectar diretamente a este endereço local, de rede privada ou HTTP", "Este endereço é local, de rede privada ou HTTP. Marque a confirmação abaixo e salve novamente, ou use um endereço HTTPS público.", "Esforço de raciocínio", "Padrão (não enviado)"],
+  ru: ["Модель", "Базовый URL API", "Имя модели", "Ключ API", "Задан — для того же адреса оставьте поле пустым", "Удалить сохранённый ключ", "Без адреса используется выбор сеанса. Иначе со следующего хода Deva отправляет данные диалога напрямую в этот Chat Completions API. Выбор сеанса не меняется.", "Прежний выбор из каталога Studio отключён. Укажите базовый URL и имя модели для своего API.", "Следовать текущему выбору сеанса", "Подтверждаю, что Deva может напрямую подключаться к этому локальному, внутреннему или HTTP-адресу", "Это локальный, внутренний или HTTP-адрес. Отметьте подтверждение ниже и сохраните снова либо укажите публичный HTTPS-адрес.", "Уровень рассуждений", "По умолчанию (не отправляется)"],
+  ar: ["النموذج", "عنوان API الأساسي", "اسم النموذج", "مفتاح API", "تم تعيينه؛ اترك الحقل فارغًا للاحتفاظ به لهذا العنوان", "مسح المفتاح المحفوظ", "اترك العنوان فارغًا لاتباع اختيار الجلسة. عند تعيينه، يرسل Deva بيانات المحادثة مباشرةً إلى واجهة Chat Completions بدءًا من الدور التالي، دون تغيير اختيار الجلسة.", "اختيار كتالوج Studio السابق غير نشط. أدخل العنوان الأساسي واسم النموذج لاستخدام API مخصص.", "اتباع اختيار الجلسة الحالي", "أؤكد السماح لـ Deva بالاتصال المباشر بهذا العنوان المحلي أو الداخلي أو عنوان HTTP", "هذا عنوان محلي أو داخلي أو HTTP. حدّد خانة التأكيد أدناه ثم احفظ مجددًا، أو استخدم عنوان HTTPS عامًا.", "مستوى الاستدلال", "الافتراضي (لا يُرسَل)"],
+  tr: ["Model", "API temel URL’si", "Model adı", "API anahtarı", "Ayarlı — aynı adres için korumak üzere boş bırakın", "Kayıtlı anahtarı sil", "Adres boşsa oturum seçimi izlenir. Bir adres girildiğinde Deva, sonraki turdan itibaren konuşma verilerini doğrudan bu Chat Completions API’ye gönderir; oturum seçimi değişmez.", "Önceki Studio katalog seçimi etkin değil. Özel API için temel URL ve model adını girin.", "Geçerli oturum seçimini izle", "Deva’nın bu yerel, özel ağ veya HTTP adresine doğrudan bağlanmasına izin verdiğimi onaylıyorum", "Bu adres yerel, özel ağ veya HTTP adresidir. Aşağıdaki onayı işaretleyip yeniden kaydedin ya da genel bir HTTPS adresi kullanın.", "Akıl yürütme düzeyi", "Varsayılan (gönderilmez)"],
 }
 
 function pickLocale(locale) {
@@ -644,8 +799,12 @@ const STYLES = `
 .deva-btn.ghost{height:auto;padding:2px 8px;border-color:transparent;background:transparent;color:var(--text-secondary,#666)}
 .deva-btn.ghost:hover{background:rgba(var(--accent-primary-rgb,51,51,51),.08);color:var(--text-primary,#1a1a1a)}
 .deva-grid{display:grid;gap:calc(14px * var(--spacing-scale,1));grid-template-columns:repeat(auto-fill,minmax(min(100%,420px),1fr))}
-.deva-card{background:var(--theme-card-bg,var(--bg-card,#fff));border:var(--border-width,1px) solid var(--border-color,#e0e0e0);border-radius:var(--radius-component,8px);padding:calc(16px * var(--spacing-scale,1));transition:border-color .15s}
+.deva-card{min-width:0;background:var(--theme-card-bg,var(--bg-card,#fff));border:var(--border-width,1px) solid var(--border-color,#e0e0e0);border-radius:var(--radius-component,8px);padding:calc(16px * var(--spacing-scale,1));transition:border-color .15s}
 .deva-card:hover{border-color:rgba(var(--accent-primary-rgb,51,51,51),.3)}
+.deva-model-form label:not(.deva-check-row){display:grid;gap:4px}
+.deva-model-form input:not([type=checkbox]),.deva-model-form select{width:100%;box-sizing:border-box}
+.deva-field-error{color:var(--error,#c62828);font-size:calc(var(--font-size-base,14px) * 12 / 14)}
+.deva-field-error[hidden]{display:none}
 .deva-card.off{opacity:.7}
 .deva-card.bad{border-color:color-mix(in srgb,var(--error,#c62828) 30%,transparent)}
 .deva-card-head{display:flex;align-items:center;justify-content:space-between;gap:calc(12px * var(--spacing-scale,1));margin-bottom:12px}
@@ -683,8 +842,14 @@ const STYLES = `
 .deva-textarea:focus{outline:none;border-color:var(--accent-primary,#333)}
 .deva-textarea.invalid{border-color:var(--error,#c62828)}
 .deva-modal-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
-.deva-select{min-width:220px;max-width:100%;height:var(--control-height,32px);padding:0 10px;box-sizing:border-box;border:1px solid var(--border-color,#e0e0e0);border-radius:var(--radius-component,6px);background:var(--bg-input,#fff);color:inherit;font:inherit;font-size:calc(var(--font-size-base,14px) * 13 / 14)}
+.deva-select{min-width:min(220px,100%);max-width:100%;height:var(--control-height,32px);padding:0 10px;box-sizing:border-box;border:1px solid var(--border-color,#e0e0e0);border-radius:var(--radius-component,6px);background:var(--bg-input,#fff);color:inherit;font:inherit;font-size:calc(var(--font-size-base,14px) * 13 / 14)}
 .deva-select:focus{outline:none;border-color:var(--accent-primary,#333)}
+.deva-identity-row{display:flex;align-items:center;gap:calc(12px * var(--spacing-scale,1));min-width:0;flex-wrap:wrap}
+.deva-avatar{flex:0 0 auto;width:44px;height:44px;border-radius:50%;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;background:rgba(var(--accent-primary-rgb,51,51,51),.1);color:var(--text-primary,#1a1a1a);font-weight:600;font-size:calc(var(--font-size-base,14px) * 16 / 14);border:1px solid var(--border-color,#e0e0e0)}
+.deva-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.deva-settings [hidden]{display:none}
+.deva-persona-detail{overflow-wrap:anywhere}
+@media (max-width:480px){.deva-identity-row{flex-direction:column;align-items:flex-start}}
 @media (max-width:768px){.deva-summary{grid-template-columns:repeat(2,1fr)}.deva-toolbar{flex-direction:column;align-items:stretch}.deva-search{max-width:none}.deva-grid{grid-template-columns:1fr}}
 `
 
@@ -763,70 +928,342 @@ export async function mount(root, ctx) {
   const container = el('div', 'deva-settings')
   root.append(container)
 
-  // 两个页面共用一个客户端入口：路由变化会重新挂载，按 view 只渲染对应那一段
+  // 路由变化会重新挂载，按 view 只渲染对应页面。
   if (ctx.view === 'mcp') await mountMcp(container, ctx, text)
-  else await mountIdentity(container, ctx, text)
+  else if (ctx.view === 'model') await mountModel(container, ctx, text, modelLabels[locale], sharedModelLabels[locale])
+  else await mountIdentity(container, ctx, text, identityLabels[locale])
 }
 
-async function mountIdentity(container, ctx, text) {
-  const heading = el('div')
-  heading.append(el('h2', '', text.title), el('p', '', text.hint))
+async function mountModel(container, ctx, text, [_title, addressLabel, nameLabel, keyLabel, configured, clearLabel, hint, legacy, follow, allowLabel, confirmNeeded, effortLabel, effortDefault], [sharedHint, migration]) {
   const header = el('div', 'deva-header')
+  const heading = el('div')
+  heading.append(el('p', '', hint))
   header.append(heading)
-  container.append(header)
+  const card = el('div', 'deva-card')
+  const body = el('div', 'deva-card-body deva-model-form')
+  const shared = el('p')
+  shared.hidden = true
+  body.append(shared)
+  const problems = []
+  const field = (label, type, maxLength) => {
+    const input = el('input', type === 'checkbox' ? 'deva-check' : 'deva-select')
+    input.type = type
+    if (maxLength) input.maxLength = maxLength
+    if (type !== 'checkbox') input.autocomplete = 'off'
+    const wrapper = el('label', type === 'checkbox' ? 'deva-check-row' : '', label)
+    wrapper.append(input)
+    const problem = el('div', 'deva-field-error')
+    problem.hidden = true
+    body.append(wrapper, problem)
+    problems.push([input, problem])
+    return input
+  }
+  const address = field(addressLabel, 'url', 2048)
+  address.placeholder = 'https://api.example.com/v1'
+  const name = field(nameLabel, 'text', 256)
+  const key = field(keyLabel, 'password', 4096)
+  key.autocomplete = 'new-password'
+  // 档位值就是下发给上游的 reasoning_effort，原样显示；空值表示不发送。
+  const effort = el('select', 'deva-select')
+  for (const value of ['', ...REASONING_EFFORTS]) {
+    const option = el('option', '', value || effortDefault)
+    option.value = value
+    effort.append(option)
+  }
+  const effortRow = el('label', '', effortLabel)
+  effortRow.append(effort)
+  const effortProblem = el('div', 'deva-field-error')
+  effortProblem.hidden = true
+  body.append(effortRow, effortProblem)
+  problems.push([effort, effortProblem])
+  const clear = field(clearLabel, 'checkbox')
+  const allow = field(allowLabel, 'checkbox')
+  // 确认只对勾选时的那个地址有效：地址一改就取消勾选，避免把确认带到新地址。
+  address.oninput = () => { allow.checked = false }
+  const fields = { baseUrl: address, modelName: name, apiKey: key, allowNonPublic: allow, reasoningEffort: effort }
+  const save = button(text.save, 'deva-btn primary')
+  const status = el('div', 'deva-status')
+  body.append(save)
+  card.append(body, status)
+  container.append(header, card)
 
+  const setBusy = busy => {
+    address.disabled = name.disabled = key.disabled = effort.disabled = clear.disabled = allow.disabled = save.disabled = busy
+  }
+  /** 字段级错误：标在出错的输入项下方；传 null 清空。 */
+  const setProblem = error => {
+    for (const [input, problem] of problems) {
+      const hit = Boolean(error) && fields[error.field] === input
+      problem.hidden = !hit
+      problem.textContent = hit ? (error.code === 'confirmation-required' ? confirmNeeded : error.message) : ''
+      input.ariaInvalid = hit ? 'true' : 'false'
+    }
+    if (!error) return
+    status.className = 'deva-status error'
+    status.textContent = error.code === 'confirmation-required' ? confirmNeeded : error.message
+  }
+  const setError = error => {
+    status.className = 'deva-status error'
+    status.textContent = errorText(error)
+  }
+  const show = settings => {
+    address.value = settings.baseUrl
+    name.value = settings.modelName
+    key.value = ''
+    key.placeholder = settings.hasApiKey ? configured : ''
+    clear.checked = false
+    allow.checked = settings.allowNonPublic === true
+    effort.value = settings.reasoningEffort || ''
+    setProblem(null)
+    status.className = 'deva-status'
+    shared.hidden = !settings.sharedConfigPath
+    shared.textContent = settings.sharedConfigPath ? `${sharedHint} (${settings.sharedConfigPath})` : ''
+    status.textContent = settings.sharedNeedsSetup ? migration : settings.legacyNeedsSetup ? legacy : settings.baseUrl ? '' : follow
+  }
+  status.textContent = text.loading
+  setBusy(true)
+  try {
+    const settings = await ctx.rpc.call('get-model-selection')
+    if (ctx.signal?.aborted) return
+    show(settings)
+  } catch (error) {
+    if (!ctx.signal?.aborted) setError(error)
+    return
+  }
+  setBusy(false)
+  save.onclick = async () => {
+    if (save.disabled || ctx.signal?.aborted) return
+    setBusy(true)
+    const baseUrl = address.value.trim()
+    const input = baseUrl
+      ? { baseUrl, modelName: name.value, ...(clear.checked ? { apiKey: '' } : key.value ? { apiKey: key.value } : {}), ...(allow.checked ? { allowNonPublic: true } : {}), reasoningEffort: effort.value }
+      : { baseUrl: '', modelName: '' }
+    key.value = ''
+    try {
+      const settings = await ctx.rpc.call('save-model-selection', input)
+      if (ctx.signal?.aborted) return
+      if (settings.error) {
+        // 没有写入：保留用户正在编辑的内容，只标出要改的字段。
+        setProblem(settings.error)
+        ctx.ui.notify(status.textContent, 'error')
+        return
+      }
+      show(settings)
+      const message = format(text.saved, { name: settings.modelName || follow })
+      status.textContent = message
+      ctx.ui.notify(message, 'success')
+    } catch (error) {
+      if (ctx.signal?.aborted) return
+      setError(error)
+      ctx.ui.notify(status.textContent, 'error')
+    } finally {
+      if (!ctx.signal?.aborted) setBusy(false)
+    }
+  }
+}
+
+async function mountIdentity(container, ctx, text, copy) {
+  const [intro, defaultLabel, addLabel, editLabel, , , , , , noPrompt, enabledLabel] = copy
+  const header = el('div', 'deva-header')
+  const heading = el('div')
+  heading.append(el('p', '', intro), el('p', 'deva-muted', text.hint))
+  header.append(heading)
   const card = el('div', 'deva-card')
   const body = el('div', 'deva-card-body')
   const select = el('select', 'deva-select')
-  const save = button(text.save, 'deva-btn primary')
-  save.style.alignSelf = 'flex-start'
+  select.ariaLabel = text.title
+  const avatar = el('span', 'deva-avatar')
+  const initial = el('span')
+  const avatarImg = el('img')
+  avatarImg.alt = ''
+  avatar.append(initial, avatarImg)
+  const identityRow = el('div', 'deva-identity-row')
+  identityRow.append(avatar, select)
+  const description = el('div', 'deva-persona-detail')
+  const enabled = el('div', 'deva-muted')
+  const actions = el('div', 'deva-actions')
+  const save = button(defaultLabel, 'deva-btn primary')
+  const add = button(addLabel)
+  const edit = button(editLabel)
+  add.hidden = edit.hidden = true
+  actions.append(save, add, edit)
+  const applySession = button(text.applySession)
+  const clearSession = button(text.clearSession, 'deva-btn ghost')
+  const sessionNote = el('div', 'deva-muted')
   const status = el('div', 'deva-status')
-
-  body.append(select, save)
-  card.append(body, status)
-  container.append(card)
+  const fileNote = el('div', 'deva-muted deva-persona-detail')
+  const personaNote = el('div', 'deva-muted deva-persona-detail')
+  status.role = 'status'
+  const hasSession = Boolean(ctx.identity?.sessionId)
+  applySession.hidden = !hasSession
+  clearSession.hidden = true
+  sessionNote.textContent = text.sessionNoContext
+  body.append(identityRow, description, enabled, actions, applySession, clearSession, sessionNote)
+  card.append(body, status, fileNote, personaNote)
+  container.append(header, card)
 
   let identities = []
-  try {
+  let busy = true
+  let canEdit = false
+  const chosen = () => identities.find(item => item.id === select.value)
+  const report = (message, level = '') => {
+    status.className = level === 'error' ? 'deva-status error' : 'deva-status'
+    status.textContent = message
+    if (level) ctx.ui.notify(message, level)
+  }
+  const renderChoice = () => {
+    const item = chosen()
+    initial.textContent = Array.from(String(item?.name || item?.id || '?').trim())[0]?.toUpperCase() || '?'
+    avatarImg.hidden = !item?.avatarImage
+    initial.hidden = !avatarImg.hidden
+    if (item?.avatarImage) avatarImg.src = item.avatarImage
+    avatar.title = [item?.name, avatarImg.hidden && item?.avatarError].filter(Boolean).join(' · ')
+    description.textContent = item?.description || ''
+    enabled.textContent = item ? [item.enabled === false ? text.disabledStatus : enabledLabel, item.hasPrompt === false ? noPrompt : ''].filter(Boolean).join(' · ') : ''
+    select.disabled = busy || !identities.length
+    save.disabled = applySession.disabled = busy || !item || item.hasPrompt === false
+    add.disabled = clearSession.disabled = busy
+    edit.disabled = busy || !item
+  }
+  select.onchange = renderChoice
+
+  async function refresh(preferred) {
     const snapshot = await ctx.rpc.call('get-identities')
+    if (ctx.signal?.aborted) return
     identities = Array.isArray(snapshot?.identities) ? snapshot.identities : []
-    // 用 DOM 构造选项而不是拼 HTML：身份名来自插件目录，仍然不当作可注入的标记
+    canEdit = snapshot?.canEdit === true
+    add.hidden = edit.hidden = !canEdit
+    select.innerHTML = ''
     for (const item of identities) {
-      const option = document.createElement('option')
-      option.value = String(item.id)
-      option.textContent = String(item.name)
+      const option = el('option', '', item.enabled === false ? `${item.name} (${text.disabledStatus})` : item.name)
+      option.value = item.id
+      if (item.model || item.workspace) option.title = [item.model && `model: ${item.model}`, item.workspace && `workspace: ${item.workspace}`].filter(Boolean).join(' ')
       select.append(option)
     }
-    const selected = identities.find(item => item.id === snapshot?.selected)
-    if (selected) select.value = String(selected.id)
-    status.textContent = identities.length ? '' : text.none
-  } catch (error) {
-    status.textContent = errorText(error)
-    status.className = 'deva-status error'
-  }
-
-  save.onclick = async () => {
-    save.disabled = true
-    try {
-      const result = await ctx.rpc.call('save-selection', { identity: select.value })
-      const name = identities.find(item => item.id === result?.selected)?.name || select.value
-      status.className = 'deva-status'
-      status.textContent = format(text.saved, { name })
-      ctx.ui.notify(status.textContent, 'success')
-    } catch (error) {
-      status.className = 'deva-status error'
-      status.textContent = errorText(error)
-      ctx.ui.notify(status.textContent, 'error')
-    } finally {
-      save.disabled = false
+    select.value = identities.find(item => item.id === (preferred || snapshot?.selected))?.id ?? identities[0]?.id ?? ''
+    if (snapshot?.filePath) {
+      const note = format(snapshot.created ? text.identityCreated : text.identityFile, { path: snapshot.filePath })
+      fileNote.textContent = snapshot.permissionRepaired ? `${note} · ${text.identityRepaired}` : note
+    }
+    if (snapshot?.personasDir) personaNote.textContent = format(snapshot.migrated ? text.identityMigrated : text.personasDir, { path: snapshot.personasDir })
+    if (hasSession) {
+      const view = await ctx.rpc.call('get-session-identity')
+      const name = identities.find(item => item.id === view.identity)?.name || view.identity || '—'
+      sessionNote.textContent = view.source === 'session' ? format(text.sessionCurrent, { name }) : `${format(text.sessionCurrent, { name })} · ${text.sessionNoContext}`
+      clearSession.hidden = view.source !== 'session'
     }
   }
+
+  async function run(action) {
+    if (busy || ctx.signal?.aborted) return
+    busy = true
+    renderChoice()
+    try { await action() }
+    catch (error) { if (!ctx.signal?.aborted) report(errorText(error), 'error') }
+    finally {
+      busy = false
+      if (!ctx.signal?.aborted) renderChoice()
+    }
+  }
+
+  async function openEditor(id) {
+    if (!canEdit) return
+    const record = id ? await ctx.rpc.call('get-persona-editor', { id }) : null
+    if (ctx.signal?.aborted) return
+    mountPersonaEditor(container, ctx, text, copy, record, async result => {
+      await run(async () => {
+        report(format(copy[7], { name: result.name }), 'success')
+        await refresh(result.id)
+      })
+    })
+  }
+
+  add.onclick = () => run(() => openEditor())
+  edit.onclick = () => run(() => openEditor(select.value))
+  applySession.onclick = () => run(async () => {
+    await ctx.rpc.call('save-session-identity', { identity: select.value })
+    await refresh(select.value)
+    report(sessionNote.textContent, 'success')
+  })
+  clearSession.onclick = () => run(async () => {
+    await ctx.rpc.call('clear-session-identity', {})
+    await refresh(select.value)
+    report(sessionNote.textContent, 'success')
+  })
+  save.onclick = () => run(async () => {
+    const result = await ctx.rpc.call('save-selection', { identity: select.value })
+    const name = identities.find(item => item.id === result.selected)?.name || select.value
+    if (result.filePath) fileNote.textContent = format(text.identityFile, { path: result.filePath })
+    report(format(text.saved, { name }), 'success')
+  })
+
+  busy = false
+  await run(async () => {
+    report(text.loading)
+    await refresh()
+    if (!ctx.signal?.aborted) report(identities.length ? '' : text.none)
+  })
+}
+
+function mountPersonaEditor(container, ctx, text, [, , addLabel, editLabel, nameLabel, descriptionLabel, promptLabel, , required], record, onSaved) {
+  const overlay = el('div', 'deva-overlay')
+  const form = el('form', 'deva-modal deva-model-form')
+  form.ariaLabel = record ? editLabel : addLabel
+  const title = el('h3', '', form.ariaLabel)
+  const body = el('div', 'deva-card-body')
+  const field = (caption, id, tag, maxLength) => {
+    const label = el('label', '', caption)
+    const input = el(tag, 'deva-textarea')
+    input.name = id
+    input.maxLength = maxLength
+    input.value = record?.[id] ?? ''
+    label.append(input)
+    body.append(label)
+    return input
+  }
+  const name = field(nameLabel, 'name', 'input', 120)
+  const description = field(descriptionLabel, 'description', 'input', 400)
+  const prompt = field(promptLabel, 'prompt', 'textarea', 131072)
+  prompt.rows = 8
+  const status = el('div', 'deva-status error')
+  status.role = 'alert'
+  const actions = el('div', 'deva-actions')
+  const cancel = button(text.cancel)
+  const save = button(text.save, 'deva-btn primary')
+  save.type = 'submit'
+  const close = () => overlay.remove()
+  cancel.onclick = close
+  actions.append(cancel, save)
+  form.append(title, body, status, actions)
+  form.onsubmit = async event => {
+    event.preventDefault()
+    if (save.disabled || ctx.signal?.aborted) return
+    const fields = { name: name.value.trim(), description: description.value.trim(), prompt: prompt.value.trim() }
+    if (!fields.name || !fields.prompt) { status.textContent = required; return }
+    save.disabled = cancel.disabled = true
+    let result
+    try {
+      result = record
+        ? await ctx.rpc.call('update-persona', { ...fields, id: record.id, revision: record.revision })
+        : await ctx.rpc.call('create-persona', fields)
+    } catch (error) {
+      if (!ctx.signal?.aborted) status.textContent = errorText(error)
+      save.disabled = cancel.disabled = false
+      return
+    }
+    if (ctx.signal?.aborted) return
+    close()
+    await onSaved({ id: result.id, name: fields.name })
+  }
+  overlay.append(form)
+  container.append(overlay)
+  name.focus?.()
 }
 
 async function mountMcp(container, ctx, text) {
   const header = el('div', 'deva-header')
   const heading = el('div')
-  heading.append(el('h2', '', text.mcpTitle), el('p', '', text.mcpHint))
+  heading.append(el('p', '', text.mcpHint))
   const headerActions = el('div', 'deva-header-actions')
   const reload = button(text.reload, 'deva-btn')
   headerActions.append(reload)
@@ -851,7 +1288,7 @@ async function mountMcp(container, ctx, text) {
   }
   const totalValue = card(text.summaryTotal)
   const enabledValue = card(text.summaryEnabled, 'ok')
-  const managedValue = card(text.summaryManaged)
+  const managedValue = card(text.disabledStatus)
   const toolsValue = card(text.summaryTools)
 
   const toolbar = el('div', 'deva-toolbar')
@@ -897,7 +1334,7 @@ async function mountMcp(container, ctx, text) {
   function refreshSummary() {
     totalValue.textContent = String(servers.length)
     enabledValue.textContent = String(servers.filter(server => server.enabled !== false).length)
-    managedValue.textContent = String(servers.filter(server => server.managed).length)
+    managedValue.textContent = String(servers.filter(server => server.enabled === false).length)
     let toolCount = 0
     for (const list of tools.values()) toolCount += list.length
     toolsValue.textContent = String(toolCount)
@@ -1011,6 +1448,7 @@ async function mountMcp(container, ctx, text) {
     reload.disabled = true
     addButton.disabled = true
     setAlert('')
+    setStatus(text.loading)
     try {
       const snapshot = await ctx.rpc.call('get-mcp-servers')
       servers = Array.isArray(snapshot?.servers) ? snapshot.servers : []

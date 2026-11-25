@@ -1,3 +1,4 @@
+import { closePendingTools, createCheckpointController } from './checkpoint.mjs'
 /**
  * 子智能体（Subagents）：在隔离上下文里跑一项多步任务，只把结论交回主轮。
  *
@@ -11,6 +12,7 @@
  *
  * 工具集只做**收窄**：保留的每次调用照常走同一套工具实现与工作区边界检查，没有任何提权。
  */
+import { normalizeSubagents, validateStored } from './storage-contracts.mjs'
 import { createHash } from 'node:crypto'
 
 const READONLY_TOOLS = ['read_file', 'list_dir', 'glob', 'grep', 'web_fetch', 'run_command']
@@ -219,12 +221,7 @@ function storeOf(run) {
 async function loadRecords(run) {
   const store = storeOf(run)
   if (!store) return {}
-  try {
-    const value = await store.get('subagents')
-    return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
-  } catch {
-    return {}
-  }
+  return normalizeSubagents(await store.get('subagents'))
 }
 
 /**
@@ -242,7 +239,7 @@ async function saveRecord(run, record) {
     const trimmed = Object.values(records)
       .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
       .slice(0, MAX_RECORDS)
-    await store.set('subagents', Object.fromEntries(trimmed.map(item => [item.id, item])))
+    await store.set('subagents', validateStored('subagents', Object.fromEntries(trimmed.map(item => [item.id, item]))))
     return true
   })
   writeChain = task.catch(() => {})
@@ -253,14 +250,6 @@ async function saveRecord(run, record) {
  * 收掉悬空的尾巴：上一轮若在工具调用中途被中止，历史末尾会留下没有结果的 assistant.toolCalls
  * 或孤立 tool 消息，直接续聊会被供应商拒绝。与桌面端 closeDanglingTail 同一口径。
  */
-function closeDanglingTail(messages) {
-  while (messages.length) {
-    const last = messages.at(-1)
-    if (last.role === 'tool') { messages.pop(); continue }
-    if (last.role === 'assistant' && last.toolCalls?.length) { messages.pop(); continue }
-    break
-  }
-}
 
 /** 结论文本收口：超长截断并明确标注，不静默丢内容。 */
 function clampConclusion(text) {
@@ -279,8 +268,20 @@ async function runRecord(record, ctx, { def, fork }) {
   const tools = fork
     ? (ctx.tools || [...baseTools, ...extraTools]).filter(tool => !SUBAGENT_EXCLUDED.has(tool.name))
     : subagentTools(def, { baseTools, extraTools })
+  const store = storeOf(run)
+  const childStore = store ? {
+    get: key => key === 'checkpoint' ? record.checkpoint : store.get(key),
+    async set(key, value) {
+      if (key !== 'checkpoint') return store.set(key, value)
+      record.checkpoint = value
+      record.messages = structuredClone(value.data.messages)
+      await saveRecord(run, record)
+    },
+  } : undefined
+  const checkpoint = run.identity?.agentId ? createCheckpointController(run.identity, record.checkpoint) : null
   const result = await runTurn({
-    run,
+    run: store ? { ...run, state: { ...run.state, agentSession: childStore } } : run,
+    checkpoint,
     input: { input: [{ type: 'text', text: '' }], history: [], instructions: [], options: {} },
     system: record.system,
     workspaceDir,
@@ -341,11 +342,15 @@ export async function executeSubagentTool(name, input, ctx = {}) {
       createdAt: now,
       updatedAt: now,
     }
+    await saveRecord(ctx.run, record)
     let conclusion
     try {
       conclusion = await runRecord(record, ctx, { def, fork })
     } catch (error) {
-      throw new SubagentError(`子智能体「${label}」运行失败：${error?.message || error}`)
+      closePendingTools(record.messages)
+      record.updatedAt = Date.now()
+      await saveRecord(ctx.run, record)
+      throw new SubagentError(`子智能体「${label}」运行失败：${error?.message || error}${storeOf(ctx.run) ? `（ID：${record.id}，可用 send_to_subagent 继续）` : '（没有会话存储，无法恢复）'}`)
     }
     // 记录落盘后，结论才附带可续聊的 ID；没有会话存储时如实说明，不给出用不了的 ID。
     const saved = await saveRecord(ctx.run, record).catch(() => false)
@@ -364,15 +369,19 @@ export async function executeSubagentTool(name, input, ctx = {}) {
     }
     const fork = isForkAgent(record.agent)
     const def = fork ? null : getSubagentByName(record.agent) ?? GENERAL_SUBAGENT
-    closeDanglingTail(record.messages)
+    closePendingTools(record.messages)
     record.messages.push({ role: 'user', text: message })
     record.updatedAt = Date.now()
     if (args.description) record.description = String(args.description).trim()
+    await saveRecord(ctx.run, record)
     let conclusion
     try {
       conclusion = await runRecord(record, ctx, { def, fork })
     } catch (error) {
-      throw new SubagentError(`子智能体「${record.agent}」运行失败：${error?.message || error}`)
+      closePendingTools(record.messages)
+      record.updatedAt = Date.now()
+      await saveRecord(ctx.run, record)
+      throw new SubagentError(`子智能体「${record.agent}」运行失败：${error?.message || error}（ID：${record.id}，可用 send_to_subagent 继续）`)
     }
     await saveRecord(ctx.run, record).catch(() => {})
     return `结论（子智能体 ${record.agent}，${record.id}）：\n\n${conclusion}`

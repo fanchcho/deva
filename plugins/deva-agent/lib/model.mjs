@@ -1,5 +1,5 @@
 /**
- * Studio scoped 模型的三种协议适配：chat_completions / anthropic_messages / codex_responses。
+ * 模型协议适配（自定义直连仅支持 Chat Completions）：chat_completions / anthropic_messages / codex_responses。
  *
  * 为什么自己实现而不用 SDK：Agent 插件拿到的是 Studio 注入的短期代理（baseUrl + token），
  * 走的是标准协议；这里只做"发一轮请求、解析流、拼出文本与工具调用"这一件事，
@@ -68,7 +68,7 @@ export async function* sseFrames(response) {
   }
 }
 
-const number = value => (Number.isFinite(value) ? Number(value) : 0)
+const number = value => (Number.isSafeInteger(value) && value >= 0 ? value : null)
 
 /**
  * Gemini 对没有签名的工具调用认的占位签名（官方给的兜底值）：跳过校验，代价是这一步没有思考上下文可接。
@@ -117,22 +117,24 @@ function chatMessages(messages, gemini = false) {
   })
 }
 
-async function chatCompletions({ model, messages, tools, system, token, baseUrl, signal, onDelta, onReasoning }) {
-  const url = endpoint(baseUrl, '/chat/completions')
+async function chatCompletions({ model, messages, tools, system, token, baseUrl, signal, onDelta, onReasoning, chatRequest }) {
   const body = {
     model: model.model,
     // 身份/工具纪律/项目事实都在 system 里，必须作为首条 system 消息发出去。
     messages: [...(system ? [{ role: 'system', content: system }] : []), ...chatMessages(messages, isGemini(baseUrl, model.model))],
     stream: true,
     stream_options: { include_usage: true },
+    // 仅直连自定义 API 时下发模型页选的强度；宿主代理通道的请求体保持原样。
+    ...(chatRequest && model.reasoningEffort ? { reasoning_effort: model.reasoningEffort } : {}),
     ...(tools.length ? { tools: tools.map(tool => ({ type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.inputSchema } })), tool_choice: 'auto' } : {}),
   }
-  const response = await fetch(url, {
+  const request = {
     method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    headers: { 'content-type': 'application/json', ...(!chatRequest || token ? { authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify(body),
     signal,
-  })
+  }
+  const response = await (chatRequest ? chatRequest(request) : fetch(endpoint(baseUrl, '/chat/completions'), request))
   if (!response.ok) throw new Error(await readError(response))
   const guard = new DsmlGuard(tools.length > 0)
   let finish = 'stop'
@@ -140,9 +142,11 @@ async function chatCompletions({ model, messages, tools, system, token, baseUrl,
   const calls = new Map()
   // 最近一次拼接的 tool_call 下标：增量不带 index 时据此归位。
   let lastIndex = -1
+  let completed = false
   for await (const data of sseFrames(response)) {
     let frame
     try { frame = JSON.parse(data) } catch { continue }
+    if (chatRequest && frame.error) throw new Error('自定义模型 API 在流中返回错误；未回退')
     if (frame.usage) {
       usage = {
         inputTokens: number(frame.usage.prompt_tokens ?? frame.usage.inputTokens),
@@ -174,9 +178,11 @@ async function chatCompletions({ model, messages, tools, system, token, baseUrl,
       if (signature) entry.signature = signature
       calls.set(key, entry)
     }
+    if (choice.finish_reason) completed = true
     if (choice.finish_reason === 'length') finish = 'length'
     else if (choice.finish_reason) finish = choice.finish_reason === 'tool_calls' ? 'tool_calls' : 'stop'
   }
+  if (chatRequest && !completed) throw new Error('自定义模型 API 返回的流未完成；未回退')
   return settleDsml(guard, {
     onDelta,
     toolCalls: collectCalls(calls),
@@ -232,7 +238,7 @@ async function anthropic({ model, messages, tools, system, token, baseUrl, signa
   if (!response.ok) throw new Error(await readError(response))
   const guard = new DsmlGuard(tools.length > 0)
   let finish = 'stop'
-  const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }
+  const usage = { inputTokens: null, outputTokens: null, cacheReadTokens: null }
   const calls = new Map()
   const partial = new Map()
   for await (const data of sseFrames(response)) {
@@ -296,6 +302,10 @@ function responsesInput(messages) {
   return input
 }
 
+function responsesTools(tools) {
+  return tools.length ? { tools: tools.map(tool => ({ type: 'function', name: tool.name, description: tool.description, parameters: tool.inputSchema })), tool_choice: 'auto' } : {}
+}
+
 async function codexResponses({ model, messages, tools, system, token, baseUrl, signal, onDelta, onReasoning }) {
   const url = endpoint(baseUrl, '/responses')
   const body = {
@@ -305,7 +315,7 @@ async function codexResponses({ model, messages, tools, system, token, baseUrl, 
     stream: true,
     store: false,
     ...(model.reasoningEffort ? { reasoning: { effort: model.reasoningEffort } } : {}),
-    ...(tools.length ? { tools: tools.map(tool => ({ type: 'function', name: tool.name, description: tool.description, parameters: tool.inputSchema })), tool_choice: 'auto' } : {}),
+    ...responsesTools(tools),
   }
   const response = await fetch(url, {
     method: 'POST',
@@ -316,7 +326,7 @@ async function codexResponses({ model, messages, tools, system, token, baseUrl, 
   if (!response.ok) throw new Error(await readError(response))
   const guard = new DsmlGuard(tools.length > 0)
   let finish = 'stop'
-  const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }
+  const usage = { inputTokens: null, outputTokens: null, cacheReadTokens: null }
   const calls = new Map()
   for await (const data of sseFrames(response)) {
     let frame

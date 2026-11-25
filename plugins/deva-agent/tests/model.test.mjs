@@ -309,3 +309,24 @@ test('tool_call deltas without index are keyed by id so parallel calls do not me
     assert.equal(result.toolCalls[1].arguments, '{"path":"b"}')
   } finally { await server.close() }
 })
+
+test('usage rejects invalid token counts and keeps missing counts unknown', async () => {
+  const server = await gateway((_request, response) => sse(response, [
+    { choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] },
+    { choices: [], usage: { prompt_tokens: -1, completion_tokens: 1.5, prompt_tokens_details: { cached_tokens: Number.MAX_SAFE_INTEGER + 1 } } },
+  ]))
+  try {
+    const result = await callModel({ apiMode: 'chat_completions', model: { model: 'test' }, baseUrl: server.baseUrl, token: 'tk', messages: [], tools: [], onDelta: async () => {} })
+    assert.deepEqual(result.usage, { inputTokens: null, outputTokens: null, cacheReadTokens: null })
+  } finally { await server.close() }
+})
+
+for (const apiMode of ['anthropic_messages', 'codex_responses']) {
+  test(`${apiMode} does not invent zero usage when the gateway omits it`, async () => {
+    const server = await gateway((_request, response) => sse(response, []))
+    try {
+      const result = await callModel({ apiMode, model: { model: 'test' }, baseUrl: server.baseUrl, token: 'tk', messages: [], tools: [], onDelta: async () => {} })
+      assert.deepEqual(result.usage, { inputTokens: null, outputTokens: null, cacheReadTokens: null })
+    } finally { await server.close() }
+  })
+}

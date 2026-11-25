@@ -348,6 +348,21 @@ test('continuing a subagent closes a dangling tool-call tail left by an aborted 
     },
   })
   assert.match(result, /续上了/)
-  // 悬空的 tool / assistant.toolCalls 被收掉，历史以「开始」+ 新消息继续，不会把坏结构交给模型。
-  assert.deepEqual(seenMessages, ['user', 'user'])
+  // 已完成结果保留；只补未完成调用的终态，不丢失历史。
+  assert.deepEqual(seenMessages, ['user', 'assistant', 'tool', 'user'])
+})
+
+test('interrupted subagent keeps a durable completed tool result and resumes without repeating it', async () => {
+  const { run } = fakeRun()
+  let childStep = 0, effects = 0
+  const ctx = { run, callId: 'durable-child', runTurn: runAgentTurn, model: async () => {
+    if (++childStep === 1) return { text: '', toolCalls: [{ id: 'saved-write', name: 'write_file', arguments: '{"path":"x","content":"ok"}' }] }
+    throw new Error('offline')
+  }, execute: async () => { effects++; return 'written once' }, baseTools: [{ name: 'write_file', inputSchema: { type: 'object', properties: {} } }] }
+  await assert.rejects(executeSubagentTool('run_subagent', { description: 'durable', prompt: 'write' }, ctx), /offline/)
+  const records = await run.state.agentSession.get('subagents'), id = Object.keys(records)[0]
+  assert.ok(records[id].checkpoint.data.calls['saved-write'])
+  ctx.model = async ({ messages }) => { assert.ok(messages.some(m => m.text === 'written once')); return { text: 'recovered', toolCalls: [] } }
+  assert.match(await executeSubagentTool('send_to_subagent', { to: id, message: 'continue' }, ctx), /recovered/)
+  assert.equal(effects, 1)
 })

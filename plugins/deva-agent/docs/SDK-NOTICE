@@ -15,7 +15,9 @@ docs/STUDIO_CTX.md and docs/STUDIO_RETURNS.md include contributions by
 widechaos (十方空烬 · Ember / Renchao Wu),
 submitted in EKKOLearnAI/ekko-studio pull request #3827:
 https://github.com/EKKOLearnAI/ekko-studio/pull/3827
-Source commit: ed442c0908e9cbde2971bbbe411a6a1a9e7b45f8
+Original source commit: ed442c0908e9cbde2971bbbe411a6a1a9e7b45f8
+Public types and guides synchronized to: 61cda7e6c1d0b7b17f6394a8c4f3822e6dd36944
+SDK version remains 1.0.0; Studio baseline 0.8.30.
 
 Generated/embedded plugins may carry the same guides twice, under sdk/docs/
 and under the plugin's docs/. The MIT license applies to both copies. Keep the

@@ -4,7 +4,7 @@ import { createServer } from 'node:http'
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { McpPool, parseServerConfig, expandEnv, sanitizeName, mergeServers, flattenResult, serverFingerprint } from '../lib/mcp.mjs'
+import { McpPool, createClient, parseServerConfig, expandEnv, sanitizeName, mergeServers, flattenResult, serverFingerprint } from '../lib/mcp.mjs'
 
 /** 一个最小 MCP stdio 服务器：换行分帧的 JSON-RPC，工具 echo/慢/sse 由调用方按需选。 */
 const STDIO_SERVER = `
@@ -36,6 +36,23 @@ async function fakeStdioServer() {
   await chmod(file, 0o755)
   return { dir, file, cleanup: () => rm(dir, { recursive: true, force: true }) }
 }
+
+test('an already cancelled MCP request never reaches the transport', async () => {
+  const client = createClient({ name: 'fake', type: 'stdio', command: process.execPath, args: [] })
+  const delivered = []
+  client.deliver = async (id, method) => {
+    delivered.push(method)
+    client.settle(id, { result: {} })
+  }
+  const controller = new AbortController()
+  controller.abort()
+  try {
+    const result = await client.request('tools/call', { name: 'write' }, { signal: controller.signal }).catch(error => error)
+    assert.deepEqual(delivered, [])
+    assert.match(result.message, /取消/)
+    assert.equal(client.pending.size, 0)
+  } finally { client.close() }
+})
 
 test('parseServerConfig accepts the desktop mcp.json shape and skips disabled entries', () => {
   const { servers, problems } = parseServerConfig({
@@ -85,7 +102,7 @@ test('stdio MCP connects, lists namespaced tools, calls them, and surfaces error
     assert.deepEqual(names, ['mcp__fake__echo', 'mcp__fake__fail'])
     assert.match(pool.definitions()[0].description, /^\[MCP:fake\] 原样返回/)
     assert.equal(await pool.call('mcp__fake__echo', { text: '你好' }), 'echo:{"text":"你好"}')
-    await assert.rejects(pool.call('mcp__fake__fail', {}), /炸了/)
+    await assert.rejects(pool.call('mcp__fake__fail', {}), /详情已隐藏/)
   } finally {
     pool.close()
     await cleanup()

@@ -2,7 +2,7 @@
 
 把 Deva 这个仓库做成一个 **Ekko Studio 插件 Agent**：装进 Studio 后，它在 Agent 列表里叫
 `Deva`（宿主 id `plugin:deva/deva`），选中即可对话——读代码、改代码、跑 `pnpm typecheck` /
-`pnpm build`，模型用 Studio 当前选择的那个。
+`pnpm build`，默认跟随 Studio 当前会话模型，也可在 Deva 设置中为当前账号和 Profile 配置直连 API。
 
 **身份可选**：同一个 Agent 可以按所选身份说话，目前两个身份都取自本仓库的角色定义——
 
@@ -16,19 +16,20 @@
   `data:image/png;base64,…` 写进插件记录；Agent 描述符的 `icon` 回落到它，所以 Studio 里显示的是
   Deva 的图标，不再是宿主默认头像
 - 入口：`server.mjs` 的 `apply(ctx)`——只注册**一个**通用 Deva Agent（`ctx.extensions.agents.register(...)`），
-  外加身份 RPC / MCP RPC 与一条身份命令
+  外加身份 RPC / 模型 RPC / MCP RPC 与一条身份命令
 - 只暴露一个 Agent：插件不再按身份各注册一个固定 Agent；身份在会话内切换（见下）
-- 两个独立设置页（slot 都是 `agent-settings`，宿主侧栏自动排在 Agent 管理的「设置」里）：
-  - **身份**（`views: identity`）：只读/存默认身份；身份选择存在 Studio 的 user+profile 作用域存储里
-  - **MCP**（`views: mcp`）：直接管理 Studio 的 MCP 服务表——新增、改配置、启停、测试、删除，
-    并勾选本 Agent 用哪些服务。改的就是 Studio「MCP」页面那份配置，插件不复制、不存密钥
+- 通过 **Agent 管理 → Deva → 设置**，或导航栏里的 **Deva** 快捷入口，打开同一组设置页：
+  - **身份**（`views: identity`）：新增、编辑身份直接写 `~/.deva/personas/*.md`（保留桌面专属字段）；默认/会话选择写在桌面 `config.json → personas.selected/sessionSelected`
+  - **MCP**（`views: mcp`）：管理与桌面同构的 MCP 服务（`~/.deva/mcp.json` + `config.json.mcp.enabled`）——
+    新增、改配置、启停、测试、删除。Studio 自己的 MCP 列表完全不受影响
+  - **模型**（`views: model`）：默认「跟随会话当前选择」，也可手填 Base URL、模型名和可选 API Key。
 
 ## 它怎么跑
 
 ```
 Studio 选中 Agent「Deva」并选模型
   → 宿主注入 scoped 模型代理（baseUrl + token，仅本轮有效）
-  → 本插件并发一轮 agent loop（lib/loop.mjs）
+  → 本插件运行一轮 agent loop（lib/loop.mjs）；按设置使用 scoped 代理或自定义 API
       ├─ 系统提示词：Deva 人设 + 工具纪律 + 记忆规则段 + 本轮读到的项目事实
       │        （lib/prompt.mjs、lib/memory-prompt.mjs、lib/project.mjs；记忆索引随消息下发，不进 system）
       ├─ 模型调用：chat_completions / anthropic_messages / codex_responses 三种协议（lib/model.mjs）
@@ -42,8 +43,11 @@ Studio 选中 Agent「Deva」并选模型
   → 文本增量、工具起止事件实时回传 Studio；结束返回完整结果与用量
 ```
 
-只有 `scoped` 模式：插件不维护模型目录、不保存任何 API key。没有注入模型时直接报错提示去 Agent
-管理里选模型，不静默降级。
+插件仍注册 Studio `scoped` 模式，进入 Studio 会话仍需要一个宿主可选的会话模型。未配置自定义地址时，照旧使用会话的短期模型代理。
+自定义地址只用 OpenAI 兼容的 `POST {Base URL}/chat/completions`（例如 `https://api.example.com/v1`），由 Deva 服务端直连，不访问 Studio 模型目录或走宿主推理网关；会话选模栏不变。地址、模型名和可选密钥按账号与 Profile 保存；密钥不回传。地址变更时不沿用旧密钥。API 调用失败不回退。所选服务会收到对话和该轮工具描述等数据，只填你信任的服务。
+默认仅允许公网 HTTPS。本机、内网或 HTTP 地址需在模型页勾选「我确认允许 Deva 直连此本机/内网/HTTP 地址」后保存：确认只对当次保存的那一个规范化 Base URL 生效，按用户 + Profile 保存，改地址需重新勾选，未勾选时页面在该项下提示原因且不保存。管理员也可在插件配置 `modelTrustedBases` 为所有账号预先放行精确的 Base URL 列表（可选）。清空地址并保存可删除直连配置，恢复跟随。「模型强度」会作为 `reasoning_effort` 随每轮直连请求下发（默认不发送）；上游不支持该档位时该轮报错并提示改档位。配置直连后，新建会话既可以选 Studio 模型（scoped），也可以选「Agent 自带模型」（global）：后者不需要再选 Studio 模型，直接用这里填的地址和模型名。
+
+身份不再依赖任何授权开关：它总是读写进程用户 `~/.deva` 下的身份文件（可用管理员配置 `sharedDevaHome` 或进程 `DEVA_HOME` 改根）。需要与桌面 Deva 共用**地址和模型**时，再把管理员配置 `sharedDevaUserId` 设为要授权的 Studio 账号 ID。目录依次取 `sharedDevaHome`、进程 `DEVA_HOME`、`~/.deva`（Studio 进程的 HOME）。两端须用同一 OS 用户访问同一份文件。Studio 模型页只填写 Base URL、模型名和 API Key，不列举桌面 provider。共享模式在后台使用桌面可识别的 `Deva Studio Shared` 提供方，API Key 两端分别设置。请先退出桌面端，在 Studio 保存后再打开桌面端；桌面保存后，Studio 下一轮会重新读取。详细契约见 [CONTRACTS](docs/CONTRACTS.md#自定义模型-apirpc存储与推理)。
 
 ## Agent 能力
 
@@ -74,20 +78,14 @@ Studio 选中 Agent「Deva」并选模型
 ## MCP 配置
 
 Studio 只在「任务计划运行」里给 Agent 注入 `run.mcpServers`，普通插件运行拿到的是空对象，
-所以本插件自带一个零依赖 MCP 客户端（`lib/mcp.mjs`）。MCP 服务的连接配置只有一份，在 Studio
-自己的 MCP 服务表里；本插件不再有 `mcpServers` 插件配置。服务来源有两个，同名时宿主优先：
+所以本插件自带一个零依赖 MCP 客户端（`lib/mcp.mjs`）。**插件自带的 MCP 与 Studio 的 MCP 列表彻底分开**：
 
-1. **Studio 的 MCP 服务（推荐）**：到 **Studio → Agent 管理 → Deva → 设置 → MCP** 直接管理服务——
-   新增、改命令/参数/环境变量或 URL/请求头、启停、测试（让 Studio 连一次并列出工具）、删除，
-   与 Studio 的「MCP」页面是同一份数据（走 `/api/ekko/mcp/servers`）；再勾选本 Agent 要用的服务。
-   插件只存服务名（user+profile 作用域），每轮运行按名字去 Studio 取最新连接配置——
-   改了 URL、env 或启停状态，下一轮对话就生效，不用改插件配置、也不复制 Studio 的凭据。
-   同一会话里配置没变时复用已有连接（stdio 子进程不重启）；配置或宿主注入的凭证变了才重连。
-   页面上的「在 Studio 中打开 MCP 页面」可直接跳到宿主原生界面。
-   已勾选但被 Studio 删除或停用的服务会在系统提示词的「MCP 连接状态」里点名，不会静默跳过。
-2. **宿主注入的 `run.mcpServers`**：只在任务计划运行里有内容，同名覆盖 Studio 勾选。
+1. **插件管理的 MCP（与桌面同构）**：`~/.deva/mcp.json` 的 `mcpServers` + `~/.deva/config.json → mcp.enabled`。到 **Studio → Deva → MCP** 管理：新增、改命令/参数/环境变量或 URL/请求头、启停、测试、删除。写入只改这个文件，
+   不调用 Studio 的 `/api/ekko/mcp/servers`，Studio 的 MCP 页面内容零变化。旧版（≤0.8.5）勾选过的 Studio 服务
+   旧的 `deva-agent/mcp-servers.json` 会一次性迁移到这两个桌面文件，整目录备份到 `~/.deva-backups/` 后删除。
+2. **宿主注入的 `run.mcpServers`**：只在部分运行入口里有内容，**只读、不入库**，同名时宿主优先。
 
-配置里的 `${VAR}`（环境变量与请求头的值）从 Studio 进程环境展开；变量缺失时该服务连接失败并在
+配置里的 `${VAR}`（环境变量与请求头的值）从插件进程环境展开；变量缺失时该服务连接失败并在
 系统提示词的「MCP 连接状态」里点名缺哪个变量，不会静默跳过。连接失败只影响该服务，不中断对话。
 
 插件对外**只注册一个 `Deva` Agent**（`plugin:deva/deva`），它出现在 Agent 选择器里；不再为每个身份各注册一个固定 Agent。身份在会话内切换，或由设置页给默认值。
@@ -97,7 +95,7 @@ Studio 只在「任务计划运行」里给 Agent 注入 `run.mcpServers`，普�
 | 场景 | 做法 | 生效范围 |
 | --- | --- | --- |
 | 会话里换身份 | 输入框发 `@deva:xiaomajiang 你的问题` 或 `deva:identity xiaomajiang` | 只影响当前会话 |
-| 改默认 | **Studio → Agent 管理 → Deva → 设置 → 身份**，或用下面的 RPC | 用户 + Profile 的默认值 |
+| 改默认 | **Studio → Agent 管理 → Deva → 设置 → 身份**，或用下面的 RPC | 与桌面共用的 Deva 默认值 |
 
 > 若你想在 DSH 会话的输入框「层叠」预设里直接选到 **Deva**：由配套的 `dsh-deva-presets` 模块
 > （`~/.dsh/deva-presets`）把**单个** `Deva` 预设注册进 `/api/coding-agents/dsh/agent-presets`，
@@ -107,8 +105,10 @@ Studio 只在「任务计划运行」里给 Agent 注入 `run.mcpServers`，普�
 所以输入框里请用不带斜杠的 `deva:identity …` 或 `@deva:<id>` 前缀；斜杠形式只在插件
 `invoke` 接口（`kind:"command"`）里直接调用。
 
-所有**写入**路径以会话工作区为界（符号链接按 `realpath` 解析后再校验，指向外部的链接会直接报错），越界直接报错；
-只读的 `read_file` 另接受本轮运行目录（`web_fetch` 落盘的正文、工具结果落盘文件要能读回）。文件与检索类结果单条
+`write_file`、`edit_file` 的写入路径以会话工作区为界（符号链接按 `realpath` 解析后再校验，指向外部的链接会直接报错）；
+只读的 `read_file`、`grep` 另接受本轮运行目录（`web_fetch` 落盘的正文、工具结果落盘文件要能读回、搜索）。
+`run_command` 只把工作区设为 bash 的当前目录，不提供文件系统沙箱；命令和子进程仍拥有宿主进程的文件访问权限。
+MCP 工具的权限由对应服务决定，文件工具的路径校验不会限制 shell 或 MCP。文件与检索类结果单条
 上限 20000 字符（超长标注原长）；`run_command` 与 MCP 的超长结果在各自上限内**全文落盘 + 首尾预览**，路径在运行
 目录的 `tool-results/` 下——命令报错常在结尾，只留开头会看不出为什么失败。
 一轮最多 24 步工具循环，到顶返回 `finishReason: tool_limit`。同一步里的只读工具和多个子智能体会并发跑，
@@ -135,11 +135,43 @@ Gemini 3 起每步的第一个工具调用必须带思考签名，缺了整个�
 - **技能**走 Studio 自己的技能接口（`host.request`，需要清单里的 `api.read` / `api.write` 权限）：
   已启用技能的 name + description 按会话缓存（`skill_manage` 成功后下一轮立即重读，外部改动最多延迟 30 秒），
   模型命中后用 `skill_view` 取全文。该接口只能写 SKILL.md 正文，**不能写支持文件**；内置技能只读。
-  失败时把宿主原始报错交回模型，不假装成功。
+  失败时把宿主原始报错交回模型，不缓存失败提示，下一轮重试。
 - **子智能体**与桌面端同一套类型（General / Explore / Research / Plan / fork），工具表只做收窄。
   插件运行期内没有「子任务结束后唤醒主轮」的通道，所以 `run_subagent` **一律前台执行**：等它跑完
   再返回结论，不提供 `foreground` 参数，也不假装它在后台继续跑。子轮事件不外发（Studio 没有 Task 卡），
   只有结论回到主轮；派发记录存在本会话，供 `send_to_subagent` 续聊（最近 20 个）。
+
+### 与桌面端仍有的能力差异
+
+插件没有内置 `present_files`、`create_task`、`propose_agent`、`create_mcp`、`exit_plan`、`tool_search`。
+其中 MCP 服务的新建、编辑、启停、删除可在插件设置页通过 Studio RPC 完成，但不是名为 `create_mcp` 的模型工具。
+当前 Agent SDK 没有改写宿主历史的通道，插件不会执行宿主侧历史压缩或清理旧工具结果；`compressing` 状态不代表历史已被修改。
+记忆 v1 条目在读取时兼容为 v2，尚无 `memory-tidy` 后台模型迁移。这些能力差异不由测试通过数代表已补齐。
+
+## 身份与 `~/.deva`（与桌面同构）
+
+`~/.deva` 的顶层条目由桌面端定义，插件不新建顶层文件/目录：
+`config.json`、`personas/`、`mcp.json`、`skills/`、`data/`、`secrets.json`、`read-state.json` 等。
+
+| 数据 | 桌面位置（插件同读同写） |
+| --- | --- |
+| persona 内容 | `personas/<id>.md`（frontmatter `name/description/avatar/model/workspace` + 正文） |
+| 默认 persona | `config.json → personas.selected`（personas 段内的扩展键；桌面 `getConfig()` 可读，`writeEnabledMap` 合并保留） |
+| 会话选择 | `config.json → personas.sessionSelected[sessionId]` |
+| persona 启停/排序 | `config.json → personas.enabled/order` |
+| MCP | `mcp.json → mcpServers` + `config.json → mcp.enabled` |
+| 模型 | `config.json → models.providers/activeModelId` |
+| 密钥 | 桌面 `secrets.json`（插件不读写密文） |
+
+- **迁移**：旧 `deva-agent/` 整目录先备份到 `~/.deva-backups/`（`DEVA_BACKUP_ROOT` 可改），把
+  `identity.json.selected` → `personas.selected`、`sessions.json` → `personas.sessionSelected`、
+  `mcp-servers.json` → `mcp.json`/`mcp.enabled`，成功后删除 `deva-agent/`，不再创建。
+- **persona 唯一真源**：插件不保存 persona 正文副本；`identities` 历史副本只备份、不写回、不覆盖用户文件。
+- **新增、编辑**：填写名称、单行描述和 Markdown 提示词；新增默认启用并追加至桌面排序，但不改变默认身份。编辑保留同一 id、桌面专属字段和未知元数据。身份所有者可以增改；不提供删除。
+- **会话内选身份**：默认取 `personas.selected`；`@deva:<id>` / `/deva:identity <id>` 写宿主会话存储 +
+  `config.json.personas.sessionSelected`，只影响该会话，后续回合立即生效。
+- **头像**：读 `personas/avatars/<id>.<webp|png|jpg>`（只读 data URI），无图回退首字母；`avatar` frontmatter 只是 Humation spec。
+- **出错/权限**：坏 JSON、persona 不可读、路径/软链/大小异常都明确报错；`config.json`/`mcp.json` 0600，persona 目录 0700。
 
 ## 身份与 Studio MCP 的 RPC
 
@@ -156,44 +188,33 @@ POST /api/studio/plugins/deva/invoke  {"kind":"rpc","name":"test-mcp-server","in
 POST /api/studio/plugins/deva/invoke  {"kind":"rpc","name":"delete-mcp-server","input":{"name":"files"}}
 ```
 
-`get-identities` 返回 `{identities:[{id,name,description}], selected}`；`save-selection` 只接受身份目录里的
-id，未知 id 直接报错（不会静默回退）。`get-mcp-servers` 返回
+`get-identities` 返回 `{identities:[{id,name,description}], selected, filePath, created, permissionRepaired}`；
+`save-selection` 只接受身份文件里的 id，未知 id 直接报错（不会静默回退），返回 `{ok, selected, filePath}`。`get-mcp-servers` 返回
 `{servers:[{name,transport,managed,enabled}], selected}`（不含连接配置与密钥），
 `save-mcp-selection` 只接受 Studio 规则的服务名（字母或数字开头，可含点、下划线、连字符）、去重、最多 32 个。
 
-MCP 服务 CRUD 走 Studio 自己的接口，行为与 Studio「MCP」页面一致：`get-mcp-server` 是唯一下发连接配置的接口
+MCP 服务 CRUD 走桌面同构文件（`~/.deva/mcp.json` + `config.json.mcp.enabled`），与 Studio「MCP」页互不影响：`get-mcp-server` 是唯一下发连接配置的接口
 （编辑回填用），`create-mcp-server` 配置交给 Studio 规范化（只认 `stdio` 与 `streamable_http`），
 `update-mcp-server` 整体替换配置、服务不存在时报错，`set-mcp-server-enabled` 启停，
 `test-mcp-server` 让 Studio 连一次并列工具（停用或连不上时报错，不返回空表），`delete-mcp-server` 删除。
 写入类都只回展示字段，不把配置或密钥回给页面。
 
-设置页就是这些 RPC 的薄壳，按 `ctx.view` 分成两个独立页面：`identity` 只放身份下拉与保存，`mcp` 放服务列表、
-增删改/启停/测试与勾选保存。
+身份页还用 `get-persona-editor` / `create-persona` / `update-persona` 读取和原子保存共享身份，详见运行契约。
 
 ## 开发与验收
 
 ```bash
 cd plugins/deva-agent
 node scripts/plugin-harness.mjs check   # 清单/契约/i18n/文档/SDK 完整性
-node --test tests/*.test.mjs            # 142 个用例：工具、超长输出落盘、web、MCP、浏览器、记忆（三层/归纳/迁移）、技能、子智能体、交互、复读与打转检测、三种协议（含 DSML 恢复与 Gemini 签名）、loop、身份、Studio MCP 与 MCP 服务 CRUD、RPC、harness
+node --test tests/*.test.mjs            # 251 个用例：工具、超长输出落盘、web、MCP、浏览器、记忆（三层/归纳/迁移）、技能、子智能体、交互、复读与打转检测、三种协议（含 DSML 恢复与 Gemini 签名）、loop、身份、Studio MCP 与 MCP 服务 CRUD、RPC、harness
 ```
 
 测试全部离线：假网关在 `127.0.0.1` 上回放 SSE，不访问真实模型、不读用户目录。
 
 ## 安装到 Studio
 
-```bash
-# 1. 登记开发目录（同一 HERMES_WEB_UI_HOME 与运行中的 Studio 一致）
-HERMES_WEB_UI_HOME=/home/agent/.hermes-web-ui \
-  node /app/bin/hermes-web-ui.mjs plugins link "$PWD"
-
-# 2. 让 Studio 信任、构建并启用（也可以直接在插件中心点「启用」）
-curl -s -X POST "$STUDIO/api/studio/plugins/install" -H 'content-type: application/json' \
-  -d '{"source":"'"$PWD"'","revision":0,"trusted":true}'
-```
-
-启用后：Studio → Agent 管理出现 `Deva`；新建会话选它并选一个模型即可。源码改动后
-`POST /api/studio/plugins/deva` `{"action":"reload","revision":<当前 revision>}` 热重载。
+跨设备安装、升级和回滚见 [安装指南](INSTALL.md)。普通安装使用 `npm pack` 的解包成品，
+不链接开发源码；新版本使用覆盖安装，不能用「重载」替代。
 
 ## 文档
 
@@ -201,3 +222,19 @@ curl -s -X POST "$STUDIO/api/studio/plugins/install" -H 'content-type: applicati
   `docs/FIELD_REFERENCE.md`、`docs/DEVELOPMENT.md`：随 SDK 分发的宿主说明
 - `docs/CONTRACTS.md`：本插件的运行契约（输入、事件、结果、模型代理、失败行为）
 - `sdk/src/*.ts`：宿主类型（`agents.ts` 是 AgentDefinition / AgentRunContext 的准确定义）
+
+### Ekko 规范核对与发布内容
+
+本插件以 Studio SDK v1 的 Agent 运行时为接入点。官方开发手册：
+https://github.com/EKKOLearnAI/ekko-studio/blob/61cda7e6c1d0b7b17f6394a8c4f3822e6dd36944/docs/plugins.md 。
+历史逐章审计保存在原工作区，未随发布；剩余兼容性/产品决策不能由单测通过替代。
+
+`package.json.files` 列出发布所需入口、运行模块、身份、契约、SDK（含许可/署名）、文档与测试；
+本地证据、审计报告、临时缓存和基线副本不进入 npm 包。安装使用已构建的 `.mjs`，不依赖宿主执行安装脚本。
+开发链接仍指向源码目录；不要把包含本地证据的整个工作目录当作精简发布包。
+
+## 附件、恢复与可选策略（Ekko 0.8.30）
+
+历史附件与本轮附件统一做授权根/预算/过期校验；二进制仅返回明确的 metadata_only 和绝对路径。MCP 配置编辑对 env/headers 采用固定掩码：未改保留、新字符串替换、null 清除。Agent 已实现 checkpoint 恢复，完成调用不重放，结果未知时先核对。
+
+插件设置新增附件预算与显式授权根；高风险工具审批和 Hermes/Ekko 普通单聊 compression **默认关闭**。后者运行时探测宿主接口，不改变 Deva 的历史。详细默认值、错误码、迁移、审批覆盖面、恢复限制与发布条件见 [运行说明](docs/OPERATIONS.md)。真实 Desktop 验证状态见本轮审计报告，未把 mock 测试当作实际挂载通过。

@@ -1,106 +1,130 @@
 {
   "id": "deva",
   "name": "Deva",
-  "description": "Deva 项目 Agent：读写本仓库代码、跑 pnpm 检查与构建；身份可选（Deva / 小码酱），会话内用 @deva:<id> 或身份设置页切换，插件对外只暴露一个 Deva Agent。",
+  "description": "Deva 项目 Agent：读写本仓库代码、跑 pnpm 检查与构建；身份可选择、新增和编辑，会话内用 @deva:<id> 切换。",
   "i18n": {
     "en": {
       "name": "Deva",
       "description": "Deva project agent: chat inside Studio to read/write this repository and run pnpm checks and builds.",
+      "navigation": { "main": { "identity": "Deva" } },
       "views": {
         "identity": "Identity",
-        "mcp": "MCP"
+        "mcp": "MCP",
+        "model": "Model"
       }
     },
     "zh": {
       "name": "Deva",
       "description": "Deva 项目 Agent：在 Studio 里直接对话，读写本仓库代码、跑 pnpm 检查与构建。",
+      "navigation": { "main": { "identity": "Deva" } },
       "views": {
         "identity": "身份",
-        "mcp": "MCP"
+        "mcp": "MCP",
+        "model": "模型"
       }
     },
     "zh-TW": {
       "name": "Deva",
       "description": "Deva 專案 Agent：在 Studio 裡直接對話，讀寫本儲存庫程式碼、執行 pnpm 檢查與建置。",
+      "navigation": { "main": { "identity": "Deva" } },
       "views": {
         "identity": "身分",
-        "mcp": "MCP"
+        "mcp": "MCP",
+        "model": "模型"
       }
     },
     "ja": {
       "name": "Deva",
       "description": "Deva プロジェクト Agent：Studio で対話しながらこのリポジトリを読み書きし、pnpm の検査とビルドを実行します。",
+      "navigation": { "main": { "identity": "Deva" } },
       "views": {
         "identity": "アイデンティティ",
-        "mcp": "MCP"
+        "mcp": "MCP",
+        "model": "モデル"
       }
     },
     "ko": {
       "name": "Deva",
       "description": "Deva 프로젝트 Agent: Studio에서 대화하며 이 저장소를 읽고 쓰고 pnpm 검사와 빌드를 실행합니다.",
+      "navigation": { "main": { "identity": "Deva" } },
       "views": {
         "identity": "아이덴티티",
-        "mcp": "MCP"
+        "mcp": "MCP",
+        "model": "모델"
       }
     },
     "fr": {
       "name": "Deva",
       "description": "Agent du projet Deva : discutez dans Studio, lisez et modifiez ce dépôt, lancez les vérifications et builds pnpm.",
+      "navigation": { "main": { "identity": "Deva" } },
       "views": {
         "identity": "Identité",
-        "mcp": "MCP"
+        "mcp": "MCP",
+        "model": "Modèle"
       }
     },
     "es": {
       "name": "Deva",
       "description": "Agente del proyecto Deva: conversa en Studio, lee y modifica este repositorio y ejecuta las comprobaciones y builds de pnpm.",
+      "navigation": { "main": { "identity": "Deva" } },
       "views": {
         "identity": "Identidad",
-        "mcp": "MCP"
+        "mcp": "MCP",
+        "model": "Modelo"
       }
     },
     "de": {
       "name": "Deva",
       "description": "Deva-Projekt-Agent: im Studio chatten, dieses Repository lesen und ändern, pnpm-Prüfungen und Builds ausführen.",
+      "navigation": { "main": { "identity": "Deva" } },
       "views": {
         "identity": "Identität",
-        "mcp": "MCP"
+        "mcp": "MCP",
+        "model": "Modell"
       }
     },
     "pt": {
       "name": "Deva",
       "description": "Agente do projeto Deva: converse no Studio, leia e altere este repositório e execute verificações e builds do pnpm.",
+      "navigation": { "main": { "identity": "Deva" } },
       "views": {
         "identity": "Identidade",
-        "mcp": "MCP"
+        "mcp": "MCP",
+        "model": "Modelo"
       }
     },
     "ru": {
       "name": "Deva",
       "description": "Агент проекта Deva: общайтесь в Studio, читайте и изменяйте этот репозиторий, запускайте проверки и сборки pnpm.",
+      "navigation": { "main": { "identity": "Deva" } },
       "views": {
         "identity": "Идентичность",
-        "mcp": "MCP"
+        "mcp": "MCP",
+        "model": "Модель"
       }
     },
     "ar": {
       "name": "Deva",
       "description": "وكيل مشروع Deva: تحدّث داخل Studio واقرأ هذا المستودع وعدّله وشغّل فحوصات وبناءات pnpm.",
+      "navigation": { "main": { "identity": "Deva" } },
       "views": {
         "identity": "الهوية",
-        "mcp": "MCP"
+        "mcp": "MCP",
+        "model": "النموذج"
       }
     },
     "tr": {
       "name": "Deva",
       "description": "Deva proje ajanı: Studio içinde sohbet edin, bu depoyu okuyup değiştirin, pnpm kontrollerini ve derlemelerini çalıştırın.",
+      "navigation": { "main": { "identity": "Deva" } },
       "views": {
         "identity": "Kimlik",
-        "mcp": "MCP"
+        "mcp": "MCP",
+        "model": "Model"
       }
     }
   },
-  "version": "0.8.0",
+  "version": "0.8.15",
   "apiVersion": 1,
   "author": {
     "name": "Deva"
@@ -119,7 +143,8 @@
     "commands",
     "browser.cdp",
     "api.read",
-    "api.write"
+    "api.write",
+    "compression"
   ],
   "client": "client.mjs",
   "views": [
@@ -136,7 +161,86 @@
       "slot": "agent-settings",
       "icon": "mcp",
       "order": 1
+    },
+    {
+      "id": "model",
+      "title": "模型",
+      "slot": "agent-settings",
+      "icon": "bot",
+      "order": 2
     }
   ],
-  "icon": "icon.png"
+  "icon": "icon.png",
+  "repository": "https://github.com/sqfcyily/deva",
+  "homepage": "https://github.com/sqfcyily/deva/tree/feat/plugin-deva-agent/plugins/deva-agent",
+  "documentation": "https://github.com/sqfcyily/deva/blob/feat/plugin-deva-agent/plugins/deva-agent/README.md",
+  "issues": "https://github.com/sqfcyily/deva/issues",
+  "navigation": { "main": [{ "viewId": "identity", "title": "Deva", "icon": "bot" }] },
+  "configSchema": {
+    "type": "object",
+    "description": "可选桌面模型共享、附件预算/授权根、审批与压缩策略；不存密钥。",
+    "properties": {
+      "sharedDevaUserId": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "管理员显式授权共享 OS 用户的 Deva 模型配置的单个 Studio 账号 ID。不填则保持用户 + Profile 私有配置。"
+      },
+      "sharedDevaHome": {
+        "type": "string",
+        "description": "Deva 配置绝对目录（身份内容、选择和共享模型配置共用这个根）；不填按进程 DEVA_HOME、进程用户的 ~/.deva 顺序解析。"
+      },
+      "modelTrustedBases": {
+        "type": "array",
+        "description": "可选：管理员为所有账号预先允许 Deva 直连的完整 Base URL（HTTP、本机或内网）；仅授权列出的规范地址，不允许通配。用户也可在模型页对自己填写的那一个地址勾选确认，无需改这里。",
+        "items": { "type": "string" },
+        "default": []
+      },
+      "attachmentMaxFileBytes": {
+        "type": "integer",
+        "description": "单附件字节上限。",
+        "minimum": 1,
+        "default": 2097152
+      },
+      "attachmentMaxSessionBytes": {
+        "type": "integer",
+        "description": "会话累计唯一附件字节上限。",
+        "minimum": 1,
+        "default": 8388608
+      },
+      "attachmentTtlMs": {
+        "type": "integer",
+        "description": "首次解析后有效毫秒数。",
+        "minimum": 1,
+        "default": 86400000
+      },
+      "attachmentAllowedRoots": {
+        "type": "array",
+        "description": "管理员显式授权的额外绝对目录；不接受模型 options 注入。",
+        "items": {
+          "type": "string"
+        },
+        "default": []
+      },
+      "approvalEnabled": {
+        "type": "boolean",
+        "description": "高风险工具执行前请求宿主审批；默认关闭。",
+        "default": false
+      },
+      "approvalTools": {
+        "type": "array",
+        "description": "除命令/文件写入/浏览器/记忆/技能/MCP 外额外需要审批的工具名。",
+        "items": {
+          "type": "string"
+        },
+        "default": []
+      },
+      "compressionEnabled": {
+        "type": "boolean",
+        "description": "为 Hermes/Ekko 普通单聊启用摘录式摘要；默认关闭，不改 Deva Agent 历史。",
+        "default": false
+      }
+    },
+    "required": [],
+    "additionalProperties": false
+  }
 }

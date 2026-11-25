@@ -1,11 +1,17 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:http'
+import { randomBytes } from 'node:crypto'
 import { runAgentTurn } from '../lib/loop.mjs'
 import { createAgentDefinition } from '../lib/agent.mjs'
+import { saveModelSelection } from '../lib/model-selection.mjs'
+import { isolatedDevaHome } from './support/deva-home.mjs'
+
+// 这些用例跑真实 Agent：身份文件要落在临时根，不能写进真实 ~/.deva。
+isolatedDevaHome()
 
 async function workspace() {
   const dir = await mkdtemp(join(tmpdir(), 'deva-agent-'))
@@ -55,7 +61,7 @@ test('loop runs a tool call then answers, streaming events in order', async () =
   try {
     const { run, events } = fakeRun(dir)
     const scripted = [
-      { text: '先读一下 package.json', toolCalls: [{ id: 'c1', name: 'read_file', arguments: '{"path":"package.json"}' }], finish: 'tool_calls' },
+      { text: '先读一下 package.json', toolCalls: [{ id: 'c1', name: 'read_file', arguments: '{"path":"package.json"}' }], finish: 'tool_calls', usage: { inputTokens: 3, outputTokens: 2, cacheReadTokens: 0 } },
       { text: '版本是 0.1.15', toolCalls: [], finish: 'stop', usage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 0 } },
     ]
     const result = await runAgentTurn({
@@ -73,7 +79,7 @@ test('loop runs a tool call then answers, streaming events in order', async () =
     })
     assert.equal(result.finishReason, 'stop')
     assert.equal(result.content[0].text, '先读一下 package.json版本是 0.1.15')
-    assert.deepEqual(result.usage, { inputTokens: 10, outputTokens: 4, cacheReadTokens: 0, costUsd: null, isEstimated: false })
+    assert.deepEqual(result.usage, { inputTokens: 13, outputTokens: 6, cacheReadTokens: 0, costUsd: null, isEstimated: false })
     const kinds = events.map(event => event.type)
     assert.deepEqual(kinds, ['status', 'text.delta', 'tool.started', 'tool.completed', 'status', 'text.delta'])
     const started = events.find(event => event.type === 'tool.started')
@@ -130,23 +136,28 @@ test('cancellation aborts before any model call', async () => {
   } finally { await cleanup() }
 })
 
-test('agent definition exposes scoped-only modes and rejects unsupported runs', async () => {
+test('agent definition exposes scoped and global modes and rejects runs it cannot serve', async () => {
   const definition = createAgentDefinition({ log: { info() {}, warn() {} } })
   assert.equal(definition.id, 'deva')
   assert.equal(definition.agentApiVersion, 1)
   assert.deepEqual(definition.modes.scoped.protocols, ['chat_completions', 'anthropic_messages', 'codex_responses'])
-  assert.equal(definition.modes.global, undefined)
+  assert.equal(typeof definition.modes.global.listModels, 'function')
+  await assert.rejects(definition.modes.global.listModels({ identity: { userId: 1, profile: 'default' } }), /插件上下文/)
   assert.deepEqual(definition.features.surfaces, ['chat', 'group-chat', 'workflow', 'api'])
   assert.equal(definition.features.streaming, true)
-  assert.equal(definition.features.resume, false)
+  assert.equal(definition.features.resume, true)
   const status = await definition.getStatus({})
   const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
   assert.deepEqual(status, { installed: true, version: pkg.version, source: 'plugin' })
   const dir = await mkdtemp(join(tmpdir(), 'deva-def-'))
   try {
-    const session = await definition.runtime.createSession({ identity: { sessionId: 's' }, paths: { runtimeDir: dir, workspaceDir: dir } })
+    const session = await definition.runtime.createSession({ identity: { userId: 1, profile: 'default', agentId: 'plugin:deva/deva', sessionId: 's' }, paths: { runtimeDir: dir, workspaceDir: dir } })
+    // global 模式没有直连配置：停下并说明去哪里配置，不回退。
+    await assert.rejects(session.run({ input: [{ type: 'text', text: 'hi' }], history: [], instructions: [], options: {} }, {
+      ...fakeRun(dir).run, mode: 'global', model: {},
+    }), /Agent 自带模型.*Deva → 设置 → 模型/)
     await assert.rejects(session.run({ input: [], history: [], instructions: [], options: {} }, {
-      mode: 'global', model: {}, paths: { runtimeDir: dir, workspaceDir: dir }, signal: new AbortController().signal,
+      mode: 'scoped', model: {}, paths: { runtimeDir: dir, workspaceDir: dir }, signal: new AbortController().signal,
       output: { emit: async () => {} }, attachments: {}, log: { info() {} },
     }), /scoped/)
     await session.dispose()
@@ -178,13 +189,13 @@ test('definition end-to-end over a scoped model proxy', async () => {
   const { port } = server.address()
   try {
     const definition = createAgentDefinition({ log: { info() {} } })
-    const session = await definition.runtime.createSession({ identity: { sessionId: 's' }, paths: { runtimeDir: dir, workspaceDir: dir } })
+    const session = await definition.runtime.createSession({ identity: { userId: 1, profile: 'default', agentId: 'plugin:deva/deva', sessionId: 's' }, paths: { runtimeDir: dir, workspaceDir: dir } })
     const { run, events } = fakeRun(dir)
     run.model = { apiMode: 'chat_completions', baseUrl: `http://127.0.0.1:${port}`, token: 'tk', model: 'test' }
     const result = await session.run({ input: [{ type: 'text', text: '读 README' }], history: [], instructions: [{ kind: 'system', text: '额外指令' }], options: {} }, run)
     assert.equal(result.finishReason, 'stop')
     assert.match(result.content[0].text, /README 已读/)
-    assert.equal(result.usage.inputTokens, 9)
+    assert.equal(result.usage.inputTokens, null)
     assert.ok(events.some(event => event.type === 'tool.completed' && String(event.result).includes('# deva')))
     await session.dispose()
   } finally {
@@ -269,7 +280,7 @@ test('definition end-to-end: a memory written mid-turn reaches the next step and
   const { port } = server.address()
   try {
     const definition = createAgentDefinition({ log: { info() {} } })
-    const session = await definition.runtime.createSession({ identity: { sessionId: 's' }, paths: { runtimeDir: dir, workspaceDir: dir } })
+    const session = await definition.runtime.createSession({ identity: { userId: 1, profile: 'default', agentId: 'plugin:deva/deva', sessionId: 's' }, paths: { runtimeDir: dir, workspaceDir: dir } })
     const { run } = fakeRun(dir)
     run.model = { apiMode: 'chat_completions', baseUrl: `http://127.0.0.1:${port}`, token: 'tk', model: 'test' }
     const result = await session.run({ input: [{ type: 'text', text: '以后改完先跑测试' }], history: [], instructions: [], options: {} }, run)
@@ -328,4 +339,119 @@ test('the memory index is re-read only after a successful memory write or delete
     // 开场读一次（全局 + 项目两层）；普通工具步不重读；写入后下一步再读一次（两层）。
     assert.equal(entriesReads, 4)
   } finally { await cleanup() }
+})
+
+for (const shared of [false, true]) test(`Deva uses scoped by default, sends direct HTTP for X and Y, and never falls back (${shared ? 'shared file' : 'private state'})`, async t => {
+  const { dir, cleanup } = await workspace()
+  const key = randomBytes(32).toString('hex')
+  const seen = []
+  const proxy = createServer((req, res) => {
+    let body = ''
+    req.on('data', chunk => { body += chunk })
+    req.on('end', () => {
+      const { model } = JSON.parse(body)
+      const status = model === 'denied' ? 401 : 200
+      seen.push({ method: req.method, path: req.url, model, authPresent: Boolean(req.headers.authorization), correctCustomBearer: req.headers.authorization === `Bearer ${key}`, status })
+      if (status !== 200) {
+        res.writeHead(status, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ error: req.headers.authorization }))
+        return
+      }
+      res.writeHead(200, { 'content-type': 'text/event-stream' })
+      res.end(`data: ${JSON.stringify({ choices: [{ delta: { content: model }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`)
+    })
+  })
+  await new Promise(resolve => proxy.listen(0, '127.0.0.1', resolve))
+  try {
+    const { run } = fakeRun(dir)
+    const base = `http://127.0.0.1:${proxy.address().port}`
+    const x = `${base}/x/v1`, y = `${base}/y/compatible`
+    const sharedDevaHome = join(dir, '.deva')
+    run.config = { modelTrustedBases: [x, y], ...(shared ? { sharedDevaUserId: 1, sharedDevaHome } : {}) }
+    run.model = { ...run.model, baseUrl: base, model: 'session-model' }
+    run.host = { models: { async respond() { assert.fail('host gateway must not be used') } } }
+    const def = createAgentDefinition({ log: { info() {}, warn() {} } })
+    const session = await def.runtime.createSession(run)
+    const turn = () => session.run({ input: [{ type: 'text', text: 'hello' }], history: [], instructions: [], options: {} }, run)
+    try {
+      assert.equal((await turn()).content[0].text, 'session-model')
+      const savedX = await saveModelSelection(run, { baseUrl: `${x}/`, modelName: 'x', apiKey: key })
+      assert.equal(savedX.baseUrl, x)
+      assert.equal(savedX.modelName, 'x')
+      assert.equal(savedX.hasApiKey, true)
+      assert.equal((await turn()).content[0].text, 'x')
+      if (shared) {
+        const file = join(sharedDevaHome, 'config.json')
+        const cfg = JSON.parse(await readFile(file, 'utf8'))
+        const [provider] = cfg.models.providers
+        provider.apiHost = y
+        provider.models = [{ id: 'y', name: 'y', enabled: true }, ...provider.models]
+        cfg.models.activeModelId = `${provider.id}:y`
+        await writeFile(`${file}.tmp`, JSON.stringify(cfg), { mode: 0o600 })
+        await rename(`${file}.tmp`, file)
+      } else {
+        const savedY = await saveModelSelection(run, { baseUrl: y, modelName: 'y' })
+        assert.deepEqual({ baseUrl: savedY.baseUrl, modelName: savedY.modelName, hasApiKey: savedY.hasApiKey }, { baseUrl: y, modelName: 'y', hasApiKey: false })
+      }
+      assert.equal((await turn()).content[0].text, 'y')
+      await saveModelSelection(run, { baseUrl: y, modelName: 'denied', apiKey: key })
+      await assert.rejects(turn(), error => error.message.includes('HTTP 401') && !error.message.includes(key))
+      assert.deepEqual(seen, [
+        { method: 'POST', path: '/v1/chat/completions', model: 'session-model', authPresent: true, correctCustomBearer: false, status: 200 },
+        { method: 'POST', path: '/x/v1/chat/completions', model: 'x', authPresent: true, correctCustomBearer: true, status: 200 },
+        { method: 'POST', path: '/y/compatible/chat/completions', model: 'y', authPresent: false, correctCustomBearer: false, status: 200 },
+        { method: 'POST', path: '/y/compatible/chat/completions', model: 'denied', authPresent: true, correctCustomBearer: true, status: 401 },
+      ])
+      t.diagnostic(JSON.stringify(seen))
+    } finally { session.dispose() }
+  } finally {
+    await new Promise(resolve => proxy.close(resolve))
+    await cleanup()
+  }
+})
+
+test('global mode runs on the configured direct model with the chosen effort and lists it for the host', async () => {
+  const { dir, cleanup } = await workspace()
+  const seen = []
+  const upstream = createServer((req, res) => {
+    let body = ''
+    req.on('data', chunk => { body += chunk })
+    req.on('end', () => {
+      const json = JSON.parse(body)
+      seen.push({ path: req.url, model: json.model, reasoning_effort: json.reasoning_effort ?? null, authPresent: Boolean(req.headers.authorization) })
+      res.writeHead(200, { 'content-type': 'text/event-stream' })
+      res.end(`data: ${JSON.stringify({ choices: [{ delta: { content: 'global-ok' }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`)
+    })
+  })
+  await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve))
+  try {
+    const { run } = fakeRun(dir)
+    // global 模式下宿主不注入代理地址与令牌。
+    const globalRun = model => ({ ...run, mode: 'global', model, host: { models: { async respond() { assert.fail('host gateway must not be used') } } } })
+    const baseUrl = `http://127.0.0.1:${upstream.address().port}/v1`
+    const def = createAgentDefinition({ log: { info() {}, warn() {} }, plugin: { state: run.state, config: {} } })
+    const management = { identity: { userId: 1, profile: 'default', agentId: 'plugin:deva/deva' } }
+    assert.equal((await def.modes.global.listModels(management)).status, 'empty')
+    await saveModelSelection(run, { baseUrl, modelName: 'mine', allowNonPublic: true, reasoningEffort: 'medium' })
+    const catalog = await def.modes.global.listModels(management)
+    assert.deepEqual(catalog.models.map(model => [model.id, model.name, model.isDefault, model.reasoningEfforts.join()]), [['deva-direct', 'mine', true, 'minimal,low,medium,high,xhigh']])
+    // 改模型名后目录 id 不变，已记住该 id 的会话不会被宿主判为「模型已不可用」。
+    await saveModelSelection(run, { baseUrl, modelName: 'renamed', allowNonPublic: true })
+    assert.deepEqual((await def.modes.global.listModels(management)).models.map(model => [model.id, model.name]), [['deva-direct', 'renamed']])
+    await saveModelSelection(run, { baseUrl, modelName: 'mine', allowNonPublic: true })
+    const session = await def.runtime.createSession(run)
+    const turn = model => session.run({ input: [{ type: 'text', text: 'hello' }], history: [], instructions: [], options: {} }, globalRun(model))
+    try {
+      assert.equal((await turn({})).content[0].text, 'global-ok')
+      assert.equal((await turn({ model: 'deva-direct', reasoningEffort: 'high' })).content[0].text, 'global-ok')
+      await assert.rejects(turn({ model: 'deva-direct', reasoningEffort: 'ultra' }), /模型强度 ultra 不受支持/)
+      assert.deepEqual(seen, [
+        { path: '/v1/chat/completions', model: 'mine', reasoning_effort: 'medium', authPresent: false },
+        { path: '/v1/chat/completions', model: 'mine', reasoning_effort: 'high', authPresent: false },
+      ])
+    } finally { await session.dispose() }
+  } finally {
+    await new Promise(resolve => upstream.close(resolve))
+    await cleanup()
+  }
 })

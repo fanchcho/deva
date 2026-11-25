@@ -1,21 +1,26 @@
+import { createCheckpointController } from './checkpoint.mjs'
 /**
  * Agent 定义：把 Deva 项目 Agent 注册进 Studio（plugin:deva/deva）。
  *
- * 只有 scoped 模式：模型由 Studio 本轮注入（baseUrl + token），插件既不存密钥，
- * 也不自己维护模型目录。身份可选：每轮按 user+profile 作用域里保存的选择组装提示词，
+ * scoped 模式默认使用本轮宿主代理，有自定义地址则直连对应 Chat Completions API；
+ * global 模式（Agent 自带模型）只用模型页配置的直连地址与模型，没配置时明确报错。
+ * 自定义密钥只在服务端保存、读取，不维护模型目录。身份可选：每轮按 user+profile 作用域里保存的选择组装提示词，
  * 没选过就用默认身份（deva）。
  */
 import { readFileSync } from 'node:fs'
-import { IDENTITY_META, loadIdentity } from './identities.mjs'
+import { IDENTITY_META } from './identities.mjs'
 import { resolveIdentityId } from './selection.mjs'
+import { loadIdentityRecord } from './deva-home.mjs'
+import { listConfiguredModels, readCustomModel, resolveRunEffort } from './model-selection.mjs'
+import { createCustomModel } from './studio-model.mjs'
 import { applyInputIdentity } from './commands.mjs'
 import { buildSystemPrompt } from './prompt.mjs'
-import { formatSkillListing } from './skills.mjs'
+import { formatSkillListing, listSkills } from './skills.mjs'
 import { formatFacts, projectFacts } from './project.mjs'
 import { runAgentTurn } from './loop.mjs'
 import { executeTool } from './tools.mjs'
 import { McpPool, parseServerConfig, mergeServers } from './mcp.mjs'
-import { resolveStudioServers } from './studio-mcp.mjs'
+import { ensureDevamcpStore, resolveDevamcpServers } from './mcp-store.mjs'
 
 function packageVersion() {
   try {
@@ -38,14 +43,14 @@ const SKILLS_TTL = 30000
 function createTtlCache(load, ttl) {
   const entries = new Map()
   return {
-    async get(key) {
+    async get(key, input = key) {
       const now = Date.now()
       const hit = entries.get(key)
       if (hit?.pending) return hit.pending
       if (hit && now - hit.at < ttl) return hit.value
       const entry = { at: now, pending: null, value: undefined }
       entry.pending = Promise.resolve()
-        .then(() => load(key))
+        .then(() => load(input))
         .then(value => {
           entry.pending = null
           entry.value = value
@@ -62,13 +67,12 @@ function createTtlCache(load, ttl) {
   }
 }
 
+const GLOBAL_NEEDS_MODEL = 'Deva 的「Agent 自带模型」模式需要直连配置：请在 Deva → 设置 → 模型 填写 Base URL 和模型名并保存，或在会话里改用 Studio 模型后重试。'
 const INSTRUCTION = `Deva Agent 需要 Studio 注入的模型（scoped 模式）。在 Agent 管理里为它选择模型，或在会话里切换到一个已配置的模型后重试。`
 
 /** 宿主注入的 run.mcpServers 条目 → 本插件客户端的配置形状（宿主条目可能省掉 type）。 */
 function injectedServers(injected) {
-  if (!injected || typeof injected !== 'object') return []
-  const { servers } = parseServerConfig({ mcpServers: injected })
-  return servers
+  return parseServerConfig({ mcpServers: injected || {} })
 }
 
 /**
@@ -110,23 +114,26 @@ function makeExecute({ run, getPool, onToolSuccess }) {
 }
 
 /**
- * 连接本轮可用的 MCP（MCP 页勾选的 Studio 服务 + 宿主注入，同名的宿主优先）。
- * 连接跨轮复用；服务配置或宿主注入的凭证变了才重连。连接失败不中断对话：
- * 把失败原因写进系统提示词，让模型如实告诉用户缺什么。
+ * 连接本轮可用的 MCP：**插件自带**（deva-agent/mcp-servers.json，独立管理）
+ * + 宿主注入的 run.mcpServers（只读、不入库；同名时宿主优先）。
+ * 连接跨轮复用；配置或凭证变了才重连。连接失败写进系统提示词，不中断对话。
  */
-async function runWithMcp({ run, input, system, workspaceDir, facts, identity, log, runTurn, mcp, onToolSuccess }) {
+async function runWithMcp({ run, input, system, workspaceDir, facts, identity, log, runTurn, mcp, onToolSuccess, checkpoint, model }) {
   const problems = []
-  // MCP 页勾选的 Studio 服务：配置每轮现取，用户在 Studio 或设置页改完后下一轮即生效
-  const studio = await resolveStudioServers({ host: run.host, state: run.state, identity: run.identity, log })
-  problems.push(...studio.problems)
-  const servers = mergeServers(studio.servers, injectedServers(run.mcpServers))
+  // 插件自带的 MCP：独立存储、独立管理；首次启用时把旧版 Studio 选择备份并迁进来。
+  await ensureDevamcpStore(run.config, { state: run.state, identity: run.identity, host: run.host, log })
+  const own = resolveDevamcpServers({ config: run.config, log })
+  problems.push(...own.problems)
+  const injected = injectedServers(run.mcpServers)
+  problems.push(...injected.problems)
+  const servers = mergeServers(own.servers, injected.servers)
   // 记忆的角色层按本轮身份分区：把 id/名称一路带给工具层（runTurn 的默认实现就是 runAgentTurn）。
   const identityScope = { identityId: identity?.id ?? null, identityName: identity?.name ?? null }
   if (!servers.length && !problems.length) {
     // 用户已把服务全部取消勾选：断开上一轮留下的连接，本轮不背任何 MCP。
     mcp.release()
     const execute = makeExecute({ run, getPool: () => null, onToolSuccess })
-    return await runTurn({ run, input, system, workspaceDir, facts, identity, ...identityScope, execute, runTurn })
+    return await runTurn({ run, input, system, workspaceDir, facts, identity, ...identityScope, execute, runTurn, checkpoint, model })
   }
   const pool = mcp.acquire()
   // 握手与工具发现用会话级 signal；单次 tools/call 仍受本轮 run.signal 取消。
@@ -141,17 +148,20 @@ async function runWithMcp({ run, input, system, workspaceDir, facts, identity, l
   const execute = makeExecute({ run, getPool: () => pool, onToolSuccess })
   return await runTurn({
     run, input, system: mergedSystem, workspaceDir, facts, identity,
-    ...identityScope, extraTools: pool.definitions(), execute, runTurn,
+    ...identityScope, extraTools: pool.definitions(), execute, runTurn, checkpoint, model,
   })
 }
 
 /**
  * `identityId` 为 null 时是「跟随设置」的通用 Agent（可在会话内切身份）——server.mjs 只注册这一个。
  * 传具体 `identityId` 可造一个固定身份的 Agent（保留给测试/特殊用途，正常安装不使用）。
- * 插件没有全局配置：MCP 服务只有 Studio 一份，身份与勾选存在宿主提供的 user+profile 存储里。
+ * 插件全局配置仅包含附件/可选策略；MCP 服务只有 Studio 一份，身份与勾选由宿主分区保存。
  */
-/** @param {{ log?: { info: Function, warn: Function }, runTurn?: Function, identityId?: string|null }} options */
-export function createAgentDefinition({ log = console, runTurn = runAgentTurn, identityId = null } = {}) {
+/**
+ * `plugin` 是插件上下文：宿主调用模型目录时，它的 state/config 已绑定到当前调用者。
+ * @param {{ log?: { info: Function, warn: Function }, runTurn?: Function, identityId?: string|null, plugin?: { state: object, config: object } }} options
+ */
+export function createAgentDefinition({ log = console, runTurn = runAgentTurn, identityId = null, plugin } = {}) {
   const version = packageVersion()
   const fixed = identityId ? IDENTITY_META[identityId] : null
   return {
@@ -160,22 +170,38 @@ export function createAgentDefinition({ log = console, runTurn = runAgentTurn, i
     vendor: 'Deva',
     description: fixed
       ? `Deva 项目 Agent（固定身份：${fixed.name}）：读写本仓库代码、跑 pnpm 检查与构建，用 Studio 现存模型直接对话。`
-      : 'Deva 项目 Agent：读写本仓库代码、跑 pnpm 检查与构建；身份可选（Deva / 小码酱），用 Studio 现存模型直接对话。',
+      : 'Deva 项目 Agent：读写本仓库代码、跑 pnpm 检查与构建；在 Deva 设置中选择、新增或编辑身份。',
     agentApiVersion: 1,
     getStatus: async () => ({ installed: true, version, source: 'plugin' }),
     management: {
-      // Agent 管理的「设置」默认打开身份页；MCP 是同组的第二个 agent-settings 页面。
       settings: () => ({ viewId: 'identity' }),
     },
-    modes: { scoped: { protocols: PROTOCOLS } },
-    features: { surfaces: ['chat', 'group-chat', 'workflow', 'api'], streaming: true, resume: false },
+    modes: {
+      scoped: { protocols: PROTOCOLS },
+      global: {
+        async listModels(ctx) {
+          if (!plugin) throw new Error('Deva 模型目录需要插件上下文')
+          return listConfiguredModels({ identity: ctx.identity, state: plugin.state, config: plugin.config })
+        },
+      },
+    },
+    features: { surfaces: ['chat', 'group-chat', 'workflow', 'api'], streaming: true, resume: true },
     runtime: {
       async createSession(session) {
         let disposed = false
+        const checkpoint = createCheckpointController(session.identity, session.resumeState)
         const mcp = createMcpCache(log)
         // 工程事实与技能清单按会话缓存：每轮重读 package.json / 起两个 git、再请求一次技能接口没有必要。
         const factsCache = createTtlCache(workspaceDir => projectFacts(workspaceDir), FACTS_TTL)
-        const skillsCache = createTtlCache(host => formatSkillListing({ host, log }), SKILLS_TTL)
+        const skillsCache = createTtlCache(host => listSkills(host), SKILLS_TTL)
+        const dispose = () => {
+          if (disposed) return
+          disposed = true
+          mcp.close()
+          factsCache.invalidate()
+          skillsCache.invalidate()
+        }
+        session.lifecycle?.add(dispose)
         const onToolSuccess = name => {
           // 技能刚被改过、工作区刚被写过/跑过命令：下一轮立即重读，不等 TTL。
           if (name === 'skill_manage') skillsCache.invalidate()
@@ -185,38 +211,44 @@ export function createAgentDefinition({ log = console, runTurn = runAgentTurn, i
         return {
           async run(input, run) {
             if (disposed) throw new Error('本会话已释放')
-            if (run.mode !== 'scoped' || !run.model?.baseUrl || !run.model?.token) throw new Error(INSTRUCTION)
+            if (run.mode !== 'global' && (!run.model?.baseUrl || !run.model?.token)) throw new Error(INSTRUCTION)
             const workspaceDir = run.paths.workspaceDir
+            // Studio 原生页面也会修改技能；每轮重新读取，不能沿用上一轮的启停状态。
+            skillsCache.invalidate()
+            log.info?.(`deva: 运行通道 surface=${run.identity.surface || 'unknown'} host.request=${typeof run.host?.request === 'function'} injectedMcp=${Object.keys(run.mcpServers || {}).join('/') || 'none'}`)
             // 会话窗口里的 `@deva:<id>` 前缀：先切身份，再把前缀从消息里剥掉
             const consumed = await applyInputIdentity(input, run.state, run.identity,
-              fixed ? { allowSwitch: false, own: fixed.id } : {})
+              fixed ? { allowSwitch: false, own: fixed.id, config: run.config } : { config: run.config })
             if (consumed.switched) log.info?.(`deva: 会话内前缀切换身份=${consumed.switched}`)
             if (consumed.reply) {
               log.info?.('deva: 会话内命中身份命令，本地回话（不调用模型）')
               return { content: [{ type: 'text', text: consumed.reply }], finishReason: 'stop' }
             }
-            // 固定身份的 Agent 不读存储，避免「小码酱 Agent」被设置页改成别的身份
-            const resolved = fixed ? { id: fixed.id, source: 'agent' } : await resolveIdentityId(run.state, run.identity)
-            const identity = await loadIdentity(resolved.id)
-            log.info?.(`deva: 本轮身份=${identity.id}（${identity.name}，来源 ${resolved.source}）`)
+            const custom = fixed ? null : await readCustomModel(run)
+            // global 模式没有宿主代理可用：只能走模型页的直连配置，没有就停下说明，不回退。
+            if (run.mode === 'global' && !custom) throw new Error(GLOBAL_NEEDS_MODEL)
+            const model = custom
+              ? createCustomModel(run, { ...custom, reasoningEffort: resolveRunEffort(run, custom.reasoningEffort) })
+              : undefined
+            // 固定身份的 Agent 不读身份存储，避免「小码酱 Agent」被设置页改成别的身份
+            const resolved = fixed ? { id: fixed.id, source: 'agent' } : await resolveIdentityId(run.state, run.identity, run.config)
+            // 身份正文只从 ~/.deva 的身份文件读；文件损坏时这里直接报错，不回退到宿主旧值或内置正文。
+            const identity = await loadIdentityRecord(run.config, resolved.id)
+            log.info?.(`deva: 本轮身份=${identity.id}（${identity.name}，来源 ${resolved.source}，文件 ${identity.path}）`)
             const facts = await factsCache.get(workspaceDir)
             const instructions = (input.instructions || []).map(item => item.text).filter(Boolean).join('\n\n')
             const system = buildSystemPrompt({
               identity,
               factsText: formatFacts(facts),
               hostInstructions: instructions,
-              skillsText: await skillsCache.get(run.host),
+              skillsText: await formatSkillListing({ host: run.host, log, loadSkills: host => skillsCache.get('skills', host) }),
             })
             return await runWithMcp({
-              run, input: consumed.input, system, workspaceDir, facts, identity, log, runTurn, mcp, onToolSuccess,
+              run, input: consumed.input, system, workspaceDir, facts, identity, log, runTurn, mcp, onToolSuccess, checkpoint, model,
             })
           },
-          async dispose() {
-            disposed = true
-            mcp.close()
-            factsCache.invalidate()
-            skillsCache.invalidate()
-          },
+          checkpoint: () => checkpoint.snapshot(),
+          dispose,
         }
       },
     },

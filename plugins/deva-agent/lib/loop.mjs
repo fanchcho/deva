@@ -1,3 +1,4 @@
+import { approveTool } from './approval.mjs'
 /**
  * Agent 的一轮运行：模型 ↔ 工具循环。
  *
@@ -9,6 +10,8 @@
  *  · 回复陷入逐字复读时掐断本步、丢弃重试一次；再复读就截到第一次重复处结束本轮（见 lib/repetition.mjs）；
  *  · 取消由 run.signal 传到 fetch 与子进程，取消后不再发事件。
  */
+import { normalizeStoredTodos } from './storage-contracts.mjs'
+import { createAttachmentReader, convertContent, convertHistory, refreshAttachments } from './attachments.mjs'
 import { createHash } from 'node:crypto'
 import { executeTool, TOOL_DEFINITIONS } from './tools.mjs'
 import { formatTodos } from './interact.mjs'
@@ -17,8 +20,6 @@ import { memoryPromptSection } from './memory-prompt.mjs'
 import { callModel, StreamAbort } from './model.mjs'
 import { watchRepetition, cutTrailingRepetition } from './repetition.mjs'
 
-const MAX_HISTORY_MESSAGES = 200
-const MAX_TEXT_PER_MESSAGE = 200000
 
 /**
  * 原地打转（同一工具同一参数连续得到完全相同的结论）：到的次数与桌面端 shared/limits.ts 一致。
@@ -91,54 +92,8 @@ function createSemaphore(limit) {
   }
 }
 
-function safeText(blocks) {
-  return (blocks || []).filter(block => block?.type === 'text').map(block => block.text).join('\n')
-}
-
-/** 把 Studio 的 agent 内容块变成归一化消息：图片读成 base64，文件给出本地路径。 */
-async function contentToMessage(role, content, run) {
-  const images = []
-  const notes = []
-  for (const block of content || []) {
-    if (block.type === 'text') continue
-    if (block.type === 'image') {
-      try {
-        const asset = await run.attachments.resolve(block.assetId)
-        const bytes = await run.attachments.read(block.assetId)
-        images.push({ mediaType: asset.mediaType, dataBase64: Buffer.from(bytes).toString('base64') })
-      } catch (error) {
-        notes.push(`（图片 ${block.name || block.assetId} 读取失败：${error.message}）`)
-      }
-    } else if (block.type === 'file') {
-      try {
-        const asset = await run.attachments.resolve(block.assetId)
-        notes.push(`用户附带文件 ${JSON.stringify(block.name || asset.name)} 位于 ${asset.localPath}；回答其内容前先用 read_file 读取。`)
-      } catch (error) {
-        notes.push(`（文件 ${block.name || block.assetId} 读取失败：${error.message}）`)
-      }
-    }
-  }
-  const text = [safeText(content), ...notes].filter(Boolean).join('\n\n').slice(0, MAX_TEXT_PER_MESSAGE)
-  return { role, text, images }
-}
-
-/** Studio 历史里 assistant/tool 也带 toolCallId，这里按上游协议归一化。 */
-function historyToMessages(history) {
-  const messages = []
-  for (const message of (history || []).slice(-MAX_HISTORY_MESSAGES)) {
-    const text = safeText(message.content).slice(0, MAX_TEXT_PER_MESSAGE)
-    if (message.role === 'tool') {
-      messages.push({ role: 'tool', toolCallId: message.toolCallId || '', name: 'tool', text })
-      continue
-    }
-    if (message.role === 'assistant') {
-      if (!text) continue
-      messages.push({ role: 'assistant', text })
-      continue
-    }
-    if (message.role === 'user' && text) messages.push({ role: 'user', text })
-  }
-  return messages
+function checkCancelled(signal) {
+  if (signal?.aborted) throw new Error('本轮已被取消')
 }
 
 function parseArguments(raw) {
@@ -167,13 +122,22 @@ function summarize(value) {
 export async function runAgentTurn({
   run, input, system, workspaceDir, facts, model = callModel, maxSteps = 24,
   extraTools = [], execute = null, identityId = null, identityName = null,
-  tools: toolsOverride = null, initialMessages = null, depth = 0, silent = false, runTurn = runAgentTurn,
+  tools: toolsOverride = null, initialMessages = null, depth = 0, silent = false, runTurn = runAgentTurn, checkpoint = null,
 }) {
+  checkCancelled(run.signal)
   // 子智能体传入自己的记录消息数组：原地追加，跑完后记录里就有完整上下文（续聊要用）。
-  const messages = initialMessages || historyToMessages(input.history)
-  if (!initialMessages) messages.push(await contentToMessage('user', input.input, run))
+  const attachmentReader = await createAttachmentReader(run)
+  let messages = initialMessages || await convertHistory(input.history, attachmentReader)
+  if (!initialMessages) messages.push(await convertContent('user', input.input, attachmentReader))
+  const restored = checkpoint ? await checkpoint.begin(run, messages) : null
+  if (restored?.completed) return { content: [{ type: 'text', text: restored.reply }], finishReason: restored.finishReason }
+  if (restored) messages = restored.messages
+  if (restored?.resumed) await refreshAttachments(messages, attachmentReader)
   const tools = toolsOverride || [...TOOL_DEFINITIONS, ...extraTools]
-  const emit = silent || !run.output?.emit ? async () => {} : event => run.output.emit(event)
+  const emit = async event => {
+    checkCancelled(run.signal)
+    if (!silent) await run.output?.emit?.(event)
+  }
   const isChild = depth > 0
   // 记忆的规则段只组装一次：条目索引随消息下发（下面 pushMemoryIndex），记忆增删改不动 system 前缀。
   // 子智能体只看自己的系统提示词：主对话的待办与记忆属于另一条上下文，不注入。
@@ -195,10 +159,10 @@ export async function runAgentTurn({
     const layers = []
     for (const layer of await memoryLayers(memoryCtx)) layers.push({ ...layer, entries: await listMemories(layer.scope, memoryCtx) })
     const text = formatMemoryIndex(layers)
-    if (!text) return
+    if (!text && !lastMemoryIndex) return
     if (!force && text === lastMemoryIndex) return
     lastMemoryIndex = text
-    messages.push({ role: 'user', text: `【记忆】${force ? '' : '更新后的'}记忆索引（方括号里是 id，用于 memory_read 读正文、memory_write 更新、memory_delete 删除）：\n\n${text}` })
+    messages.push({ role: 'user', text: `【记忆】${force ? '' : '更新后的'}记忆索引（方括号里是 id，用于 memory_read 读正文、memory_write 更新、memory_delete 删除）：\n\n${text || '当前没有记忆条目。'}` })
   }
   let lastMemoryIndex = null
   const composeSystem = async () => {
@@ -213,6 +177,7 @@ export async function runAgentTurn({
   if (!initialMessages) await pushMemoryIndex({ force: true })
   const toolCtx = {
     run,
+    attachmentReader,
     workspaceDir,
     runtimeDir: run.paths?.runtimeDir,
     state: run.state,
@@ -238,9 +203,9 @@ export async function runAgentTurn({
   }
   const callTool = execute || ((name, args, ctx) => executeTool(name, args, ctx))
   const subagentSlots = createSemaphore(SUBAGENT_CONCURRENCY)
-  const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }
+  const usage = { inputTokens: restored?.resumed ? null : 0, outputTokens: restored?.resumed ? null : 0, cacheReadTokens: restored?.resumed ? null : 0 }
   let sawUsage = false
-  let reply = ''
+  let reply = restored?.reply || ''
   let finishReason = 'stop'
   /** 本轮已因复读丢弃重试过一步（每轮至多一次；重试仍复读说明模型已退化，再试无益）。 */
   let repetitionRetried = false
@@ -254,7 +219,7 @@ export async function runAgentTurn({
   let stuckOn = null
 
   for (let step = 0; step < maxSteps; step++) {
-    if (run.signal?.aborted) throw new Error('本轮已被取消')
+    checkCancelled(run.signal)
     if (stuckOn) messages.push({ role: 'user', text: repeatStopNudge(stuckOn.tool, stuckOn.count) })
     // 第一步的索引已随用户消息发出；此后只在记忆被写/删后重读，避免每步重复读同一份索引。
     if (step > 0) await pushMemoryIndex()
@@ -269,6 +234,7 @@ export async function runAgentTurn({
     let looped = null
     let result
     try {
+      checkCancelled(run.signal)
       result = await model({
         model: run.model,
         apiMode: run.model?.apiMode,
@@ -301,6 +267,14 @@ export async function runAgentTurn({
       if (!(error instanceof StreamAbort)) throw error
       result = null
     }
+    checkCancelled(run.signal)
+    if (result?.usage) sawUsage = true
+    for (const key of Object.keys(usage)) {
+      const value = result?.usage?.[key]
+      const total = usage[key]
+      usage[key] = total !== null && Number.isSafeInteger(value) && value >= 0 && Number.isSafeInteger(total + value)
+        ? total + value : null
+    }
     if (looped) {
       run.log?.warn?.(`deva: 回复复读（${looped.channel}），掐断本步`)
       // 复读段已经画到界面上了（插件没有 stream_reset），只能丢弃本步重试一次；仍复读就截到第一份收尾。
@@ -318,12 +292,6 @@ export async function runAgentTurn({
       if (kept) messages.push({ role: 'assistant', text: kept })
       break
     }
-    if (result.usage) {
-      sawUsage = true
-      usage.inputTokens += Number(result.usage.inputTokens || 0)
-      usage.outputTokens += Number(result.usage.outputTokens || 0)
-      usage.cacheReadTokens += Number(result.usage.cacheReadTokens || 0)
-    }
     const text = result.text || ''
     // 供应商偶尔不按增量回文本（或只回最终文本）：补上差量，保证最终 content 与界面上看到的一致。
     if (text && text !== streamed) reply += text.startsWith(streamed) ? text.slice(streamed.length) : text
@@ -335,6 +303,13 @@ export async function runAgentTurn({
       if (result.finish === 'length') finishReason = 'length'
       if (!text && !reply) finishReason = 'length'
       break
+    }
+    const callIds = new Set()
+    for (const call of toolCalls) {
+      if (typeof call.id !== 'string' || !call.id.trim() || typeof call.name !== 'string' || !call.name.trim() || callIds.has(call.id)) {
+        throw new Error('工具调用标识无效：id/name 必须非空，同一批 id 不可重复')
+      }
+      callIds.add(call.id)
     }
     messages.push({
       role: 'assistant',
@@ -348,6 +323,7 @@ export async function runAgentTurn({
         ...(call.broken ? { broken: true } : {}),
       })),
     })
+    await checkpoint?.stage(messages, reply, toolCalls)
     const parsedCalls = toolCalls.map(call => ({ call, parsed: parseArguments(call.arguments) }))
     const canRunParallel = parsedCalls.length > 1 && parsedCalls.every(({ call, parsed }) => parsed.ok && !call.broken && PARALLEL_SAFE.has(call.name))
     for (const { call } of parsedCalls) {
@@ -356,6 +332,7 @@ export async function runAgentTurn({
 
     /** 跑一次工具；返回要回灌给模型的内容，并就地发出 completed/failed。 */
     const runOne = async ({ call, parsed }) => {
+      checkCancelled(run.signal)
       // 参数残缺（从漏出的 DSML 里恢复、但参数没写完或撞上输出上限）：不执行，如实说清并让模型重发。
       if (call.broken) {
         const message = `参数残缺：本次 ${call.name} 调用的参数没有写完（输出中断或格式损坏），未执行，没有产生任何改动。请重新调用并确保参数完整；内容较长时分段完成。`
@@ -366,17 +343,33 @@ export async function runAgentTurn({
         await emit({ type: 'tool.failed', callId: call.id, error: parsed.error })
         return { text: parsed.error, isError: true, args: null }
       }
+      const replay = checkpoint?.replay(call)
+      if (replay) {
+        await checkpoint.finished(call, replay.text, replay.isError)
+        await emit(replay.isError ? { type: 'tool.failed', callId: call.id, error: replay.text } : { type: 'tool.completed', callId: call.id, result: summarize(replay.text) })
+        return { ...replay, args: parsed.value }
+      }
+      let completed = false
       const limited = call.name === 'run_subagent'
       if (limited) await subagentSlots.acquire()
       try {
+        checkCancelled(run.signal)
+        await approveTool(run, call)
+        checkCancelled(run.signal)
+        await checkpoint?.started(call)
         // callId 供子智能体派生记录用（确定性派生 ID）；depth 供子轮拒绝再派生。
         const content = await callTool(call.name, parsed.value, { ...toolCtx, callId: call.id })
+        completed = true
+        await checkpoint?.finished(call, content, false)
         // 写/删成功后下一步才需要重读索引；失败时不标脏。
         if (MEMORY_MUTATORS.has(call.name)) memoryDirty = true
         await emit({ type: 'tool.completed', callId: call.id, result: summarize(content) })
         return { text: content, isError: false, args: parsed.value }
       } catch (error) {
+        if (completed) throw error
+        checkCancelled(run.signal)
         const message = `工具执行失败：${error?.message || error}`
+        await checkpoint?.finished(call, message, true)
         await emit({ type: 'tool.failed', callId: call.id, error: String(error?.message || error) })
         return { text: message, isError: true, args: parsed.value }
       } finally {
@@ -407,6 +400,7 @@ export async function runAgentTurn({
     for (let index = 0; index < parsedCalls.length; index++) {
       messages.push({ role: 'tool', toolCallId: parsedCalls[index].call.id, name: parsedCalls[index].call.name, text: String(done[index].text) })
     }
+    await checkpoint?.stage(messages, reply)
     if (stuckOn) break
     // 原地打转判定：按调用原序比对指纹（工具名 + 参数 + 结果），算在附提醒之前——提醒本身不进指纹。
     // 同一工具同一参数反复得到完全相同的结论即为打转；到 WARN 次附提醒，到 STOP 次下一步改发收尾请求。
@@ -428,8 +422,9 @@ export async function runAgentTurn({
     if (step === maxSteps - 1) finishReason = 'tool_limit'
   }
 
-  if (run.signal?.aborted) throw new Error('本轮已被取消')
+  checkCancelled(run.signal)
   if (degenerateNote) reply = reply ? `${reply.trimEnd()}\n\n${degenerateNote}` : degenerateNote
+  await checkpoint?.complete(messages, reply, finishReason)
   return {
     content: [{ type: 'text', text: reply }],
     finishReason,
@@ -446,7 +441,7 @@ function safeArgs(raw) {
 async function readTodos(run) {
   try {
     const todos = await run.state?.agentSession?.get('todos')
-    return Array.isArray(todos) ? todos : []
+    return normalizeStoredTodos(todos)
   } catch {
     return []
   }

@@ -36,9 +36,11 @@ function hostOf(ctx) {
 /** 宿主失败时抛出的是 HTTP 包装错误；把服务端 {ok:false,error} 的说明并入消息。 */
 async function request(host, path, options = {}) {
   try {
-    return await host.request(path, options)
+    const payload = await host.request(path, options)
+    if (payload?.ok === false) throw Object.assign(new Error('Studio rejected the request'), { body: payload })
+    return payload
   } catch (error) {
-    const detail = error?.body?.error || error?.message || String(error)
+    const detail = error?.body?.error?.message || error?.body?.error || error?.message || String(error)
     throw new SkillError(`技能接口调用失败（${path}）：${detail}`)
   }
 }
@@ -76,21 +78,26 @@ export async function listSkills(host, { query } = {}) {
   const payload = await request(hostOf({ host }), '/api/ekko/skills', {
     ...(query ? { query: { query } } : {}),
   })
-  const skills = Array.isArray(payload?.skills) ? payload.skills : []
+  if (!Array.isArray(payload?.skills)) throw new SkillError('技能接口返回了无法识别的结构（缺少 skills 数组）')
+  const skills = payload.skills
   return skills.filter(item => item && typeof item.name === 'string')
 }
 
 /** 单个技能详情：含 SKILL.md 正文。 */
 export async function readSkill(host, name) {
   const target = normalizeName(name)
-  return pickSkill(await request(hostOf({ host }), `/api/ekko/skills/${encodeURIComponent(target)}`))
+  const skill = pickSkill(await request(hostOf({ host }), `/api/ekko/skills/${encodeURIComponent(target)}`))
+  if (skill.validationStatus === 'invalid') throw new SkillError(`技能无效：${skill.validationError || skill.error || target}`)
+  if (typeof skill.content !== 'string' || !skill.content.trim()) throw new SkillError(`技能接口返回了无法识别的结构（${target} 缺少 content）`)
+  return skill
 }
 
 /** 技能的支持文件清单。 */
 export async function listSkillFiles(host, name) {
   const target = normalizeName(name)
   const payload = await request(hostOf({ host }), `/api/ekko/skills/${encodeURIComponent(target)}/files`)
-  return Array.isArray(payload?.files) ? payload.files : []
+  if (!Array.isArray(payload?.files)) throw new SkillError('技能接口返回了无法识别的结构（缺少 files 数组）')
+  return payload.files
 }
 
 /** 读一个支持文件；path 由宿主校验（只允许技能文件夹内的相对路径）。 */
@@ -125,16 +132,18 @@ export async function updateSkill(host, name, content) {
 export async function toggleSkill(host, name, enabled) {
   const target = normalizeName(name)
   if (typeof enabled !== 'boolean') throw new SkillError('enabled 必须是布尔值')
-  await request(hostOf({ host }), `/api/ekko/skills/${encodeURIComponent(target)}/toggle`, {
+  const payload = await request(hostOf({ host }), `/api/ekko/skills/${encodeURIComponent(target)}/toggle`, {
     method: 'PUT',
     body: { enabled },
   })
+  if (payload?.ok !== true) throw new SkillError('技能启停接口缺少 ok=true 回执')
   return { name: target, enabled }
 }
 
 export async function deleteSkill(host, name) {
   const target = normalizeName(name)
-  await request(hostOf({ host }), `/api/ekko/skills/${encodeURIComponent(target)}`, { method: 'DELETE' })
+  const payload = await request(hostOf({ host }), `/api/ekko/skills/${encodeURIComponent(target)}`, { method: 'DELETE' })
+  if (payload?.ok !== true) throw new SkillError('技能删除接口缺少 ok=true 回执')
   return { name: target }
 }
 
@@ -142,11 +151,10 @@ export async function deleteSkill(host, name) {
  * 系统提示词里的技能清单：只列已启用项，name + description。
  * 读不到时返回说明而不是空字符串——模型要能如实告诉用户「清单没读到」，而不是假装没有技能。
  */
-export async function formatSkillListing({ host, log } = {}) {
-  if (!host || typeof host.request !== 'function') return ''
+export async function formatSkillListing({ host, log, loadSkills = listSkills } = {}) {
   let skills
   try {
-    skills = await listSkills(host)
+    skills = await loadSkills(host)
   } catch (error) {
     log?.warn?.(`deva: 读取技能清单失败：${error.message}`)
     return `（技能清单本轮读取失败：${error.message}。涉及技能的任务请如实告知用户。）`

@@ -47,9 +47,9 @@ test('skill listing injects only enabled, valid skills as name + description', a
   assert.deepEqual(host.calls, [{ path: '/api/ekko/skills', method: 'GET', query: undefined, body: undefined }])
 })
 
-test('skill listing is empty without a host channel and honest when the listing fails', async () => {
-  assert.equal(await formatSkillListing({}), '')
-  assert.equal(await formatSkillListing(), '')
+test('skill listing reports a missing host channel and failed catalog honestly', async () => {
+  assert.match(await formatSkillListing({}), /技能清单本轮读取失败.*没有 Studio 宿主通道/)
+  assert.match(await formatSkillListing(), /技能清单本轮读取失败.*没有 Studio 宿主通道/)
   const host = fakeHost(() => { throw Object.assign(new Error('boom'), { body: { error: 'permission denied' } }) })
   const warnings = []
   const listing = await formatSkillListing({ host, log: { warn: message => warnings.push(message) } })
@@ -102,7 +102,7 @@ test('skill_view reads a support file through the documented file endpoint', asy
 test('skill_manage maps each action onto the documented endpoint', async () => {
   const host = fakeHost((path, options) => {
     const body = options.body || {}
-    return { skill: { name: path.split('/')[4] || body.name, description: '新技能', enabled: true } }
+    return { ok: true, skill: { name: path.split('/')[4] || body.name, description: '新技能', enabled: true } }
   })
   const created = await executeSkillTool('skill_manage', { action: 'create', name: 'weekly-report', content: SKILL_MD }, { host })
   assert.match(created, /已创建技能「weekly-report」/)
@@ -166,7 +166,7 @@ test('low-level helpers keep request shapes and reject unusable payloads', async
   await assert.rejects(toggleSkill(host, 'release-notes', 'yes'), /enabled 必须是布尔值/)
   // 宿主返回里没有 skill.name 时明确报错，而不是猜一个技能出来。
   await assert.rejects(createSkill(host, { name: 'ok-name', content: SKILL_MD }), /无法识别的结构/)
-  const host2 = fakeHost((path, options) => ({ skill: { name: options.body?.name || 'ok-name' } }))
+  const host2 = fakeHost((path, options) => ({ ok: true, skill: { name: options.body?.name || 'ok-name' } }))
   await createSkill(host2, { name: 'ok-name', content: SKILL_MD, category: 'docs' })
   assert.deepEqual(host2.calls[0].body, { name: 'ok-name', content: SKILL_MD, category: 'docs' })
   await toggleSkill(host2, 'ok-name', true)

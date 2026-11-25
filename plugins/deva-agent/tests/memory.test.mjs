@@ -325,3 +325,36 @@ test('consolidation gives up and keeps the layer untouched when the model output
     await cleanup()
   }
 })
+
+test('deleting the last memory publishes an empty index before the next model step', async () => {
+  const { runAgentTurn } = await import('../lib/loop.mjs')
+  const state = memoryUser()
+  const { dir, cleanup } = await workspace()
+  try {
+    const { entry } = await writeMemory({ type: 'user', title: '过期偏好', body: '旧偏好' }, ctxOf(state, dir))
+    const snapshots = []
+    const scripted = [
+      { text: '', toolCalls: [{ id: 'd1', name: 'memory_delete', arguments: JSON.stringify({ id: entry.id }) }], finish: 'tool_calls' },
+      { text: '', toolCalls: [{ id: 'l1', name: 'list_dir', arguments: '{}' }], finish: 'tool_calls' },
+      { text: '已删除', toolCalls: [], finish: 'stop' },
+    ]
+    const result = await runAgentTurn({
+      run: { state, paths: { workspaceDir: dir, runtimeDir: dir }, signal: new AbortController().signal },
+      workspaceDir: dir, facts: {}, identityId: 'deva', identityName: 'Deva',
+      input: { input: [{ type: 'text', text: '删除这条记忆' }], history: [] },
+      model: async request => {
+        snapshots.push(request.messages.filter(message => message.text?.startsWith('【记忆】')).map(message => message.text))
+        return scripted.shift()
+      },
+    })
+    assert.equal(result.finishReason, 'stop')
+    assert.match(snapshots[0][0], /过期偏好/)
+    assert.equal(snapshots[1].length, 2, '最后一条删除后也应补发更新索引')
+    assert.match(snapshots[1][1], /当前没有记忆条目/)
+    assert.doesNotMatch(snapshots[1][1], /过期偏好/)
+    assert.deepEqual(snapshots[2], snapshots[1], '无后续记忆变更不重复发送空索引')
+    assert.deepEqual(await readMemories(ctxOf(state, dir)), { global: [], role: [], project: [] })
+  } finally {
+    await cleanup()
+  }
+})

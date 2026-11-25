@@ -2,13 +2,14 @@
  * Agent 的工具集：文件读写、检索、命令执行、项目速览。
  *
  * 约定：
- *  · 一切写入路径以工作区根为界（resolveSafe + realpath 校验，符号链接不能穿出去），越界直接报错，
+ *  · 文件工具的写入路径以工作区根为界（resolveSafe + realpath 校验，符号链接不能穿出去），越界直接报错，
  *    不做"猜你想访问哪儿"；只读的 read_file 额外接受本轮运行目录（web_fetch 落盘正文要能读回，见 resolveReadable）；
  *  · 所有工具都是纯 JS 实现，只依赖 node 内建，方便在插件里直接跑、也方便测试；
  *  · 输出有界：检索类结果超长时硬截断并显式标注原长；run_command 先由 maxBuffer 封顶 8 MiB，
  *    上限内的超长输出全文落盘，只回开头与结尾的预览（lib/spill.mjs）——命令报错藏在结尾，只留开头会看不出为什么失败；
- *  · run_command 只跑 bash -lc，超时/取消后 kill 整个进程组，不阻塞 Studio 的取消。
+ *  · run_command 只跑 bash -lc，工作区仅是 cwd，不是文件系统沙箱；超时/取消后 kill 整个进程组。
  */
+import { normalizeStoredTodos, validateStored } from './storage-contracts.mjs'
 import { execFile, spawn } from 'node:child_process'
 import { readFile, writeFile, readdir, stat, mkdir, realpath, lstat, readlink, open } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -282,7 +283,7 @@ function fullMemoryEntry(entry, where) {
 function memoryConsolidateModel(run, ctx) {
   if (!run?.model) return null
   return async (system, user, signal) => {
-    const result = await callModel({
+    const result = await (ctx?.model || callModel)({
       model: run.model,
       apiMode: run.model?.apiMode,
       baseUrl: run.model?.baseUrl,
@@ -431,15 +432,19 @@ export async function executeTool(name, input, ctx) {
   if (name === 'todo_write') {
     const store = ctx?.agentSession
     if (!store) throw new ToolError('当前运行环境没有会话存储，无法保存待办清单')
-    const todos = normalizeTodos(args.todos)
-    await store.set('todos', todos)
+    const previous = normalizeStoredTodos(await store.get('todos'))
+    const todos = normalizeTodos(args.todos).map(todo => ({ ...previous.find(old => old.content === todo.content), ...todo }))
+    await store.set('todos', validateStored('todos', todos))
     return todos.length ? `已更新待办清单（${todos.length} 条）：\n${formatTodos(todos)}` : '已清空待办清单'
   }
   if (!workspaceDir) throw new ToolError('当前会话没有工作区，无法使用文件与命令工具')
   switch (name) {
     case 'read_file': {
+      const attachment = await ctx?.attachmentReader?.readPath(args.path)
+      if (attachment) return JSON.stringify({ attachment })
       const { full, relative: rel } = resolveReadable(workspaceDir, ctx?.runtimeDir, args.path)
       await assertPhysicalInside([workspaceDir, ctx?.runtimeDir], full, args.path)
+      if (await looksBinary(full)) return JSON.stringify({ kind: 'binary', localPath: full, size: (await stat(full)).size })
       const content = await readIfText(full)
       if (content === null) throw new ToolError(`读不到文件（不存在、不是文本或过大）：${rel}`)
       const lines = content.split('\n')

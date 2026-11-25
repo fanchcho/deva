@@ -76,7 +76,7 @@ export function normalizeTodos(input) {
     if (!content) throw new Error(`第 ${index + 1} 条待办缺少 content`)
     const status = String(item?.status ?? '')
     if (!STATUSES.has(status)) throw new Error(`第 ${index + 1} 条待办状态无效：${status || '（空）'}`)
-    return { content, status }
+    return { ...item, content, status }
   })
   const active = todos.filter(todo => todo.status === 'in_progress').length
   if (active > 1) throw new Error(`同一时间最多一个 in_progress（收到 ${active} 个）`)

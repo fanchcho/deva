@@ -12,6 +12,7 @@
  * 不在插件里另建文件：Studio 已提供按登录用户隔离的 state.user 存储，插件只读它自己的命名空间。
  * 旧版（v1，每条一句话 content）读到时就地转换：标题取第一句、正文保留原文、类型暂记 user。
  */
+import { validateStored } from './storage-contracts.mjs'
 import { createHash, randomBytes } from 'node:crypto'
 import { realpath } from 'node:fs/promises'
 
@@ -120,36 +121,38 @@ export function newId(scope, existing) {
   return id
 }
 
-/** 一条原始记录 → 条目；非记忆返回 null。v1 的 content 就地转换（类型记 user，标题取第一句）。 */
+/** 存量记录 → v2 条目；仅补缺省字段并保留扩展字段，损坏数据拒绝覆盖。 */
 function parseEntry(raw) {
-  if (!raw || typeof raw !== 'object') return null
-  if (typeof raw.id !== 'string') return null
-  const createdAt = Number(raw.createdAt) || 0
-  const updatedAt = Number(raw.updatedAt) || createdAt
+  if (!raw || typeof raw !== 'object') throw new MemoryError('记忆记录损坏，拒绝覆盖')
+  if (typeof raw.id !== 'string') throw new MemoryError('记忆记录缺少 ID，拒绝覆盖')
+  const createdAt = raw.createdAt ?? 0
+  const updatedAt = raw.updatedAt ?? createdAt
   if (typeof raw.title === 'string') {
     return {
+      ...raw,
       id: raw.id,
-      type: isMemoryType(raw.type) ? raw.type : 'user',
+      type: raw.type ?? 'user',
       title: raw.title,
-      body: typeof raw.body === 'string' ? raw.body : '',
+      body: raw.body ?? '',
       createdAt,
       updatedAt,
     }
   }
-  if (typeof raw.content !== 'string') return null
-  return { id: raw.id, type: 'user', title: firstSentence(raw.content), body: raw.content, createdAt, updatedAt }
+  const body = raw.content ?? raw.body ?? ''
+  if (typeof body !== 'string') throw new MemoryError('记忆正文类型非法，拒绝覆盖')
+  return { ...raw, id: raw.id, type: raw.type ?? 'user', title: firstSentence(body), body, createdAt, updatedAt }
 }
 
 async function readEntries(store) {
   if (!store) return []
-  let raw
-  try { raw = await store.get('entries') } catch { return [] }
-  if (!Array.isArray(raw)) return []
-  return raw.map(parseEntry).filter(Boolean)
+  const raw = await store.get('entries')
+  if (raw == null) return []
+  if (!Array.isArray(raw)) throw new MemoryError('记忆存储不是数组，拒绝覆盖')
+  return validateStored('memory', raw.map(parseEntry))
 }
 
 async function writeEntries(store, entries) {
-  await store.set('entries', entries)
+  await store.set('entries', validateStored('memory', entries))
   return entries
 }
 
