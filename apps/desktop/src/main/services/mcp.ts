@@ -633,9 +633,9 @@ export function registerMcpIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('mcp:list', (): McpServerView[] => listServers())
   ipcMain.handle('mcp:get', (_e, id: string): McpServerConfig | null => getServerConfig(id))
   ipcMain.handle('mcp:upsert', (_e, input: McpServerInput): McpServerConfig => upsertServer(input))
-  ipcMain.handle('mcp:remove', (_e, id: string): { ok: true } => {
+  ipcMain.handle('mcp:remove', async (_e, id: string): Promise<{ ok: true }> => {
+    await deleteServer(id)
     forget(id)
-    deleteServer(id)
     return { ok: true }
   })
   // 可用角色：null = 全部角色。只影响哪些角色的工具表里有它，不触发重连。

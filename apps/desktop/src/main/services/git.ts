@@ -7,6 +7,7 @@ import { getConfig, getDevaHome } from './config'
 import { detectShells } from './shells'
 import { loadProjectDoc, PROJECT_DOC_NAME, type ProjectDoc } from './project-doc'
 import { streamChat } from '../providers'
+import { saveGitIdentity } from './git-identity'
 
 /**
  * Git 源代码管理服务（主进程）。
@@ -757,12 +758,7 @@ export function registerGitIpc(): void {
     'git:set-config',
     async (_e, dir: string, name: string, email: string, global: boolean) => {
       assertInside(dir)
-      const scope = global ? '--global' : '--local'
-      if (typeof name === 'string' && name.trim())
-        await runGit(dir, ['config', scope, 'user.name', name.trim()])
-      if (typeof email === 'string' && email.trim())
-        await runGit(dir, ['config', scope, 'user.email', email.trim()])
-      return { ok: true as const }
+      return saveGitIdentity(runGit, dir, name, email, global)
     }
   )
 

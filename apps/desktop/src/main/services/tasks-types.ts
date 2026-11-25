@@ -1,3 +1,5 @@
+import type { TaskDecision, TaskDecisionResult } from '../../shared/task-decision'
+
 /**
  * 定时任务 / 自动任务（Scheduled / Automated Tasks）· 共享类型。
  *
@@ -46,6 +48,7 @@ export interface TaskAuthorization {
 /** 单次运行记录（有界环形，保留最近 ~50 条）。 */
 export interface TaskRun {
   firedAt: number
+  decision?: TaskDecisionResult
   finishedAt?: number
   /** aborted：被用户中止（停止键 / 删除任务对话 / 退出应用），不算成功也不算失败。 */
   status: 'ok' | 'error' | 'skipped' | 'aborted'
@@ -68,6 +71,7 @@ export interface TaskRecord {
   prompt: string
   schedule: TaskSchedule
   auth: TaskAuthorization
+  decision?: TaskDecision
   /** 独占会话 id（创建时铸；每次触发向该会话追加一轮）。 */
   sessionId: string
   /**
@@ -99,6 +103,7 @@ export interface TaskCreateInput {
   prompt: string
   schedule: TaskSchedule
   auth: TaskAuthorization
+  decision?: TaskDecision
   /** 在哪个对话里创建的（对话里的确认名片带上；管理页手动新建的不带）。见 TaskRecord.originSessionId。 */
   originSessionId?: string
   /** 运行方式：在这个会话中运行；缺省 = 独立运行。见 TaskRecord.ownerSessionId。 */
@@ -112,6 +117,7 @@ export interface TaskUpdateInput {
   prompt?: string
   schedule?: TaskSchedule
   auth?: Partial<TaskAuthorization>
+  decision?: TaskDecision
   /** 运行方式：会话 id = 在该会话中运行，null = 独立运行，缺省 = 不改。 */
   ownerSessionId?: string | null
 }

@@ -318,7 +318,7 @@ test('model settings show the shared file and per-app credential warning in each
   for (const locale of ['en', 'zh', 'zh-TW', 'ja', 'ko', 'fr', 'es', 'de', 'pt', 'ru', 'ar', 'tr']) {
     const get = async name => {
       assert.equal(name, 'get-model-selection')
-      return { baseUrl: '', modelName: '', hasApiKey: false, legacyNeedsSetup: false, sharedConfigPath: '/fixture/.deva/config.json', sharedNeedsSetup: true }
+      return { baseUrl: '', modelName: '', hasApiKey: false, legacyNeedsSetup: false, desktopConfigPath: '/fixture/.deva/config.json', desktopConfigExists: true }
     }
     const root = await mountPage(fakeContext(locale, get, { view: 'model' }))
     const texts = findAll(root, node => node.textContent).map(node => node.textContent).join(' ')
@@ -558,4 +558,75 @@ test('mcp view offers a jump to Studio’s own MCP page only when navigation exi
 
   const withoutNav = await mountPage(fakeContext('en', rpc))
   assert.equal(findAll(withoutNav, node => node.tag === 'button' && /Open Studio/.test(node.textContent)).length, 0)
+})
+
+// 回归：用户 2026-11-25 的第二台设备上，桌面明明选了 cpa / cn:deepseek-v4.1-flash，
+// 页面却显示「桌面端未选择默认模型 / 请联系 Studio 管理员授权访问桌面模型配置」，表单全空。
+test('model view renders the real desktop custom provider instead of "no default selected"', async () => {
+  for (const locale of ['en', 'zh', 'zh-TW', 'ja', 'ko', 'fr', 'es', 'de', 'pt', 'ru', 'ar', 'tr']) {
+    const settings = {
+      baseUrl: 'http://127.0.0.1:7863/v1',
+      modelName: 'cn:deepseek-v4.1-flash',
+      modelRef: 'custom-1794383812625:cn:deepseek-v4.1-flash',
+      providerId: 'custom-1794383812625',
+      providerName: 'cpa',
+      adapter: 'openai',
+      hasApiKey: false,
+      legacyNeedsSetup: false,
+      desktopConfigPath: '/windows/.deva/config.json',
+      desktopConfigExists: true,
+      needsNetworkApproval: true,
+      desktopModels: [{ ref: 'custom-1794383812625:cn:deepseek-v4.1-flash', adapter: 'openai', baseUrl: 'http://127.0.0.1:7863/v1', modelName: 'cn:deepseek-v4.1-flash', providerId: 'custom-1794383812625', providerName: 'cpa' }],
+    }
+    const root = await mountPage(fakeContext(locale, async name => {
+      assert.equal(name, 'get-model-selection')
+      return settings
+    }, { view: 'model' }))
+
+    const [choice] = findAll(root, node => node.tag === 'select')
+    assert.equal(choice.value, 'custom-1794383812625:cn:deepseek-v4.1-flash', `${locale}: 下拉必须停在桌面真实选择上`)
+    const [address, model] = findAll(root, node => node.tag === 'input')
+    assert.equal(address.value, 'http://127.0.0.1:7863/v1', `${locale}: 地址要回填`)
+    assert.equal(model.value, 'cn:deepseek-v4.1-flash', `${locale}: 模型名要回填`)
+    // 关键反向断言：状态行不能再出现“未选择默认模型”；空态占位项本身留在下拉里是正常的，
+    // 但它必须没被选中。判定看「选中的值 + 状态行」，不看整棵树的文本。
+    const [status] = findAll(root, node => node.className === 'deva-status' && node.textContent)
+    assert.equal(status.textContent.includes('No Desktop default selected'), false, `${locale}: 状态行误报未选择`)
+    assert.equal(status.textContent.includes('Desktop has no default model'), false, `${locale}: 状态行误报桌面无模型`)
+    const texts = findAll(root, node => node.textContent).map(node => node.textContent).join(' ')
+    assert.equal(texts.includes('{baseUrl}'), false, `${locale}: 占位符必须被填好`)
+    assert.ok(texts.includes('http://127.0.0.1:7863/v1'), `${locale}: 批准提示要写清是哪个地址`)
+    assert.ok(!texts.includes('undefined'), `${locale}: 标签漏配`)
+  }
+})
+
+test('model view explains exactly what an unauthorized account must configure', async () => {
+  const settings = { baseUrl: '', modelName: '', hasApiKey: false, legacyNeedsSetup: false, desktopAccessRequired: true, desktopOwnerUserId: 1, desktopConfigPath: '/srv/.deva/config.json' }
+  const root = await mountPage(fakeContext('zh', async () => settings, { view: 'model' }))
+  const texts = findAll(root, node => node.textContent).map(node => node.textContent).join(' ')
+  assert.match(texts, /sharedDevaUserId/)
+  assert.match(texts, /\/srv\/\.deva\/config\.json/)
+  assert.equal(/请联系 Studio 管理员授权访问桌面模型配置/.test(texts), false, '模糊的“求授权”文案不能再出现')
+  const [save] = findAll(root, node => node.tag === 'button')
+  assert.equal(save.disabled, true, '未授权时写入必须禁用（服务端也会拒绝）')
+})
+
+test('model view separates "desktop has no model" from "reference is broken"', async () => {
+  const base = { baseUrl: '', modelName: '', hasApiKey: false, legacyNeedsSetup: false, desktopConfigPath: '/srv/.deva/config.json' }
+  const emptyRoot = await mountPage(fakeContext('zh', async () => ({ ...base, desktopModels: [] }), { view: 'model' }))
+  const emptyText = findAll(emptyRoot, node => node.textContent).map(node => node.textContent).join(' ')
+  assert.match(emptyText, /桌面端还没有默认模型/)
+
+  const brokenRoot = await mountPage(fakeContext('zh', async () => ({ ...base, desktopModels: [], unresolvedModelRef: 'ghost:g1' }), { view: 'model' }))
+  const brokenText = findAll(brokenRoot, node => node.textContent).map(node => node.textContent).join(' ')
+  assert.match(brokenText, /ghost:g1/)
+  assert.equal(findAll(brokenRoot, node => node.tag === 'select')[0].value, 'ghost:g1')
+  assert.equal(/桌面端还没有默认模型/.test(brokenText), false, '引用失效不能说成“没有选择”')
+})
+
+ test('read-only model mirror displays route while disabling writes', async () => {
+  const root = await mountPage(fakeContext('zh', async () => ({ baseUrl: 'http://127.0.0.1:7863/v1', modelName: 'cn:m', modelRef: 'custom:cn:m', providerName: 'cpa', desktopWriteRequired: true, hasApiKey: false, legacyNeedsSetup: false }), { view: 'model' }))
+  assert.equal(findAll(root, node => node.tag === 'select')[0].value, 'custom:cn:m')
+  assert.equal(findAll(root, node => node.tag === 'button')[0].disabled, true)
+  assert.match(findAll(root, node => node.textContent).map(node => node.textContent).join(' '), /只读模式/)
 })

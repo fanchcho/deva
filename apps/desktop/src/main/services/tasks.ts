@@ -1,8 +1,10 @@
 import { BrowserWindow, ipcMain } from 'electron'
-import { readFileSync, writeFileSync, renameSync } from 'fs'
+import { readFileSync } from 'fs'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
 import { getDevaHome } from './config'
+import { writeFileAtomic } from './atomic-write'
+import type { TaskDecision } from '../../shared/task-decision'
 import { publishSessionsChanged } from './chat-bus'
 import { listSessions, rebindSessionPersona, syncSessionBinding } from './chat-store'
 import { nextRun, parseCron, isValidTimeZone, describeSchedule, parseWallIso } from './schedule'
@@ -76,17 +78,22 @@ function normalizeRecord(t: TaskRecord): TaskRecord {
   }
 }
 
-/** 原子回写 tasks.json + 广播 tasks:changed（所有 CRUD 变更的唯一落盘点）。 */
-function persist(): void {
-  const file = tasksFile()
-  const payload: TasksFile = { version: 1, tasks: [...cache.values()] }
-  try {
-    const tmp = `${file}.tmp`
-    writeFileSync(tmp, JSON.stringify(payload, null, 2), 'utf8')
-    renameSync(tmp, file)
-  } catch {
-    /* 落盘失败静默：内存态仍可用，下次成功保存即自愈 */
+/** 运行期变更保留原有容错；编辑保存必须等到原子写成功才发布。 */
+function persist(edited?: TaskRecord): void {
+  const tasks = [...cache.values()]
+  if (edited) {
+    const i = tasks.findIndex((task) => task.id === edited.id)
+    if (i === -1) tasks.push(edited)
+    else tasks[i] = edited
   }
+  const payload: TasksFile = { version: 1, tasks }
+  try {
+    writeFileAtomic(tasksFile(), JSON.stringify(payload, null, 2))
+  } catch (error) {
+    if (edited) throw error
+    /* 运行期仍保留内存记录，下次成功落盘时一并写入。 */
+  }
+  if (edited) cache.set(edited.id, edited)
   emitChanged()
 }
 
@@ -186,6 +193,17 @@ function sanitizeAuth(auth: Partial<TaskAuthorization> | undefined): TaskAuthori
   }
 }
 
+/** 禁止 NaN/越界阈值进入调度器；不配置的旧任务保持关闭。 */
+function sanitizeDecision(value: TaskDecision | undefined): TaskDecision | undefined {
+  if (value === undefined) return undefined
+  if (!value || typeof value.enabled !== 'boolean' || typeof value.providerId !== 'string' ||
+      (value.enabled && !value.providerId.trim()) ||
+      (value.threshold !== undefined && (!Number.isFinite(value.threshold) || value.threshold < 0 || value.threshold > 1)))
+    throw new Error('invalid task decision configuration')
+  return { enabled: value.enabled, providerId: value.providerId.trim(),
+    ...(value.threshold !== undefined ? { threshold: value.threshold } : {}) }
+}
+
 /**
  * 新建任务：schedule.ts 校验（拒非法 cron / 无效时区 / 已过期的 once）、算初始 nextRunAt、铸独占 sessionId。
  * **不落项目**：sessionId 恒 `task-<id>`（chat-store safeId 白名单安全）。
@@ -222,6 +240,7 @@ export function createTask(input: TaskCreateInput): CreateTaskResult {
     prompt,
     schedule: sched,
     auth: sanitizeAuth(input.auth),
+    decision: sanitizeDecision(input.decision),
     sessionId: `task-${id}`,
     ...(typeof input.originSessionId === 'string' && input.originSessionId
       ? { originSessionId: input.originSessionId }
@@ -235,8 +254,7 @@ export function createTask(input: TaskCreateInput): CreateTaskResult {
     consecutiveErrors: 0,
     runs: []
   }
-  cache.set(id, task)
-  persist()
+  persist(task)
   // 在会话中运行：任务对话不进左侧列表，那个会话的标题栏出现定时任务入口。
   if (task.ownerSessionId) publishSessionsChanged()
   return { ok: true, task }
@@ -245,30 +263,18 @@ export function createTask(input: TaskCreateInput): CreateTaskResult {
 /** 更新任务（部分字段）；日程/时区变更则重算 nextRunAt。找不到返回 null。 */
 export function updateTask(input: TaskUpdateInput): TaskRecord | null {
   ensureLoaded()
-  const t = cache.get(input.id)
-  if (!t) return null
+  const previous = cache.get(input.id)
+  if (!previous) return null
+  const t = { ...previous }
+  const decision = sanitizeDecision(input.decision)
+  if (decision !== undefined) t.decision = decision
   if (typeof input.title === 'string') t.title = input.title.trim() || t.title
   if (typeof input.prompt === 'string' && input.prompt.trim()) t.prompt = input.prompt.trim()
-  if (input.auth) {
-    t.auth = sanitizeAuth({ ...t.auth, ...input.auth })
-    // 角色 / 模型两边同步：任务的独占对话跟着改（对话还没建 = 从没运行过，首次运行时按任务建）。
-    // 角色为空（= 默认角色）时不动对话，运行时由 runScheduledTurn 兜成默认角色。
-    if (
-      syncSessionBinding(t.sessionId, {
-        personaId: t.auth.personaId ?? undefined,
-        model: t.auth.modelRef ?? ''
-      })
-    )
-      publishSessionsChanged()
-  }
-  // 运行方式：null = 独立运行，会话 id = 在该会话中运行（不合格的会话按独立运行处理）。切换后任务对话进出左侧列表。
+  if (input.auth) t.auth = sanitizeAuth({ ...t.auth, ...input.auth })
   if (input.ownerSessionId !== undefined) {
     const owner = input.ownerSessionId === null ? undefined : validOwner(input.ownerSessionId, t.sessionId)
-    if ((t.ownerSessionId ?? undefined) !== owner) {
-      if (owner) t.ownerSessionId = owner
-      else delete t.ownerSessionId
-      publishSessionsChanged()
-    }
+    if (owner) t.ownerSessionId = owner
+    else delete t.ownerSessionId
   }
   if (input.schedule && typeof input.schedule === 'object') {
     const sched = input.schedule
@@ -289,7 +295,13 @@ export function updateTask(input: TaskUpdateInput): TaskRecord | null {
     }
   }
   t.updatedAt = Date.now()
-  persist()
+  persist(t)
+  // 落盘后再同步角色 / 模型，并通知任务对话进出左侧列表。
+  const bindingChanged = input.auth && syncSessionBinding(t.sessionId, {
+    personaId: t.auth.personaId ?? undefined,
+    model: t.auth.modelRef ?? ''
+  })
+  if (bindingChanged || t.ownerSessionId !== previous.ownerSessionId) publishSessionsChanged()
   return t
 }
 

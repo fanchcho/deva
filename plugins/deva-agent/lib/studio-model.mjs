@@ -1,5 +1,5 @@
 import { callModel } from './model.mjs'
-import { requestCustomModel } from './custom-model-network.mjs'
+import { ModelInputError, requestCustomModel } from './custom-model-network.mjs'
 import { resolveCustomEndpoint } from './model-selection.mjs'
 
 const noop = async () => {}
@@ -27,9 +27,24 @@ function effortRejected(error, reasoningEffort) {
   return new Error(`${error.message}；本轮请求带了模型强度 reasoning_effort=${reasoningEffort}，上游可能不支持该档位，请在 Deva 模型设置页把「模型强度」改为默认或其它档位后重试`)
 }
 
+/**
+ * 直连前的审批提示：把「哪个地址、为什么被拦、到哪里批」写在报错里。
+ *
+ * 这里的门槛只管**发请求**；读页面、镜像桌面已有选择不受它约束（见 model-selection 的说明）。
+ * 抛原始 `ModelInputError`，只补一句可操作下一步；不吞掉 code，方便上层与页面复用。
+ */
+function approvalHint(error, baseUrl) {
+  if (!(error instanceof ModelInputError) || error.code !== 'confirmation-required') return error
+  const hint = `${baseUrl} 是本机、内网或 HTTP 地址，Deva 直连前需要 Studio 管理员批准：请把完整地址 ${baseUrl} 加入插件配置 modelTrustedBases 后重试。`
+  const wrapped = new ModelInputError(error.field, error.code, hint)
+  wrapped.cause = error
+  return wrapped
+}
+
 /** Uses only the selected endpoint and its own key, never the scoped lease or Studio Model API. */
 export function createCustomModel(run, { baseUrl, modelName, apiKey, reasoningEffort = '' }) {
-  const endpoint = resolveCustomEndpoint(run, baseUrl)
+  let endpoint
+  try { endpoint = resolveCustomEndpoint(run, baseUrl) } catch (error) { throw approvalHint(error, baseUrl) }
   return async ({ onDelta = noop, onReasoning = noop, ...options }) => {
     const text = apiKey ? protectDelta(onDelta, apiKey) : null
     const reasoning = apiKey ? protectDelta(onReasoning, apiKey) : null

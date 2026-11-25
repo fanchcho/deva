@@ -2,8 +2,9 @@
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { customModelEndpoint, ModelInputError, normalizeBaseUrl } from './custom-model-network.mjs'
-import { desktopModelState, writeDesktopDefaults, writeDesktopModel } from './desktop-models.mjs'
+import { desktopConfigLocation, desktopModelState, writeDesktopDefaults, writeDesktopModel } from './desktop-models.mjs'
 import { getPersona, listPersonas, writePersonaModel } from './persona-store.mjs'
+import { resolveDevaRoot } from './deva-fs.mjs'
 import { sharedDevaPath } from './shared-deva-model.mjs'
 import { validateStored, validateStoredModel } from './storage-contracts.mjs'
 
@@ -99,6 +100,12 @@ function defaultEffort(desktop) {
   return REASONING_EFFORTS.includes(desktop.models.activeEffort) ? desktop.models.activeEffort : ''
 }
 
+/** 镜像展示用：不改变任何信任判定，只保证 URL 规范化失败时页面仍看得到桌面存的原文。 */
+function displayBaseUrl(value) {
+  if (!value) return ''
+  try { return normalizeBaseUrl(value) } catch { return String(value) }
+}
+
 export async function readCustomModel(run, personaId) {
   if (!sharedDevaPath(run)) return null
   const desktop = await migrateLegacy(run, modelStore(run))
@@ -112,33 +119,80 @@ export async function readCustomModel(run, personaId) {
   return { ...route, apiKey: await readCredential(run, route), reasoningEffort: defaultEffort(desktop) }
 }
 
+/**
+ * 把桌面已生效的选择投影成页面可显示的一条路由。
+ *
+ * **只读镜像不设网络/管理员门槛。** 管理员批准（`modelTrustedBases`）约束的是「Deva 自己发起直连」，
+ * 不是「页面显示桌面本来就选着的地址」。这里不调用 `resolveCustomEndpoint`，
+ * 于是本机 / 内网 / HTTP 地址照实显示；真正要发请求时由 `createCustomModel` 再判，
+ * 那时才给可操作的批准提示。
+ */
+function desktopRouteView(desktop) {
+  const route = desktop.active
+  const provider = route && desktop.providers.find(item => item.id === route.providerId)
+  return {
+    baseUrl: displayBaseUrl(route?.baseUrl),
+    modelName: route?.modelName ?? '',
+    modelRef: route?.ref ?? '',
+    providerId: route?.providerId ?? '',
+    providerName: String(provider?.name || route?.providerId || ''),
+    adapter: route?.adapter ?? '',
+  }
+}
+
+/** 桌面有默认引用但当前解析不出来：区分「没选」和「选了但引用失效」，两者文案不能混。 */
+function unresolvedActiveRef(desktop) {
+  const reference = desktop.models.activeModelId
+  return typeof reference === 'string' && reference.trim() && !desktop.active ? reference : ''
+}
+
+function publishableRoute(route) {
+  return { ref: route.ref, adapter: route.adapter, baseUrl: displayBaseUrl(route.baseUrl), modelName: route.modelName, providerId: route.providerId, providerName: String(route.providerName || route.providerId || '') }
+}
+
+/**
+ * 桌面这套配置能不能被 Deva 拿去直连？
+ *
+ * 这里是**只读判定**，只回答「要不要提示批准」，不因它禁掉页面、也不因它拒绝显示。
+ * 非公网 / HTTP 地址（含 127.0.0.1、内网段）返回 true，页面据此给出「哪个地址、为什么、到哪里批」。
+ */
 function needsNetworkApproval(run, route) {
   if (!route?.baseUrl || route.adapter !== 'openai') return false
   try { resolveCustomEndpoint(run, route.baseUrl); return false } catch (error) {
     if (error instanceof ModelInputError && error.code === 'confirmation-required') return true
-    throw error
+    return false
   }
 }
 
+function isTrustedBase(run, baseUrl) {
+  if (!baseUrl) return false
+  try { return trustedBases(run).includes(normalizeBaseUrl(baseUrl)) } catch { return false }
+}
+
 export async function readModelSelection(run) {
-  const root = sharedDevaPath(run)
+  const root = resolveDevaRoot(run.config)
   const store = modelStore(run)
   const empty = { baseUrl: '', modelName: '', hasApiKey: false, legacyNeedsSetup: Boolean((await store.get('model'))?.modelId) }
-  if (!root) return { ...empty, desktopAccessRequired: true }
-  const desktop = await migrateLegacy(run, store)
-  const route = desktop.active
-  return {
+  // Settings reads must never migrate legacy routes or require write authorization.
+  const desktop = desktopModelState(run.config)
+  const location = desktopConfigLocation(run.config)
+  const base = {
     ...empty,
-    baseUrl: route?.baseUrl ?? '', modelName: route?.modelName ?? '',
-    hasApiKey: Boolean(await readCredential(run, route)),
+    ...desktopRouteView(desktop),
+    desktopWriteRequired: !sharedDevaPath(run),
+    hasApiKey: Boolean(await readCredential(run, desktop.active)),
     sharedConfigPath: join(root, 'config.json'),
-    modelRef: route?.ref ?? '',
-    desktopModels: desktop.choices.map(({ ref, adapter, baseUrl, modelName }) => ({ ref, adapter, baseUrl, modelName })),
+    desktopConfigPath: location.path,
+    desktopConfigExists: location.exists,
+    desktopOwnership: location.ownership,
+    desktopModels: desktop.choices.map(route => publishableRoute({ ...route, providerName: desktop.providers.find(item => item.id === route.providerId)?.name })),
     personaModels: listPersonas(run.config).list.map(({ id, name, model }) => ({ id, name, model })),
-    ...(needsNetworkApproval(run, route) ? { needsNetworkApproval: true } : {}),
-    ...(route?.baseUrl && trustedBases(run).includes(route.baseUrl) ? { allowNonPublic: true } : {}),
+    ...(unresolvedActiveRef(desktop) ? { unresolvedModelRef: unresolvedActiveRef(desktop) } : {}),
+    ...(needsNetworkApproval(run, desktop.active) ? { needsNetworkApproval: true } : {}),
+    ...(isTrustedBase(run, desktop.active?.baseUrl) ? { allowNonPublic: true } : {}),
     ...(defaultEffort(desktop) ? { reasoningEffort: defaultEffort(desktop) } : {}),
   }
+  return base
 }
 
 function checkedRoute(run, { baseUrl, modelName, apiKey, reasoningEffort }) {

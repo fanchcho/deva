@@ -20,6 +20,7 @@ import type {
 } from '../../../preload'
 import { useI18n } from '../i18n/i18n'
 import { useDialog } from '../components/DialogProvider'
+import { useToast } from '../components/ToastProvider'
 
 /**
  * 扩展配置（全局，与项目无关）：技能 / MCP 服务 / Agent 提示词。
@@ -54,8 +55,8 @@ interface ExtensionsContextValue {
   refresh: () => void
   select: (kind: ExtKind, id: string) => void
   toggle: (kind: ExtKind, id: string) => void
-  update: (kind: ExtKind, id: string, patch: ExtPatch) => void
-  remove: (kind: ExtKind, id: string) => void
+  update: (kind: ExtKind, id: string, patch: ExtPatch) => Promise<boolean> | void
+  remove: (kind: ExtKind, id: string) => Promise<boolean> | void
   add: (kind: Exclude<ExtKind, 'mcp'>) => void
   /**
    * Persona 直存：整对象 round-trip 到 personas:upsert（→ composePersonaMd）后按 id 增量替换本地列表，
@@ -222,6 +223,8 @@ function mcpToInput(m: McpServer): McpServerInput {
 export function ExtensionsProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const { t } = useI18n()
   const dialog = useDialog()
+  const toast = useToast()
+  const mcpWrites = useRef<Promise<void>>(Promise.resolve())
   const [skills, setSkills] = useState<Skill[]>([])
   const [mcp, setMcp] = useState<McpServer[]>([])
   const [personas, setPersonas] = useState<Persona[]>([])
@@ -230,6 +233,16 @@ export function ExtensionsProvider({ children }: { children: ReactNode }): React
   // 最新 mcp 快照（供 onStatus 回调 / update 合并读取，避免闭包过期）。
   const mcpRef = useRef<McpServer[]>(mcp)
   mcpRef.current = mcp
+
+  // 串行写入避免快速编辑用旧快照覆盖前一次已保存的字段。
+  const saveMcp = useCallback((save: () => Promise<void>): Promise<boolean> => {
+    const result = mcpWrites.current.then(save).then(() => true, (error: unknown) => {
+      toast.show({ variant: 'error', title: t('settings.saveFailed'), message: String(error) })
+      return false
+    })
+    mcpWrites.current = result.then(() => undefined)
+    return result
+  }, [toast, t])
 
   // 挂载：从磁盘载入技能，并订阅主进程的技能目录监听——技能经任何途径装上 / 删掉 / 改了，
   // 都会推来最新全表（输入框的 / 联想与上色、扩展页随之更新，无需重启）。
@@ -466,14 +479,21 @@ export function ExtensionsProvider({ children }: { children: ReactNode }): React
       toggle: (kind, id) => {
         // 内置技能恒启用，不可切换（纵深防御：UI 已隐藏开关）。
         if (kind === 'skill' && skills.find((s) => s.id === id)?.source === 'builtin') return
+        if (kind === 'mcp') {
+          void saveMcp(async () => {
+            const cur = mcpRef.current.find((m) => m.id === id)
+            if (!cur) return
+            await window.deva.mcp.setEnabled(id, !cur.enabled)
+            const next = mcpRef.current.map((m) => m.id === id ? { ...m, enabled: !cur.enabled } : m)
+            mcpRef.current = next
+            setMcp(next)
+          })
+          return
+        }
         patchLocal(kind, id, (it) => ({ ...it, enabled: !it.enabled }) as AnyExt)
         if (kind === 'skill') {
           const cur = skills.find((s) => s.id === id)
           if (cur) void window.deva?.skills?.setEnabled(id, !cur.enabled).catch(() => {})
-        } else if (kind === 'mcp') {
-          // 启停即兑现：主进程对账连上 / 断开（状态经 onStatus 回流）。
-          const cur = mcpRef.current.find((m) => m.id === id)
-          if (cur) void window.deva?.mcp?.setEnabled(id, !cur.enabled).catch(() => {})
         } else if (kind === 'persona') {
           const cur = personas.find((p) => p.id === id)
           if (cur) void window.deva?.personas?.setEnabled(id, !cur.enabled).catch(() => {})
@@ -482,36 +502,48 @@ export function ExtensionsProvider({ children }: { children: ReactNode }): React
       update: (kind, id, patch) => {
         // 技能已改为只读展示，不再从 UI 落盘（创建仅经上传 / 对话 create_skill）。
         if (kind === 'skill') return
-        patchLocal(kind, id, (it) => ({ ...it, ...patch }) as AnyExt)
         if (kind === 'mcp') {
-          // 合到最新快照后落盘（配置字段；密钥值不经此路径，另经 mcpSetSecret）。
-          const cur = mcpRef.current.find((m) => m.id === id)
-          if (cur)
-            void window.deva?.mcp
-              ?.upsert(mcpToInput({ ...cur, ...(patch as Partial<McpServer>) }))
-              .catch(() => {})
-        } else if (kind === 'persona') {
+          return saveMcp(async () => {
+            const cur = mcpRef.current.find((m) => m.id === id)
+            if (!cur) throw new Error(`MCP server no longer exists: ${id}`)
+            const saved = await window.deva.mcp.upsert(mcpToInput({ ...cur, ...(patch as Partial<McpServer>) }))
+            const next = mcpRef.current.map((m) => m.id === id ? { ...m, ...baseFromConfig(saved) } : m)
+            mcpRef.current = next
+            setMcp(next)
+          })
+        }
+        patchLocal(kind, id, (it) => ({ ...it, ...patch }) as AnyExt)
+        if (kind === 'persona') {
           const cur = personas.find((p) => p.id === id)
           if (cur)
             void window.deva?.personas
               ?.upsert(personaToInput({ ...cur, ...(patch as Partial<Persona>) }))
               .catch(() => {})
         }
+        return undefined
       },
       remove: (kind, id) => {
         if (kind === 'skill') {
           void removeSkill(id)
           return
         }
+        if (kind === 'mcp') {
+          return saveMcp(async () => {
+            await window.deva.mcp.remove(id)
+            const next = mcpRef.current.filter((m) => m.id !== id)
+            mcpRef.current = next
+            setMcp(next)
+            setSelected((cur) => cur?.kind === kind && cur.id === id ? null : cur)
+          })
+        }
         setterFor(kind)((list) => list.filter((it) => it.id !== id))
         setSelected((cur) => (cur && cur.kind === kind && cur.id === id ? null : cur))
-        if (kind === 'mcp') void window.deva?.mcp?.remove(id).catch(() => {})
         // 删角色后主进程会改写技能 / MCP 的可用角色（只给它用的改回所有角色并停用），重拉一次。
-        else
-          void window.deva?.personas
+        void window.deva?.personas
             ?.remove(id)
             .then(refresh)
             .catch(() => {})
+        return undefined
       },
       add: (kind) => {
         // 技能的「+」即上传导入（无手写空建）；Agent 提示词为可编辑空建。MCP 只经对话创建（create_mcp）。
@@ -529,8 +561,13 @@ export function ExtensionsProvider({ children }: { children: ReactNode }): React
           setSkills((list) => list.map((s) => (s.id === id ? { ...s, roles } : s)))
           void window.deva?.skills?.setRoles(id, roles).catch(() => {})
         } else {
-          setMcp((list) => list.map((m) => (m.id === id ? { ...m, roles } : m)))
-          void window.deva?.mcp?.setRoles(id, roles).catch(() => {})
+          void saveMcp(async () => {
+            const result = await window.deva.mcp.setRoles(id, roles)
+            if (!result.ok) throw new Error(`MCP server no longer exists: ${id}`)
+            const next = mcpRef.current.map((m) => m.id === id ? { ...m, roles } : m)
+            mcpRef.current = next
+            setMcp(next)
+          })
         }
       },
       mcpRetry: (id) => void window.deva?.mcp?.retry(id).catch(() => {}),
@@ -543,7 +580,7 @@ export function ExtensionsProvider({ children }: { children: ReactNode }): React
         }
       }
     }
-  }, [skills, mcp, personas, selected, refresh, t, dialog, patchLocal, setterFor])
+  }, [skills, mcp, personas, selected, refresh, t, dialog, patchLocal, setterFor, saveMcp])
 
   return <ExtensionsContext.Provider value={value}>{children}</ExtensionsContext.Provider>
 }

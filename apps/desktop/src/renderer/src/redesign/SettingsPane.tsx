@@ -1,3 +1,4 @@
+import { useMcpTextDraft } from './useMcpTextDraft'
 /**
  * 设置页：通用、扩展（技能 / MCP / 角色授权）、关于。
  */
@@ -91,6 +92,12 @@ export function Settings({ initial, onClose }: { initial?: SettingsInit; onClose
 function GeneralPane(): React.JSX.Element {
   const { t, locale, setLocale } = useI18n()
   const { mode, setMode } = useTheme()
+  const toast = useToast()
+  const saveSetting = (save: () => Promise<void>): void => {
+    void save().catch((error: unknown) => toast.show({
+      variant: 'error', title: t('settings.saveFailed'), message: String(error)
+    }))
+  }
   // 关窗驻留托盘：仅 Windows 呈现（macOS/Linux 关窗语义不同，主进程亦仅 win32 默认驻留）。
   const isWin = window.deva?.platform === 'win32'
   const [closeToTray, setCloseToTray] = useState<boolean>(() => {
@@ -99,15 +106,19 @@ function GeneralPane(): React.JSX.Element {
   })
   const toggleTray = (): void => {
     const next = !closeToTray
-    setCloseToTray(next)
-    void window.deva?.config?.set?.({ closeToTray: next })
+    saveSetting(async () => {
+      await window.deva.config.set({ closeToTray: next })
+      setCloseToTray(next)
+    })
   }
   // 文字大小：点选即生效（写 <html data-chat-fs>）并落盘，见 theme/chatFontSize.ts
   const [chatFontSize, setChatFontSize] = useState<ChatFontSize>(readChatFontSize)
   const pickChatFontSize = (v: string): void => {
     const next = v as ChatFontSize
-    setChatFontSize(next)
-    saveChatFontSize(next)
+    saveSetting(async () => {
+      await saveChatFontSize(next)
+      setChatFontSize(next)
+    })
   }
   return (
     <>
@@ -117,7 +128,7 @@ function GeneralPane(): React.JSX.Element {
           <div className="cf-set__label">{t('settings.language')}</div>
           <Segmented
             value={locale}
-            onChange={(v) => setLocale(v as 'zh-CN' | 'en')}
+            onChange={(v) => saveSetting(() => setLocale(v as 'zh-CN' | 'en'))}
             options={[
               { v: 'zh-CN', label: '简体中文' },
               { v: 'en', label: 'English' }
@@ -130,7 +141,7 @@ function GeneralPane(): React.JSX.Element {
           </div>
           <Segmented
             value={mode}
-            onChange={(v) => setMode(v as 'light' | 'dark' | 'system')}
+            onChange={(v) => saveSetting(() => setMode(v as 'light' | 'dark' | 'system'))}
             options={[
               { v: 'system', label: t('settings.themeSystem') },
               { v: 'light', label: t('settings.themeLight') },
@@ -186,7 +197,7 @@ function ExtensionsPane({
   const openSkill = open?.kind === 'skill' ? skills.find((s) => s.id === open.id) : undefined
 
   if (openMcp) {
-    return <McpEditor item={openMcp} onBack={() => setOpen(null)} />
+    return <McpEditor key={openMcp.id} item={openMcp} onBack={() => setOpen(null)} />
   }
   if (openSkill) {
     return <SkillDetail item={openSkill} onBack={() => setOpen(null)} />
@@ -482,15 +493,21 @@ const MCP_STATUS_WARN = new Set<McpStatus>(['error', 'needs_config', 'needs_secr
 function McpEditor({ item, onBack }: { item: McpServer; onBack: () => void }): React.JSX.Element {
   const { t } = useI18n()
   const dialog = useDialog()
+  const toast = useToast()
   const { update, remove, toggle, mcpRetry, mcpSetSecret } = useExtensions()
   const [secretWarn, setSecretWarn] = useState(false)
   const isStdio = item.transport === 'stdio'
+  const save = (patch: Partial<McpServer>): Promise<boolean> =>
+    update('mcp', item.id, patch) ?? Promise.resolve(false)
+  const command = useMcpTextDraft(item.command, (value) => save({ command: value }))
+  const url = useMcpTextDraft(item.url, (value) => save({ url: value }))
 
   // 写入密钥字段：加密不可用时亮出降级提示（空值即删除已存密钥）。
   // 返回落盘结果，供 McpKvEditor 呈现「保存中 / 已保存」反馈。
   const setSecret = (field: string, value: string): Promise<{ ok: boolean; available: boolean }> =>
     mcpSetSecret(item.id, field, value).then((r) => {
       if (value && !r.available) setSecretWarn(true)
+      else if (!r.ok) toast.show({ variant: 'error', message: t('settings.saveFailed') })
       return r
     })
 
@@ -502,10 +519,7 @@ function McpEditor({ item, onBack }: { item: McpServer; onBack: () => void }): R
         confirmText: t('common.delete'),
         variant: 'danger'
       })
-      if (ok) {
-        remove('mcp', item.id)
-        onBack()
-      }
+      if (ok && await remove('mcp', item.id)) onBack()
     })()
   }
 
@@ -566,7 +580,7 @@ function McpEditor({ item, onBack }: { item: McpServer; onBack: () => void }): R
           mono
           aria-label={t('extensions.transport')}
           value={item.transport}
-          onChange={(transport) => update('mcp', item.id, { transport })}
+          onChange={(transport) => void save({ transport })}
           items={[
             { value: 'stdio', label: 'stdio', sub: t('extensions.transportSub.stdio') },
             { value: 'sse', label: 'sse', sub: t('extensions.transportSub.sse') },
@@ -582,8 +596,9 @@ function McpEditor({ item, onBack }: { item: McpServer; onBack: () => void }): R
             <input
               className="ext-input ext-input--mono"
               placeholder={t('extensions.commandPlaceholder')}
-              value={item.command}
-              onChange={(e) => update('mcp', item.id, { command: e.target.value })}
+              value={command.value}
+              onChange={(e) => command.setDraft(e.target.value)}
+              onBlur={command.commit}
             />
           </div>
           <McpArgsField item={item} />
@@ -592,7 +607,7 @@ function McpEditor({ item, onBack }: { item: McpServer; onBack: () => void }): R
             <McpKvEditor
               serverId={item.id}
               rows={item.env}
-              onChange={(rows) => update('mcp', item.id, { env: rows })}
+              onChange={(rows) => save({ env: rows })}
               onSetSecret={setSecret}
             />
           </div>
@@ -604,8 +619,9 @@ function McpEditor({ item, onBack }: { item: McpServer; onBack: () => void }): R
             <input
               className="ext-input ext-input--mono"
               placeholder={t('extensions.urlPlaceholder')}
-              value={item.url}
-              onChange={(e) => update('mcp', item.id, { url: e.target.value })}
+              value={url.value}
+              onChange={(e) => url.setDraft(e.target.value)}
+              onBlur={url.commit}
             />
           </div>
           <div className="ext-field">
@@ -613,7 +629,7 @@ function McpEditor({ item, onBack }: { item: McpServer; onBack: () => void }): R
             <McpKvEditor
               serverId={item.id}
               rows={item.headers}
-              onChange={(rows) => update('mcp', item.id, { headers: rows })}
+              onChange={(rows) => save({ headers: rows })}
               onSetSecret={setSecret}
             />
           </div>
@@ -647,7 +663,9 @@ function McpEditor({ item, onBack }: { item: McpServer; onBack: () => void }): R
 function McpArgsField({ item }: { item: McpServer }): React.JSX.Element {
   const { t } = useI18n()
   const { update } = useExtensions()
-  const [text, setText] = useState(item.args.join('\n'))
+  const args = useMcpTextDraft(item.args.join('\n'), (value) =>
+    update('mcp', item.id, { args: value.split('\n').map((a) => a.trim()).filter(Boolean) }) ?? Promise.resolve(false)
+  )
   return (
     <div className="ext-field">
       <label className="ext-field__label">{t('extensions.args')}</label>
@@ -655,23 +673,16 @@ function McpArgsField({ item }: { item: McpServer }): React.JSX.Element {
         className="ext-area ext-area--mono"
         rows={3}
         placeholder={t('extensions.argsPlaceholder')}
-        value={text}
-        onChange={(e) => {
-          setText(e.target.value)
-          update('mcp', item.id, {
-            args: e.target.value
-              .split('\n')
-              .map((a) => a.trim())
-              .filter(Boolean)
-          })
-        }}
+        value={args.value}
+        onChange={(e) => args.setDraft(e.target.value)}
+        onBlur={args.commit}
       />
     </div>
   )
 }
 
 /**
- * 键值对编辑（env / headers）：明文即时落盘；密钥经 onSetSecret 加密。
+ * 键值对编辑（env / headers）：明文失焦提交；密钥经 onSetSecret 加密。
  * 密钥字段对齐模型页 API-Key 交互：
  *  - 输入后**保留**遮罩草稿在框内（不再失焦即清空 → 不会「自动消失」）；
  *  - 防抖 ~600ms 自动保存 + 失焦 / 回车立即冲刷，落盘结果亮「保存中 / 已保存」；
@@ -679,16 +690,18 @@ function McpArgsField({ item }: { item: McpServer }): React.JSX.Element {
  */
 function McpKvEditor({
   serverId,
-  rows,
+  rows: savedRows,
   onChange,
   onSetSecret
 }: {
   serverId: string
   rows: McpKV[]
-  onChange: (rows: McpKV[]) => void
+  onChange: (rows: McpKV[]) => Promise<boolean>
   onSetSecret: (field: string, value: string) => Promise<{ ok: boolean; available: boolean }>
 }): React.JSX.Element {
   const { t } = useI18n()
+  const [rowDrafts, setRowDrafts] = useState<McpKV[] | null>(null)
+  const rows = rowDrafts ?? savedRows
   const [drafts, setDrafts] = useState<Record<number, string>>({})
   const [saveState, setSaveState] = useState<Record<number, 'idle' | 'saving' | 'saved'>>({})
   const [configured, setConfigured] = useState<Record<number, boolean>>({})
@@ -713,10 +726,18 @@ function McpKvEditor({
     }
   }, [serverId, secretSig])
 
-  const setRow = (i: number, patch: Partial<McpKV>): void =>
-    onChange(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
-  const addRow = (): void => onChange([...rows, { key: '', value: '', secret: false }])
-  const removeRow = (i: number): void => onChange(rows.filter((_, idx) => idx !== i))
+  const rowPatch = (i: number, patch: Partial<McpKV>): McpKV[] =>
+    rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r))
+  const saveRows = async (next: McpKV[]): Promise<boolean> => {
+    const valid = next.filter((r) => r.key.trim())
+    const blanks = next.length !== valid.length
+    setRowDrafts(next)
+    const ok = JSON.stringify(valid) === JSON.stringify(savedRows) || await onChange(valid)
+    setRowDrafts((current) => current === next ? (ok && blanks ? next : null) : current)
+    return ok
+  }
+  const addRow = (): void => setRowDrafts([...rows, { key: '', value: '', secret: false }])
+  const removeRow = (i: number): void => { void saveRows(rows.filter((_, idx) => idx !== i)) }
 
   const clearTimer = (i: number): void => {
     const tm = timersRef.current[i]
@@ -753,12 +774,12 @@ function McpKvEditor({
     void doSaveSecret(i, rows[i].key.trim(), drafts[i] ?? '')
   }
 
-  const toggleSecret = (i: number): void => {
+  const toggleSecret = async (i: number): Promise<void> => {
     const r = rows[i]
     const key = r.key.trim()
-    if (r.secret && key) void onSetSecret(key, '') // 转明文：清除已加密的旧值
     clearTimer(i)
-    setRow(i, { secret: !r.secret, value: '' })
+    if (!await saveRows(rowPatch(i, { secret: !r.secret, value: '' }))) return
+    if (r.secret && key) await onSetSecret(key, '') // 仅在配置保存后清除旧密钥
     setDrafts((d) => {
       const n = { ...d }
       delete n[i]
@@ -785,7 +806,8 @@ function McpKvEditor({
               className="ext-input ext-input--mono kv-row__key"
               placeholder={t('extensions.kvKey')}
               value={r.key}
-              onChange={(e) => setRow(i, { key: e.target.value })}
+              onChange={(e) => setRowDrafts(rowPatch(i, { key: e.target.value }))}
+              onBlur={() => { if (rowDrafts) void saveRows(rowDrafts) }}
             />
             {r.secret ? (
               <input
@@ -808,13 +830,14 @@ function McpKvEditor({
                 className="ext-input ext-input--mono kv-row__val"
                 placeholder={t('extensions.kvValue')}
                 value={r.value}
-                onChange={(e) => setRow(i, { value: e.target.value })}
+                onChange={(e) => setRowDrafts(rowPatch(i, { value: e.target.value }))}
+                onBlur={() => { if (rowDrafts) void saveRows(rowDrafts) }}
               />
             )}
             <button
               className={`icon-btn icon-btn--sm kv-row__lock${r.secret ? ' is-on' : ''}`}
               title={r.secret ? t('extensions.unmarkSecret') : t('extensions.markSecret')}
-              onClick={() => toggleSecret(i)}
+              onClick={() => void toggleSecret(i)}
             >
               {r.secret ? <Lock size={13} /> : <Unlock size={13} />}
             </button>

@@ -48,22 +48,13 @@ function ensureLoaded(): void {
   loaded = true
 }
 
-function persist(): void {
-  try {
-    // 原子写：写到一半崩溃不会留下半截 JSON——那样下次启动解析失败即回落空配置，服务商与模型全丢。
-    writeFileAtomic(configPath(), JSON.stringify(config, null, 2))
-  } catch {
-    /* 持久化失败静默：不影响本次会话的内存态 */
-  }
-}
-
 /**
  * 主进程内读取整份配置（只读快照）。
  * 供其它服务在进程内复用（如 git.ts 读 `git.path` 覆盖），避免各自重复读文件。
  */
 export function getConfig(): Record<string, unknown> {
   ensureLoaded()
-  return config
+  return structuredClone(config)
 }
 
 /**
@@ -74,11 +65,15 @@ export function getConfig(): Record<string, unknown> {
 export function setConfig(patch: Record<string, unknown>): void {
   ensureLoaded()
   if (!patch || typeof patch !== 'object') return
+  const next = { ...config }
   for (const [k, v] of Object.entries(patch)) {
-    if (v === undefined) delete config[k]
-    else config[k] = v
+    if (v === undefined) delete next[k]
+    else next[k] = v
   }
-  persist()
+  // 写成功才发布内存态；失败保留旧快照，IPC 会拒绝并携带文件系统错误。
+  const snapshot = structuredClone(next)
+  writeFileAtomic(configPath(), JSON.stringify(snapshot, null, 2))
+  config = snapshot
 }
 
 export function registerConfigIpc(): void {
@@ -93,11 +88,12 @@ export function registerConfigIpc(): void {
   // 异步读取整份配置。
   ipcMain.handle('config:get', () => {
     ensureLoaded()
-    return config
+    return structuredClone(config)
   })
 
   // 顶层浅合并补丁：值为 undefined 时删除该键。
   ipcMain.handle('config:set', (_e, patch: Record<string, unknown>) => {
+    if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new TypeError('Invalid config patch')
     setConfig(patch)
     return { ok: true as const }
   })

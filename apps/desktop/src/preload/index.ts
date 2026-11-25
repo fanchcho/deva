@@ -1,3 +1,4 @@
+import type { TaskDecision, TaskDecisionResult } from '../shared/task-decision'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { EffortLevel } from '../shared/effort'
 import type { UpdateState } from '../shared/update'
@@ -392,6 +393,7 @@ export interface TaskAuthorization {
 }
 export interface TaskRun {
   firedAt: number
+  decision?: TaskDecisionResult
   finishedAt?: number
   status: 'ok' | 'error' | 'skipped' | 'aborted'
   summary?: string
@@ -405,6 +407,7 @@ export interface TaskRecord {
   prompt: string
   schedule: TaskSchedule
   auth: TaskAuthorization
+  decision?: TaskDecision
   sessionId: string
   /** 运行方式「在会话中运行」所在的会话 id（见 services/tasks-types.ts）；缺省 = 独立运行。 */
   ownerSessionId?: string
@@ -423,6 +426,7 @@ export interface TaskCreateInput {
   prompt: string
   schedule: TaskSchedule
   auth: TaskAuthorization
+  decision?: TaskDecision
   /** 在哪个对话里创建的（由主进程 resolveAutotask 填，渲染层不传）。 */
   originSessionId?: string
   /** 运行方式：在这个会话中运行；缺省 = 独立运行。 */
@@ -434,6 +438,7 @@ export interface TaskUpdateInput {
   prompt?: string
   schedule?: TaskSchedule
   auth?: Partial<TaskAuthorization>
+  decision?: TaskDecision
   /** 运行方式：会话 id = 在该会话中运行，null = 独立运行，缺省 = 不改。 */
   ownerSessionId?: string | null
 }
@@ -675,7 +680,7 @@ const api = {
     /** 同步取整份配置，供首帧读取主题/语言，避免闪烁 */
     getSync: (): Record<string, unknown> => ipcRenderer.sendSync('config:get-sync'),
     get: (): Promise<Record<string, unknown>> => ipcRenderer.invoke('config:get'),
-    /** 顶层浅合并补丁（值为 undefined 删除该键） */
+    /** 顶层浅合并补丁（值为 undefined 删除该键）；原子落盘失败会 reject，保留旧值。 */
     set: (patch: Record<string, unknown>): Promise<{ ok: true }> =>
       ipcRenderer.invoke('config:set', patch)
   },
@@ -753,6 +758,7 @@ const api = {
   mcp: {
     list: (): Promise<McpServerView[]> => ipcRenderer.invoke('mcp:list'),
     get: (id: string): Promise<McpServerConfig | null> => ipcRenderer.invoke('mcp:get', id),
+    /** 写入并读回校验；失败 reject，调用方须等待成功再更新视图。 */
     upsert: (input: McpServerInput): Promise<McpServerConfig> =>
       ipcRenderer.invoke('mcp:upsert', input),
     remove: (id: string): Promise<{ ok: true }> => ipcRenderer.invoke('mcp:remove', id),

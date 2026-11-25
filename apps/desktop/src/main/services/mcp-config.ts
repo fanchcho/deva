@@ -1,8 +1,8 @@
-import { readFileSync, writeFileSync } from 'fs'
+import { readFileSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { getConfig, getDevaHome, setConfig } from './config'
-import { deleteSecretsByPrefix, getSecret } from './secrets'
-import { setRoles } from './ext-roles'
+import { prepareSecretPrefixDeletion, getSecret } from './secrets'
+import { writeFileAtomic } from './atomic-write'
 
 /**
  * MCP 服务配置的读写（全局，`~/.deva/mcp.json`，与项目无关）。
@@ -62,24 +62,44 @@ function mcpFile(): string {
   return join(getDevaHome(), 'mcp.json')
 }
 
-/** 读取 mcp.json 的 mcpServers 映射（不存在 / 损坏 → 空，绝不抛错）。 */
-function readAll(): Record<string, StoredServer> {
+function readSnapshot(): { raw: string | null; servers: Record<string, StoredServer> } {
+  let raw: string
   try {
-    const raw = readFileSync(mcpFile(), 'utf8')
-    const parsed = JSON.parse(raw) as { mcpServers?: unknown }
-    const servers = parsed?.mcpServers
-    if (servers && typeof servers === 'object') return servers as Record<string, StoredServer>
-  } catch {
-    /* 无文件 / 解析失败 → 空库 */
+    raw = readFileSync(mcpFile(), 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { raw: null, servers: {} }
+    throw error
   }
-  return {}
+  const servers = (JSON.parse(raw) as { mcpServers?: unknown } | null)?.mcpServers
+  if (!servers || typeof servers !== 'object' || Array.isArray(servers)) throw new Error('Invalid mcp.json')
+  return { raw, servers: servers as Record<string, StoredServer> }
 }
 
-function writeAll(servers: Record<string, StoredServer>): void {
+/** 展示/运行时容错；编辑不允许覆盖无法读取或解析的旧配置。 */
+function readAll(): Record<string, StoredServer> {
+  try { return readSnapshot().servers } catch { return {} }
+}
+
+function rollBackMcp(raw: string | null, error: unknown): never {
   try {
-    writeFileSync(mcpFile(), JSON.stringify({ mcpServers: servers }, null, 2), 'utf8')
-  } catch {
-    /* 写失败：忽略，内存态仍可用（下次可重试） */
+    if (raw === null) unlinkSync(mcpFile())
+    else writeFileAtomic(mcpFile(), raw)
+  } catch (rollbackError) {
+    throw new Error(`MCP save failed: ${String(error)}; rollback failed: ${String(rollbackError)}`)
+  }
+  throw error
+}
+
+function writeAll(servers: Record<string, StoredServer>, previousRaw: string | null): Record<string, StoredServer> {
+  const data = JSON.stringify({ mcpServers: servers }, null, 2)
+  writeFileAtomic(mcpFile(), data)
+  try {
+    // 直接比较落盘字节，并返回实际读回的记录。
+    const saved = readSnapshot()
+    if (saved.raw !== data) throw new Error('MCP_WRITE_VERIFY_FAILED')
+    return saved.servers
+  } catch (error) {
+    rollBackMcp(previousRaw, error)
   }
 }
 
@@ -168,14 +188,14 @@ export function isEnabled(id: string): boolean {
 }
 
 function writeEnabled(id: string, enabled: boolean): void {
-  const map = enabledMap()
+  const map = { ...enabledMap() }
   map[id] = enabled === true
   writeEnabledMap(map)
 }
 
 /** 用户显式启停：落盘并恒通知对账（即便值未变，也当作「请按此状态兑现」）。 */
 export function setEnabled(id: string, enabled: boolean): void {
-  if (!isSafeId(id)) return
+  if (!isSafeId(id)) throw new Error('Invalid MCP id')
   writeEnabled(id, enabled)
   changeListener(id, { enabled: true, connection: false })
 }
@@ -204,9 +224,9 @@ export function getServerConfig(id: string): McpServerConfig | null {
 export function upsertServer(input: McpServerInput): McpServerConfig {
   const name = (input.name || '').trim() || '未命名 MCP'
   let id = input.id && isSafeId(input.id) ? input.id : ''
-  const isNew = !id
-  const servers = readAll()
+  const { raw, servers } = readSnapshot()
   if (!id) id = makeId(name, servers)
+  const isNew = !Object.hasOwn(servers, id)
 
   const transport: McpTransport =
     input.transport === 'sse' || input.transport === 'http' ? input.transport : 'stdio'
@@ -227,10 +247,14 @@ export function upsertServer(input: McpServerInput): McpServerConfig {
   const prev = servers[id]
   const wasEnabled = isEnabled(id)
   servers[id] = rec
-  writeAll(servers)
+  const saved = writeAll(servers, raw)[id]
 
-  if (typeof input.enabled === 'boolean') writeEnabled(id, input.enabled)
-  else if (isNew) writeEnabled(id, false)
+  try {
+    if (typeof input.enabled === 'boolean') writeEnabled(id, input.enabled)
+    else if (isNew) writeEnabled(id, false)
+  } catch (error) {
+    rollBackMcp(raw, error)
+  }
 
   const change: McpChange = {
     enabled: isEnabled(id) !== wasEnabled,
@@ -238,24 +262,41 @@ export function upsertServer(input: McpServerInput): McpServerConfig {
   }
   if (change.enabled || change.connection) changeListener(id, change)
 
-  return { id, ...rec }
+  return { id, ...saved }
 }
 
 /** 删除一个服务：清 mcp.json 条目、启用态、可用角色、以及其全部密钥（`mcp:<id>:` 前缀）。 */
-export function deleteServer(id: string): void {
-  if (!isSafeId(id)) return
-  const servers = readAll()
-  if (id in servers) {
-    delete servers[id]
-    writeAll(servers)
+export async function deleteServer(id: string): Promise<void> {
+  if (!isSafeId(id)) throw new Error('Invalid MCP id')
+  const removeSecrets = await prepareSecretPrefixDeletion(`mcp:${id}:`)
+  const { raw, servers } = readSnapshot()
+  const previousSection = getConfig().mcp
+  const section = (previousSection ?? {}) as Record<string, unknown>
+  const enabled = { ...enabledMap() }
+  const roles = { ...(section.roles as Record<string, unknown> ?? {}) }
+  const existed = Object.hasOwn(servers, id)
+  delete servers[id]
+  if (existed) writeAll(servers, raw)
+  const configChanged = Object.hasOwn(enabled, id) || Object.hasOwn(roles, id)
+  let configSaved = false
+  try {
+    if (configChanged) {
+      delete enabled[id]
+      delete roles[id]
+      setConfig({ mcp: { ...section, enabled, roles } })
+      configSaved = true
+    }
+    removeSecrets()
+  } catch (error) {
+    let failure = error
+    if (configSaved) {
+      try { setConfig({ mcp: previousSection }) } catch (rollbackError) {
+        failure = new Error(`MCP delete failed: ${String(error)}; config rollback failed: ${String(rollbackError)}`)
+      }
+    }
+    if (existed) rollBackMcp(raw, failure)
+    throw failure
   }
-  const map = enabledMap()
-  if (id in map) {
-    delete map[id]
-    writeEnabledMap(map)
-  }
-  setRoles('mcp', id, null)
-  void deleteSecretsByPrefix(`mcp:${id}:`)
 }
 
 // ── 连接期：把 `{secretRef}` 解密为可用的明文 env / headers（仅主进程内使用）──────

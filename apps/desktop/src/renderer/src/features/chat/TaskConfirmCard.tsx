@@ -264,9 +264,14 @@ function TaskEditor({
       schedule,
       auth: { personaId, modelRef }
     }
-    const res = await resolveAutotask(block.id, 'create', input)
-    if (!res.ok) {
-      setErr(taskErrorKey(res.error))
+    try {
+      const res = await resolveAutotask(block.id, 'create', input)
+      if (!res.ok) {
+        setErr(taskErrorKey(res.error))
+        setBusy(false)
+      }
+    } catch (error) {
+      setErr(`${t('tasks.saveFailed')}: ${error instanceof Error ? error.message : String(error)}`)
       setBusy(false)
     }
     // 成功：store 将本块打为 created → 重渲染切至终态卡（本编辑器卸载）。

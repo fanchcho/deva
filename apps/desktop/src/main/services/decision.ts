@@ -52,6 +52,7 @@ export interface DecisionResult {
   outcomes: DecisionOutcome[]
   kind?: ErrorKind
   message?: string
+  timedOut?: boolean
 }
 
 /** 决策连接配置（密钥已解密，仅在主进程内传递；threshold 为闸门阈值）。 */
@@ -78,17 +79,6 @@ function clamp01(n: unknown): number {
   const v = typeof n === 'number' ? n : Number(n)
   if (!Number.isFinite(v)) return 0
   return Math.min(1, Math.max(0, v))
-}
-
-/** 带超时的 fetch；超时按 AbortError 抛出，交由 networkError 归一。 */
-async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
-  const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS)
-  try {
-    return await httpFetch(url, { ...init, signal: ctrl.signal })
-  } finally {
-    clearTimeout(timer)
-  }
 }
 
 function networkError(e: unknown): NormalizedError {
@@ -161,9 +151,12 @@ async function decideJev(
   const apiKey = (await getSecret(cfg.providerId)) ?? ''
   if (!apiKey) return { ok: false, outcomes: [], kind: 'auth', message: 'no-key' }
   const base = normalizeBase(cfg.baseURL)
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS)
   try {
-    const res = await fetchWithTimeout(`${base}/v1/systemone`, {
+    const res = await httpFetch(`${base}/v1/systemone`, {
       method: 'POST',
+      signal: ctrl.signal,
       headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
         state: stateToText(state),
@@ -172,21 +165,31 @@ async function decideJev(
       })
     })
     if (!res.ok) {
-      const text = await res.text().catch(() => '')
+      const text = await res.text()
       const err = httpError(res.status, text)
       return { ok: false, outcomes: [], kind: err.kind, message: err.message }
     }
-    const json = await res.json().catch(() => null)
+    const json = await res.json()
     const answers = (json as { answers?: Record<string, unknown> } | null)?.answers ?? {}
-    // 按 id 对回；缺失的问题给 0 置信度（不发起）。阈值折算成布尔闸门。
-    const outcomes: DecisionOutcome[] = questions.map((q) => {
-      const { confidence, reason } = answerConfidence(answers[q.id])
-      return { id: q.id, confidence, decide: confidence >= cfg.threshold, reason }
-    })
+    const outcomes: DecisionOutcome[] = []
+    for (const q of questions) {
+      const answer = answers[q.id]
+      const noul = (answer as { noul?: unknown } | undefined)?.noul
+      // 没有有效概率是协议错误，不是 0 分；0 阈值也绝不能放过坏响应。
+      if (!answer || (!q.options?.length &&
+        (typeof noul !== 'number' || !Number.isFinite(noul) || noul < 0 || noul > 1))) {
+        return { ok: false, outcomes: [], kind: 'invalid_request', message: `Invalid decision answer: ${q.id}` }
+      }
+      const { confidence, reason } = answerConfidence(answer)
+      outcomes.push({ id: q.id, confidence, decide: confidence >= cfg.threshold, reason })
+    }
     return { ok: true, outcomes }
   } catch (e) {
     const err = networkError(e)
-    return { ok: false, outcomes: [], kind: err.kind, message: err.message }
+    return { ok: false, outcomes: [], kind: err.kind, message: ctrl.signal.aborted ? `请求超时（${TIMEOUT_MS / 1000}s）` : err.message,
+      timedOut: ctrl.signal.aborted }
+  } finally {
+    clearTimeout(timer)
   }
 }
 

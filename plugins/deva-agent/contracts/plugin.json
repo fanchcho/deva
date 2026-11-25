@@ -14,7 +14,11 @@
       "type": "object",
       "description": "更新桌面默认模型（config.json）及当前账号的 Studio 凭据；apiKey 省略保留、空串清除。",
       "properties": {
-        "modelRef": { "type": "string", "description": "要选择或编辑的桌面 providerId:modelId；空串新增独立提供方，省略使用当前默认。", "maxLength": 512 },
+        "modelRef": {
+          "type": "string",
+          "description": "要选择或编辑的桌面 providerId:modelId；空串新增独立提供方，省略使用当前默认。",
+          "maxLength": 512
+        },
         "baseUrl": {
           "type": "string",
           "description": "自定义 Chat Completions Base URL，空字符串表示没有桌面选定模型或桌面适配器使用隐式地址。",
@@ -72,9 +76,19 @@
           "type": "string",
           "description": "仅授权账号可见；Studio 进程解析的共享 config.json 绝对路径。"
         },
-        "desktopAccessRequired": { "type": "boolean", "description": "未获桌面配置所有者授权；不返回共享数据，也不读写旧的私有路由。" },
-        "modelRef": { "type": "string", "description": "桌面默认模型引用；未选为空。" },
-        "needsNetworkApproval": { "type": "boolean", "description": "当前桌面 Base URL 尚未获 Studio 管理员网络批准。" },
+        "desktopWriteRequired": { "type": "boolean", "description": "只读镜像正常；当前账号未获 sharedDevaUserId 写入授权。" },
+        "desktopAccessRequired": {
+          "type": "boolean",
+          "description": "当前 Studio 账号不是管理员指定的桌面配置所有者（sharedDevaUserId）；不返回共享数据。页面据此写明缺哪一项配置。"
+        },
+        "modelRef": {
+          "type": "string",
+          "description": "桌面默认模型引用；未选为空。"
+        },
+        "needsNetworkApproval": {
+          "type": "boolean",
+          "description": "桌面当前生效的 Base URL 是本机/内网/HTTP 且未获管理员批准：Deva 直连会被拦。**只影响发请求，不影响页面显示桌面既有选择**。"
+        },
         "desktopModels": {
           "type": "array",
           "description": "已启用的桌面对话模型，只含路由展示字段。",
@@ -82,12 +96,37 @@
             "type": "object",
             "description": "桌面模型选项，不含密钥。",
             "properties": {
-              "ref": { "type": "string", "description": "providerId:modelId，可选择为默认。" },
-              "adapter": { "type": "string", "description": "桌面协议名；Studio 直连只支持 openai Chat Completions。" },
-              "baseUrl": { "type": "string", "description": "不含认证信息的 Base URL；隐式、无效或含敏感组件时为空。" },
-              "modelName": { "type": "string", "description": "桌面 ModelDef.id。" }
+              "ref": {
+                "type": "string",
+                "description": "providerId:modelId，可选择为默认。"
+              },
+              "adapter": {
+                "type": "string",
+                "description": "桌面协议名；Studio 直连只支持 openai Chat Completions。"
+              },
+              "baseUrl": {
+                "type": "string",
+                "description": "不含认证信息的 Base URL；隐式、无效或含敏感组件时为空。"
+              },
+              "modelName": {
+                "type": "string",
+                "description": "桌面 ModelDef.id。"
+              },
+              "providerId": {
+                "type": "string",
+                "description": "provider id。"
+              },
+              "providerName": {
+                "type": "string",
+                "description": "provider 显示名。"
+              }
             },
-            "required": ["ref", "adapter", "baseUrl", "modelName"],
+            "required": [
+              "ref",
+              "adapter",
+              "baseUrl",
+              "modelName"
+            ],
             "additionalProperties": false
           }
         },
@@ -98,11 +137,24 @@
             "type": "object",
             "description": "身份和对应的 frontmatter.model。",
             "properties": {
-              "id": { "type": "string", "description": "身份文件名 ID。" },
-              "name": { "type": "string", "description": "身份显示名称。" },
-              "model": { "type": "string", "description": "桌面模型引用；空串跟随默认。" }
+              "id": {
+                "type": "string",
+                "description": "身份文件名 ID。"
+              },
+              "name": {
+                "type": "string",
+                "description": "身份显示名称。"
+              },
+              "model": {
+                "type": "string",
+                "description": "桌面模型引用；空串跟随默认。"
+              }
             },
-            "required": ["id", "name", "model"],
+            "required": [
+              "id",
+              "name",
+              "model"
+            ],
             "additionalProperties": false
           }
         },
@@ -113,18 +165,97 @@
         "reasoningEffort": {
           "type": "string",
           "description": "已保存的模型强度档位；未设置（不发送 reasoning_effort）时省略。",
-          "enum": ["low", "medium", "high", "xhigh", "max"]
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
         },
         "error": {
           "type": "object",
           "description": "仅在保存因输入被拒时出现：本次没有写入任何内容，其余字段是保存前已持久化的设置。",
           "properties": {
-            "field": { "type": "string", "description": "需要用户修正的表单字段。", "enum": ["baseUrl", "modelName", "apiKey", "allowNonPublic", "reasoningEffort"] },
-            "code": { "type": "string", "description": "稳定错误码，供页面本地化。", "enum": ["base-url-required", "base-url-invalid", "confirmation-required", "model-name-invalid", "api-key-invalid", "api-key-misplaced", "reasoning-effort-invalid"] },
-            "message": { "type": "string", "description": "可直接展示的中文原因与下一步动作；不含密钥。", "minLength": 1, "maxLength": 4096 }
+            "field": {
+              "type": "string",
+              "description": "需要用户修正的表单字段。",
+              "enum": [
+                "baseUrl",
+                "modelName",
+                "apiKey",
+                "allowNonPublic",
+                "reasoningEffort"
+              ]
+            },
+            "code": {
+              "type": "string",
+              "description": "稳定错误码，供页面本地化。",
+              "enum": [
+                "base-url-required",
+                "base-url-invalid",
+                "confirmation-required",
+                "model-name-invalid",
+                "api-key-invalid",
+                "api-key-misplaced",
+                "reasoning-effort-invalid"
+              ]
+            },
+            "message": {
+              "type": "string",
+              "description": "可直接展示的中文原因与下一步动作；不含密钥。",
+              "minLength": 1,
+              "maxLength": 4096
+            }
           },
-          "required": ["field", "code", "message"],
+          "required": [
+            "field",
+            "code",
+            "message"
+          ],
           "additionalProperties": false
+        },
+        "providerId": {
+          "type": "string",
+          "description": "桌面默认模型的 provider id；未选为空。",
+          "maxLength": 128
+        },
+        "providerName": {
+          "type": "string",
+          "description": "桌面 provider 的显示名（例如 cpa）；未选为空。",
+          "maxLength": 256
+        },
+        "adapter": {
+          "type": "string",
+          "description": "桌面协议名：openai/responses/anthropic；未选为空。",
+          "maxLength": 32
+        },
+        "desktopConfigPath": {
+          "type": "string",
+          "description": "页面对照用的桌面 config.json 绝对路径（不含内容）。",
+          "maxLength": 2048
+        },
+        "desktopConfigExists": {
+          "type": "boolean",
+          "description": "该路径当前是否存在；false 时页面必须说明读到的是空态而不是“未选择”。"
+        },
+        "desktopOwnership": {
+          "type": "string",
+          "description": "配置目录归属审计结论：verified=已校验 POSIX 归属；unverifiable=宿主无法校验（Windows），已在页面上说明；未审计时省略。",
+          "enum": [
+            "verified",
+            "unverifiable"
+          ]
+        },
+        "unresolvedModelRef": {
+          "type": "string",
+          "description": "桌面 activeModelId 存在但解析不出 provider/model：原样回显，页面提示引用失效而非“未选择”。",
+          "maxLength": 1024
+        },
+        "desktopOwnerUserId": {
+          "type": "integer",
+          "description": "管理员配置的共享账号 ID；仅未授权时回显，供页面写明“需要谁批准”。",
+          "minimum": 1
         }
       },
       "required": [
@@ -139,10 +270,22 @@
       "type": "object",
       "description": "更新桌面身份文件的 model 字段，不重写其余元数据和正文。",
       "properties": {
-        "personaId": { "type": "string", "description": "身份 ID。", "minLength": 1, "maxLength": 64 },
-        "modelRef": { "type": "string", "description": "桌面模型引用；空串删除身份覆盖。", "maxLength": 512 }
+        "personaId": {
+          "type": "string",
+          "description": "身份 ID。",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "modelRef": {
+          "type": "string",
+          "description": "桌面模型引用；空串删除身份覆盖。",
+          "maxLength": 512
+        }
       },
-      "required": ["personaId", "modelRef"],
+      "required": [
+        "personaId",
+        "modelRef"
+      ],
       "additionalProperties": false
     },
     "customModel": {
@@ -176,140 +319,351 @@
       "type": "object",
       "description": "从桌面 provider 字段投影出的非敏感模型路由。",
       "properties": {
-        "baseUrl": { "type": "string", "description": "规范化的 Chat Completions Base URL。", "minLength": 1, "maxLength": 2048 },
-        "modelName": { "type": "string", "description": "送往模型 API 的模型 ID。", "minLength": 1, "maxLength": 256 }
+        "baseUrl": {
+          "type": "string",
+          "description": "规范化的 Chat Completions Base URL。",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "modelName": {
+          "type": "string",
+          "description": "送往模型 API 的模型 ID。",
+          "minLength": 1,
+          "maxLength": 256
+        }
       },
-      "required": ["baseUrl", "modelName"],
+      "required": [
+        "baseUrl",
+        "modelName"
+      ],
       "additionalProperties": false
     },
     "sharedModelKey": {
       "type": "object",
       "description": "Studio 私有密钥，仅匹配当前规范 Base URL 时使用；不读写桌面 safeStorage 密文。",
       "properties": {
-        "baseUrl": { "type": "string", "description": "规范化的 Chat Completions Base URL。", "minLength": 1, "maxLength": 2048 },
-        "apiKey": { "type": "string", "description": "仅 Studio 服务端使用的 Bearer 密钥。", "minLength": 1, "maxLength": 4096 }
+        "baseUrl": {
+          "type": "string",
+          "description": "规范化的 Chat Completions Base URL。",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "apiKey": {
+          "type": "string",
+          "description": "仅 Studio 服务端使用的 Bearer 密钥。",
+          "minLength": 1,
+          "maxLength": 4096
+        }
       },
-      "required": ["baseUrl", "apiKey"],
+      "required": [
+        "baseUrl",
+        "apiKey"
+      ],
       "additionalProperties": false
     },
     "modelNetworkConsent": {
       "type": "object",
       "description": "旧版地址确认记录；不参与 0.8.18 网络授权。",
       "properties": {
-        "baseUrl": { "type": "string", "description": "规范化的 Chat Completions Base URL。", "minLength": 1, "maxLength": 2048 }
+        "baseUrl": {
+          "type": "string",
+          "description": "规范化的 Chat Completions Base URL。",
+          "minLength": 1,
+          "maxLength": 2048
+        }
       },
-      "required": ["baseUrl"],
+      "required": [
+        "baseUrl"
+      ],
       "additionalProperties": false
     },
     "modelOptions": {
       "type": "object",
       "description": "直连模型的请求选项；目前只有模型强度。没有任何选项时整条记录删除。",
       "properties": {
-        "reasoningEffort": { "type": "string", "description": "随每轮直连请求下发的 reasoning_effort。", "enum": ["minimal", "low", "medium", "high", "xhigh"] }
+        "reasoningEffort": {
+          "type": "string",
+          "description": "随每轮直连请求下发的 reasoning_effort。",
+          "enum": [
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ]
+        }
       },
-      "required": ["reasoningEffort"],
+      "required": [
+        "reasoningEffort"
+      ],
       "additionalProperties": false
     },
     "sharedDesktopProvider": {
       "type": "object",
       "description": "桌面 models.providers[] 下约定的共享 provider；其余桌面字段保留。",
       "properties": {
-        "id": { "type": "string", "description": "桌面服务商或模型的稳定 ID。", "enum": ["deva-studio-shared"] },
-        "apiHost": { "type": "string", "description": "桌面字段：Base URL。", "maxLength": 2048 },
-        "adapter": { "type": "string", "description": "桌面协议适配器；共享仅支持 OpenAI Chat Completions。", "enum": ["openai"] },
-        "kind": { "type": "string", "description": "桌面服务商类型。", "enum": ["custom"] },
-        "purpose": { "type": "string", "description": "仅共享对话模型。", "enum": ["llm"] },
-        "enabled": { "type": "boolean", "description": "桌面服务商或模型的启用状态。" },
+        "id": {
+          "type": "string",
+          "description": "桌面服务商或模型的稳定 ID。",
+          "enum": [
+            "deva-studio-shared"
+          ]
+        },
+        "apiHost": {
+          "type": "string",
+          "description": "桌面字段：Base URL。",
+          "maxLength": 2048
+        },
+        "adapter": {
+          "type": "string",
+          "description": "桌面协议适配器；共享仅支持 OpenAI Chat Completions。",
+          "enum": [
+            "openai"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "description": "桌面服务商类型。",
+          "enum": [
+            "custom"
+          ]
+        },
+        "purpose": {
+          "type": "string",
+          "description": "仅共享对话模型。",
+          "enum": [
+            "llm"
+          ]
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "桌面服务商或模型的启用状态。"
+        },
         "models": {
-          "type": "array", "description": "该共享服务商的模型列表。",
+          "type": "array",
+          "description": "该共享服务商的模型列表。",
           "items": {
             "type": "object",
             "description": "桌面模型条目；额外字段原样保留。",
             "properties": {
-              "id": { "type": "string", "description": "桌面服务商或模型的稳定 ID。", "minLength": 1 },
-              "enabled": { "type": "boolean", "description": "桌面服务商或模型的启用状态。" }
+              "id": {
+                "type": "string",
+                "description": "桌面服务商或模型的稳定 ID。",
+                "minLength": 1
+              },
+              "enabled": {
+                "type": "boolean",
+                "description": "桌面服务商或模型的启用状态。"
+              }
             },
-            "required": ["id", "enabled"],
+            "required": [
+              "id",
+              "enabled"
+            ],
             "additionalProperties": true
           }
         }
       },
-      "required": ["id", "apiHost", "adapter", "enabled", "models"],
+      "required": [
+        "id",
+        "apiHost",
+        "adapter",
+        "enabled",
+        "models"
+      ],
       "additionalProperties": true
     },
     "desktopModelKey": {
       "type": "object",
       "description": "桌面 provider/model 的 Studio 私有密钥记录。",
       "properties": {
-        "providerId": { "type": "string", "description": "provider id。", "maxLength": 128 },
-        "baseUrl": { "type": "string", "description": "绑定的 Base URL。", "maxLength": 2048 },
-        "apiKey": { "type": "string", "description": "密钥明文，仅服务端使用，不回传。", "maxLength": 4096 }
+        "providerId": {
+          "type": "string",
+          "description": "provider id。",
+          "maxLength": 128
+        },
+        "baseUrl": {
+          "type": "string",
+          "description": "绑定的 Base URL。",
+          "maxLength": 2048
+        },
+        "apiKey": {
+          "type": "string",
+          "description": "密钥明文，仅服务端使用，不回传。",
+          "maxLength": 4096
+        }
       },
-      "required": ["providerId", "baseUrl", "apiKey"],
+      "required": [
+        "providerId",
+        "baseUrl",
+        "apiKey"
+      ],
       "additionalProperties": false
     },
     "modelMode": {
       "type": "object",
       "description": "模型来源模式。",
       "properties": {
-        "mode": { "type": "string", "description": "desktop/custom/session。", "enum": ["desktop", "custom", "session"] }
+        "mode": {
+          "type": "string",
+          "description": "desktop/custom/session。",
+          "enum": [
+            "desktop",
+            "custom",
+            "session"
+          ]
+        }
       },
-      "required": ["mode"],
+      "required": [
+        "mode"
+      ],
       "additionalProperties": false
     },
     "sessionIdentityView": {
       "type": "object",
       "description": "当前会话的 persona 选择视图。",
       "properties": {
-        "sessionId": { "type": "string", "description": "Studio 会话 id；空串表示当前调用没有会话上下文。", "maxLength": 128 },
-        "identity": { "type": "string", "description": "会话使用/将使用的 persona id；无会话时为空串。", "maxLength": 64 },
-        "source": { "type": "string", "description": "来源：session=会话覆盖，default=默认选择，none=无会话。", "enum": ["session", "default", "none"] }
+        "sessionId": {
+          "type": "string",
+          "description": "Studio 会话 id；空串表示当前调用没有会话上下文。",
+          "maxLength": 128
+        },
+        "identity": {
+          "type": "string",
+          "description": "会话使用/将使用的 persona id；无会话时为空串。",
+          "maxLength": 64
+        },
+        "source": {
+          "type": "string",
+          "description": "来源：session=会话覆盖，default=默认选择，none=无会话。",
+          "enum": [
+            "session",
+            "default",
+            "none"
+          ]
+        }
       },
-      "required": ["sessionId", "identity", "source"],
+      "required": [
+        "sessionId",
+        "identity",
+        "source"
+      ],
       "additionalProperties": false
     },
     "sessionIdentitySaved": {
       "type": "object",
       "description": "会话身份写入/清除结果。",
       "properties": {
-        "ok": { "type": "boolean", "description": "仅在写入完成后 true。", "enum": [true] },
-        "sessionId": { "type": "string", "description": "Studio 会话 id。", "maxLength": 128 },
-        "identity": { "type": "string", "description": "写入后的 persona id（清除后为默认 id）。", "maxLength": 64 }
+        "ok": {
+          "type": "boolean",
+          "description": "仅在写入完成后 true。",
+          "enum": [
+            true
+          ]
+        },
+        "sessionId": {
+          "type": "string",
+          "description": "Studio 会话 id。",
+          "maxLength": 128
+        },
+        "identity": {
+          "type": "string",
+          "description": "写入后的 persona id（清除后为默认 id）。",
+          "maxLength": 64
+        }
       },
-      "required": ["ok", "sessionId", "identity"],
+      "required": [
+        "ok",
+        "sessionId",
+        "identity"
+      ],
       "additionalProperties": false
     },
     "personaId": {
       "type": "object",
       "description": "指定或返回桌面 persona 文件的稳定 id。",
       "properties": {
-        "id": { "type": "string", "description": "文件名，不含 .md 扩展名；1–64 个 ASCII 安全字符。", "minLength": 1, "maxLength": 64 }
+        "id": {
+          "type": "string",
+          "description": "文件名，不含 .md 扩展名；1–64 个 ASCII 安全字符。",
+          "minLength": 1,
+          "maxLength": 64
+        }
       },
-      "required": ["id"],
+      "required": [
+        "id"
+      ],
       "additionalProperties": false
     },
     "personaCreate": {
       "type": "object",
       "description": "创建新身份；随机 id 由服务端生成。名字和描述须为单行。",
       "properties": {
-        "name": { "type": "string", "description": "显示名称；标准化后不可重名。", "minLength": 1, "maxLength": 120 },
-        "description": { "type": "string", "description": "单行说明；空串表示无描述。", "maxLength": 400 },
-        "prompt": { "type": "string", "description": "非空 Markdown 提示词正文。", "minLength": 1, "maxLength": 131072 }
+        "name": {
+          "type": "string",
+          "description": "显示名称；标准化后不可重名。",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "description": {
+          "type": "string",
+          "description": "单行说明；空串表示无描述。",
+          "maxLength": 400
+        },
+        "prompt": {
+          "type": "string",
+          "description": "非空 Markdown 提示词正文。",
+          "minLength": 1,
+          "maxLength": 131072
+        }
       },
-      "required": ["name", "description", "prompt"],
+      "required": [
+        "name",
+        "description",
+        "prompt"
+      ],
       "additionalProperties": false
     },
     "personaEditor": {
       "type": "object",
       "description": "编辑的读回与提交形状。桌面专属元数据不进入编辑载荷；空正文的旧文件可打开编辑，但保存必须补正文。",
       "properties": {
-        "id": { "type": "string", "description": "当前 persona 的稳定 id；编辑不改 id。", "minLength": 1, "maxLength": 64 },
-        "name": { "type": "string", "description": "显示名称。", "minLength": 1, "maxLength": 120 },
-        "description": { "type": "string", "description": "单行说明；空串表示无描述。", "maxLength": 400 },
-        "prompt": { "type": "string", "description": "Markdown 提示词正文。", "maxLength": 131072 },
-        "revision": { "type": "string", "description": "读入时整份 persona 文件的 SHA-256；文件变动时拒绝覆盖。", "minLength": 64, "maxLength": 64 }
+        "id": {
+          "type": "string",
+          "description": "当前 persona 的稳定 id；编辑不改 id。",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "name": {
+          "type": "string",
+          "description": "显示名称。",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "description": {
+          "type": "string",
+          "description": "单行说明；空串表示无描述。",
+          "maxLength": 400
+        },
+        "prompt": {
+          "type": "string",
+          "description": "Markdown 提示词正文。",
+          "maxLength": 131072
+        },
+        "revision": {
+          "type": "string",
+          "description": "读入时整份 persona 文件的 SHA-256；文件变动时拒绝覆盖。",
+          "minLength": 64,
+          "maxLength": 64
+        }
       },
-      "required": ["id", "name", "description", "prompt", "revision"],
+      "required": [
+        "id",
+        "name",
+        "description",
+        "prompt",
+        "revision"
+      ],
       "additionalProperties": false
     },
     "identityList": {
@@ -362,7 +716,10 @@
                 "type": "boolean",
                 "description": "桌面 personas.enabled 的启用位（桌面语义是多条叠加）。"
               },
-              "hasPrompt": { "type": "boolean", "description": "有可运行提示词。空正文身份仍可编辑，不可设为默认或应用到会话。" },
+              "hasPrompt": {
+                "type": "boolean",
+                "description": "有可运行提示词。空正文身份仍可编辑，不可设为默认或应用到会话。"
+              },
               "avatarImage": {
                 "type": "string",
                 "description": "自定义头像图片的 data URI（只读自 personas/avatars/<id>.<webp|png|jpg>）；空串表示没有自定义图片，前端回退首字母。",
@@ -409,7 +766,10 @@
           "type": "boolean",
           "description": "本次读取是否把目录/文件权限收紧到 0700/0600。"
         },
-        "canEdit": { "type": "boolean", "description": "当前 Studio 账号是否可读取编辑正文和增改共享身份。" }
+        "canEdit": {
+          "type": "boolean",
+          "description": "当前 Studio 账号是否可读取编辑正文和增改共享身份。"
+        }
       },
       "required": [
         "identities",
@@ -545,8 +905,15 @@
                 "type": "boolean",
                 "description": "Studio 全局启用态，不等同于当前 Agent 勾选。"
               },
-              "toolCount": { "type": "integer", "description": "Studio tools/list 探测的数量；停用为零，探测失败省略。", "minimum": 0 },
-              "toolCountUnavailable": { "type": "boolean", "description": "探测失败，数量未知而非零。" }
+              "toolCount": {
+                "type": "integer",
+                "description": "Studio tools/list 探测的数量；停用为零，探测失败省略。",
+                "minimum": 0
+              },
+              "toolCountUnavailable": {
+                "type": "boolean",
+                "description": "探测失败，数量未知而非零。"
+              }
             },
             "required": [
               "name",

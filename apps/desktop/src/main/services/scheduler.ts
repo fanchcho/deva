@@ -1,5 +1,6 @@
 import { BrowserWindow, Notification } from 'electron'
 import { nextRun } from './schedule'
+import { evaluateTaskDecision } from './task-decision'
 import {
   appendRun,
   applyRunResult,
@@ -154,6 +155,33 @@ async function fireOnce(id: string, manual: boolean, missed: number): Promise<vo
     })
   }
 
+  const statusBeforeDecision = task.status
+  const updatedBeforeDecision = task.updatedAt
+  const decision = task.decision?.enabled ? await evaluateTaskDecision(task) : undefined
+  if (decision) {
+    const current = getTask(id)
+    if (!current) return // 决策等待期间用户删除了任务。
+    if (current !== task || current.status !== statusBeforeDecision || current.updatedAt !== updatedBeforeDecision) {
+      appendRun(id, { firedAt, finishedAt: Date.now(), status: 'aborted', decision,
+        summary: '决策等待期间任务已修改，本次未执行。' })
+      return
+    }
+  }
+  if (decision && decision.status !== 'allowed') {
+    const denied = decision.status === 'denied'
+    const run: TaskRun = {
+      firedAt, finishedAt: Date.now(), status: denied ? 'skipped' : 'error', decision,
+      ...(denied
+        ? { summary: `决策拒绝执行（${decision.confidence} < ${decision.threshold}）。` }
+        : { error: `决策${decision.status === 'timeout' ? '超时' : '失败'}：${decision.message}` })
+    }
+    appendRun(id, run)
+    // 拒绝消费本次触发（once 完成、周期等下一次）；错误沿用原退避/自动暂停。
+    const applied = !manual ? applyRunResult(id, { ok: denied }, firedAt) : null
+    if (!denied) notifyForRun(getTask(id) ?? task, run, applied?.autoPausedError ?? false)
+    return
+  }
+
   let res: ScheduledTurnResult
   try {
     res = await runScheduledTask(task)
@@ -174,6 +202,7 @@ async function fireOnce(id: string, manual: boolean, missed: number): Promise<vo
   const run: TaskRun = {
     firedAt,
     finishedAt,
+    ...(decision ? { decision } : {}),
     status: aborted ? 'aborted' : ok ? 'ok' : 'error',
     // 被中止：摘要写中止说明（手动停止 / 对话被删除 / 应用退出，见 runScheduledTurn），不写失败原因。
     summary: ok ? firstLine(res.text) || undefined : aborted ? res.errorMessage : undefined,

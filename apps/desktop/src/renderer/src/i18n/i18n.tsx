@@ -19,7 +19,7 @@ const SUPPORTED: Locale[] = ['zh-CN', 'en']
 
 interface I18nContextValue {
   locale: Locale
-  setLocale: (locale: Locale) => void
+  setLocale: (locale: Locale) => Promise<void>
   t: (key: string) => string
 }
 
@@ -60,10 +60,10 @@ export function I18nProvider({ children }: { children: ReactNode }): React.JSX.E
     document.documentElement.setAttribute('lang', locale)
   }, [locale])
 
-  const setLocale = (next: Locale): void => {
+  const setLocale = async (next: Locale): Promise<void> => {
+    await window.deva.config.set({ locale: next })
     setLocaleState(next)
     // 主存 ~/.deva/config.json；localStorage 作为兜底缓存
-    void window.deva?.config?.set({ locale: next })
     try {
       localStorage.setItem(STORAGE_KEY, next)
     } catch {

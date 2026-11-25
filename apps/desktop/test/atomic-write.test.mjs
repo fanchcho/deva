@@ -4,9 +4,7 @@
  * 覆盖：正常写、覆盖、上次崩溃留下的 .tmp、空内容、不写 BOM；
  * 以及失败分支——tmp 本身写不进时**原样抛错**（不去直写，否则会把旧文件截断）。
  *
- * 未覆盖：rename 失败后的「直写回退」。这条只在 Windows 上被杀毒 / 索引服务短暂占用目标文件时触发
- * （EPERM），本机（Linux）没有可移植的触发方式；用 mock 掉 fs 去断言它只会测到 mock 本身，
- * 所以这里明确不写假覆盖。
+ * rename 失败也必须抛错并保留原目标，不能回退为直接覆盖。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'

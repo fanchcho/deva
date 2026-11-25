@@ -726,18 +726,149 @@ const labels = {
 }
 
 const desktopModelLabels = {
-  en: ["Address and model are shared with Desktop. Quit Desktop before saving here, then reopen it. Set API keys separately in each app.", "Desktop default", "New Chat Completions provider", "Persona model bindings", "Follow Desktop default", "No Desktop default selected", "Ask the Studio administrator to authorize access to the Desktop model settings.", "Local, private-network, and HTTP addresses require Studio administrator approval."],
-  zh: ["地址和模型与桌面端共用。请先退出桌面端，保存后再打开。API Key 要在两端分别设置。", "桌面默认模型", "新增 Chat Completions 提供方", "身份模型绑定", "跟随桌面默认", "桌面端未选择默认模型", "请联系 Studio 管理员授权访问桌面模型配置。", "本机、内网及 HTTP 地址需 Studio 管理员批准。"],
-  "zh-tw": ["位址和模型與桌面端共用。請先退出桌面端，儲存後再開啟。API Key 須在兩端分別設定。", "桌面預設模型", "新增 Chat Completions 供應商", "身分模型綁定", "跟隨桌面預設", "桌面端未選擇預設模型", "請聯絡 Studio 管理員授權存取桌面模型設定。", "本機、內網及 HTTP 位址須由 Studio 管理員核准。"],
-  ja: ["URL とモデルはデスクトップ版と共有します。保存前にデスクトップ版を終了し、保存後に再起動してください。API キーは個別に設定します。", "デスクトップの既定モデル", "Chat Completions プロバイダーを追加", "アイデンティティ別モデル", "デスクトップの既定値に従う", "既定モデル未選択", "Studio 管理者にデスクトップ設定へのアクセスを依頼してください。", "ローカル、内部ネットワーク、HTTP には Studio 管理者の承認が必要です。"],
-  ko: ["주소와 모델은 데스크톱 앱과 공유합니다. 여기서 저장하기 전에 데스크톱 앱을 종료하고 저장 후 다시 여세요. API 키는 각 앱에서 따로 설정합니다.", "데스크톱 기본 모델", "Chat Completions 공급자 추가", "ID별 모델", "데스크톱 기본값 사용", "기본 모델이 선택되지 않음", "Studio 관리자에게 데스크톱 설정 접근 권한을 요청하세요.", "로컬, 내부망 및 HTTP 주소는 Studio 관리자의 승인이 필요합니다."],
-  fr: ["L’URL et le modèle sont partagés avec l’application de bureau. Fermez-la avant d’enregistrer ici, puis relancez-la. Configurez la clé API dans chaque application.", "Modèle de bureau par défaut", "Ajouter un fournisseur Chat Completions", "Modèles par identité", "Suivre le choix du bureau", "Aucun modèle de bureau sélectionné", "Demandez à l’administrateur Studio l’accès aux réglages de bureau.", "Les adresses locales, privées et HTTP nécessitent l’approbation de l’administrateur Studio."],
-  es: ["La URL y el modelo se comparten con la aplicación de escritorio. Ciérrala antes de guardar aquí y vuelve a abrirla. Configura la clave API por separado en cada aplicación.", "Modelo de escritorio predeterminado", "Añadir proveedor Chat Completions", "Modelos por identidad", "Seguir el valor de escritorio", "No se ha seleccionado un modelo de escritorio", "Solicita al administrador de Studio acceso a los ajustes de escritorio.", "Las direcciones locales, privadas y HTTP requieren la aprobación del administrador de Studio."],
-  de: ["URL und Modell werden mit der Desktop-App geteilt. Beende sie vor dem Speichern und öffne sie danach erneut. API-Schlüssel werden getrennt eingerichtet.", "Desktop-Standardmodell", "Chat Completions Anbieter hinzufügen", "Modelle pro Identität", "Desktop-Standard verwenden", "Kein Desktop-Modell ausgewählt", "Bitte den Studio-Administrator um Zugriff auf die Desktop-Einstellungen.", "Lokale, private und HTTP-Adressen müssen vom Studio-Administrator genehmigt werden."],
-  pt: ["O endereço e o modelo são compartilhados com o aplicativo de desktop. Feche-o antes de salvar aqui e reabra-o depois. Configure a chave de API separadamente em cada aplicativo.", "Modelo padrão do desktop", "Adicionar provedor Chat Completions", "Modelos por identidade", "Usar padrão do desktop", "Nenhum modelo do desktop selecionado", "Peça ao administrador do Studio acesso às configurações do desktop.", "Endereços locais, privados e HTTP exigem aprovação do administrador do Studio."],
-  ru: ["Адрес и модель общие с настольным приложением. Закройте его перед сохранением и откройте снова после. Ключ API настраивается отдельно в каждом приложении.", "Модель по умолчанию", "Добавить поставщика Chat Completions", "Модели идентичностей", "Использовать модель по умолчанию", "Модель по умолчанию не выбрана", "Запросите у администратора Studio доступ к настройкам приложения.", "Локальные, внутренние и HTTP-адреса требуют одобрения администратора Studio."],
-  ar: ["عنوان URL والنموذج مشتركان مع تطبيق سطح المكتب. أغلقه قبل الحفظ ثم أعد فتحه. اضبط مفتاح API بشكل منفصل في كل تطبيق.", "نموذج سطح المكتب الافتراضي", "إضافة موفر Chat Completions", "نماذج الهويات", "استخدام الإعداد الافتراضي", "لم يُحدّد نموذج افتراضي", "اطلب من مسؤول Studio السماح بالوصول إلى إعدادات سطح المكتب.", "تتطلب عناوين الشبكة المحلية والخاصة وHTTP موافقة مسؤول Studio."],
-  tr: ["Adres ve model masaüstü uygulamasıyla paylaşılır. Burada kaydetmeden önce masaüstü uygulamasını kapatıp ardından yeniden açın. API anahtarını her uygulamada ayrı ayarlayın.", "Masaüstü varsayılan modeli", "Chat Completions sağlayıcısı ekle", "Kimliğe göre modeller", "Masaüstü varsayılanını kullan", "Masaüstü modeli seçilmedi", "Studio yöneticisinden masaüstü ayarlarına erişim isteyin.", "Yerel, özel ağ ve HTTP adresleri Studio yöneticisinin onayını gerektirir."],
+  en: [
+    "Address and model are shared with Desktop. Quit Desktop before saving here, then reopen it. Set API keys separately in each app.",
+    "Desktop default", "New Chat Completions provider", "Persona model bindings", "Follow Desktop default",
+    "No Desktop default selected", "This Studio account is not the Desktop config owner: an administrator must set sharedDevaUserId to account {userId} (currently {configured}) so this page can read {path}.",
+    "{baseUrl} is a local, private-network, or HTTP address that Deva may not dial directly yet. Reading Desktop settings is unaffected; to actually use this model from Studio, ask an administrator to add exactly {baseUrl} to the plugin's modelTrustedBases.",
+    "Desktop config.json points at {ref}, but that provider or model no longer exists in it. Re-select a model in Desktop, then reload this page.",
+    "This host cannot verify POSIX file ownership (Windows): the read-only model mirror uses the Studio process file permissions; writes still require account authorization.",
+    "Reading {path}.",
+    "Desktop config path could not be resolved; check that sharedDevaHome (or DEVA_HOME) is an absolute path.", "Active now: {name}",
+    "Desktop has no default model yet. Pick one in Desktop, or enter a Base URL and model below to add a provider here.",
+  ],
+  zh: [
+    "地址和模型与桌面端共用。请先退出桌面端，保存后再打开。API Key 要在两端分别设置。",
+    "桌面默认模型", "新增 Chat Completions 提供方", "身份模型绑定", "跟随桌面默认",
+    "桌面端未选择默认模型",
+    "当前 Studio 账号不是桌面配置所有者：需要 Studio 管理员把插件配置 sharedDevaUserId 设为账号 {userId}（当前 {configured}），本页才能读 {path}。",
+    "{baseUrl} 是本机、内网或 HTTP 地址，Deva 直连需要 Studio 管理员批准。读取桌面设置不受影响；要真正从 Studio 使用这个模型，请让管理员把完整地址 {baseUrl} 加入插件配置 modelTrustedBases。",
+    "桌面 config.json 里的默认模型指向 {ref}，但已找不到对应的提供方或模型。请在桌面端重新选择模型后刷新本页。",
+    "本机宿主无法校验 POSIX 文件归属（Windows）：桌面模型只读镜像使用 Studio 进程的文件访问权限；写入仍校验账号，不做 uid 校验。",
+    "正在读取 {path}。",
+    "桌面配置路径无法解析；请检查 sharedDevaHome（或 DEVA_HOME）是否为绝对路径。", "当前生效：{name}",
+    "桌面端还没有默认模型。请在桌面端选一个，或在下面填写地址与模型名新增提供方。",
+  ],
+  "zh-tw": [
+    "位址和模型與桌面端共用。請先退出桌面端，儲存後再開啟。API Key 須在兩端分別設定。",
+    "桌面預設模型", "新增 Chat Completions 供應商", "身分模型綁定", "跟隨桌面預設",
+    "桌面端未選擇預設模型",
+    "目前 Studio 帳號不是桌面設定擁有者：需要 Studio 管理員把外掛設定 sharedDevaUserId 設為帳號 {userId}（目前 {configured}），本頁才能讀取 {path}。",
+    "{baseUrl} 是本機、內網或 HTTP 位址，Deva 目前還不能直連。讀取桌面設定不受影響；要讓 Studio 真正使用這個模型，請在管理員的外掛設定 modelTrustedBases 加入這個完整位址：{baseUrl}。",
+    "桌面 config.json 的預設模型指向 {ref}，但已找不到對應的供應商或模型。請在桌面端重新選擇模型後重新整理本頁。",
+    "本機宿主無法校驗 POSIX 檔案歸屬（Windows）：桌面檔案依上面的帳號級授權讀取，不做 uid 校驗。",
+    "正在讀取 {path}。",
+    "桌面設定路徑無法解析；請檢查 sharedDevaHome（或 DEVA_HOME）是否為絕對路徑。", "目前生效：{name}",
+    "桌面端還沒有預設模型。請在桌面端選一個，或在下面填寫位址與模型名稱新增供應商。",
+  ],
+  ja: [
+    "URL とモデルはデスクトップ版と共有します。保存前にデスクトップ版を終了し、保存後に再起動してください。API キーは個別に設定します。",
+    "デスクトップの既定モデル", "Chat Completions プロバイダーを追加", "アイデンティティ別モデル", "デスクトップの既定値に従う",
+    "既定モデル未選択",
+    "この Studio アカウントはデスクトップ設定の所有者ではありません。管理者が sharedDevaUserId をアカウント {userId}（現在 {configured}）に設定すると、このページは {path} を読めます。",
+    "{baseUrl} はローカル・内部ネットワーク・HTTP のアドレスで、Deva からまだ直接接続できません。デスクトップ設定の読み取りは影響を受けません。Studio から実際に使うには、管理者がプラグイン設定 modelTrustedBases にこの完全なアドレスを追加してください：{baseUrl}。",
+    "デスクトップの config.json は既定モデルとして {ref} を指していますが、対応するプロバイダーまたはモデルが見つかりません。デスクトップ版で選び直してから再読み込みしてください。",
+    "このホストは POSIX のファイル所有者を検証できません（Windows）。デスクトップファイルは上記のアカウント単位の許可で読み取り、uid 検証は行いません。",
+    "{path} を読み込み中。",
+    "デスクトップ設定のパスを解決できません。sharedDevaHome（または DEVA_HOME）が絶対パスか確認してください。", "現在有効：{name}",
+    "デスクトップ版にはまだ既定モデルがありません。デスクトップ版で選ぶか、下に URL とモデル名を入力してプロバイダーを追加してください。",
+  ],
+  ko: [
+    "주소와 모델은 데스크톱 앱과 공유합니다. 여기서 저장하기 전에 데스크톱 앱을 종료하고 저장 후 다시 여세요. API 키는 각 앱에서 따로 설정합니다.",
+    "데스크톱 기본 모델", "Chat Completions 공급자 추가", "ID별 모델", "데스크톱 기본값 사용",
+    "기본 모델이 선택되지 않음",
+    "이 Studio 계정은 데스크톱 설정 소유자가 아닙니다. 관리자가 sharedDevaUserId를 계정 {userId}(현재 {configured})로 설정하면 이 페이지에서 {path}를 읽을 수 있습니다.",
+    "{baseUrl}은(는) 로컬·내부망·HTTP 주소여서 Deva가 아직 직접 연결할 수 없습니다. 데스크톱 설정 읽기는 영향을 받지 않습니다. Studio에서 실제로 사용하려면 관리자가 플러그인 설정 modelTrustedBases에 이 전체 주소를 추가해야 합니다: {baseUrl}.",
+    "데스크톱 config.json의 기본 모델이 {ref}을(를) 가리키지만 해당 공급자나 모델을 찾을 수 없습니다. 데스크톱 앱에서 모델을 다시 선택한 뒤 새로고침하세요.",
+    "이 호스트는 POSIX 파일 소유권을 확인할 수 없습니다(Windows). 데스크톱 파일은 위의 계정 단위 허용으로 읽으며 uid 검증을 하지 않습니다.",
+    "{path} 읽는 중.",
+    "데스크톱 설정 경로를 확인할 수 없습니다. sharedDevaHome(또는 DEVA_HOME)이 절대 경로인지 확인하세요.", "현재 적용: {name}",
+    "데스크톱 앱에 아직 기본 모델이 없습니다. 데스크톱에서 선택하거나 아래에 주소와 모델 이름을 입력해 공급자를 추가하세요.",
+  ],
+  fr: [
+    "L’URL et le modèle sont partagés avec l’application de bureau. Fermez-la avant d’enregistrer ici, puis relancez-la. Configurez la clé API dans chaque application.",
+    "Modèle de bureau par défaut", "Ajouter un fournisseur Chat Completions", "Modèles par identité", "Suivre le choix du bureau",
+    "Aucun modèle de bureau sélectionné",
+    "Ce compte Studio n’est pas propriétaire de la configuration du bureau : un administrateur doit définir sharedDevaUserId sur le compte {userId} (actuellement {configured}) pour que cette page lise {path}.",
+    "{baseUrl} est une adresse locale, privée ou HTTP que Deva ne peut pas encore joindre. La lecture des réglages du bureau n’est pas affectée ; pour l’utiliser réellement depuis Studio, un administrateur doit ajouter exactement {baseUrl} à modelTrustedBases du greffon.",
+    "Le config.json du bureau pointe vers {ref}, mais ce fournisseur ou modèle n’existe plus. Sélectionnez à nouveau un modèle dans le bureau, puis rechargez cette page.",
+    "Cet hôte ne peut pas vérifier la propriété POSIX des fichiers (Windows) : le fichier du bureau est lu selon l’autorisation de compte ci-dessus, sans contrôle d’uid.",
+    "Lecture de {path}.",
+    "Le chemin de configuration du bureau n’a pas pu être résolu ; vérifiez que sharedDevaHome (ou DEVA_HOME) est un chemin absolu.", "Actif actuellement : {name}",
+    "Le bureau n’a pas encore de modèle par défaut. Choisissez-en un dans le bureau, ou saisissez une URL de base et un nom de modèle ci-dessous pour ajouter un fournisseur.",
+  ],
+  es: [
+    "La URL y el modelo se comparten con la aplicación de escritorio. Ciérrala antes de guardar aquí y vuelve a abrirla. Configura la clave API por separado en cada aplicación.",
+    "Modelo de escritorio predeterminado", "Añadir proveedor Chat Completions", "Modelos por identidad", "Seguir el valor de escritorio",
+    "No se ha seleccionado un modelo de escritorio",
+    "Esta cuenta de Studio no es la propietaria de la configuración del escritorio: un administrador debe poner sharedDevaUserId en la cuenta {userId} (actualmente {configured}) para que esta página lea {path}.",
+    "{baseUrl} es una dirección local, de red privada o HTTP que Deva aún no puede usar directamente. La lectura de la configuración no se ve afectada; para usarla desde Studio, un administrador debe añadir exactamente {baseUrl} a modelTrustedBases del plugin.",
+    "El config.json del escritorio apunta a {ref}, pero ese proveedor o modelo ya no existe. Vuelve a seleccionar un modelo en el escritorio y recarga esta página.",
+    "Este host no puede verificar la propiedad POSIX de archivos (Windows): el archivo del escritorio se lee con la autorización de cuenta indicada, sin comprobación de uid.",
+    "Leyendo {path}.",
+    "No se pudo resolver la ruta de configuración del escritorio; comprueba que sharedDevaHome (o DEVA_HOME) sea una ruta absoluta.", "Activo ahora: {name}",
+    "El escritorio aún no tiene modelo predeterminado. Elige uno en el escritorio o introduce una URL base y un nombre de modelo abajo para añadir un proveedor.",
+  ],
+  de: [
+    "URL und Modell werden mit der Desktop-App geteilt. Beende sie vor dem Speichern und öffne sie danach erneut. API-Schlüssel werden getrennt eingerichtet.",
+    "Desktop-Standardmodell", "Chat Completions Anbieter hinzufügen", "Modelle pro Identität", "Desktop-Standard verwenden",
+    "Kein Desktop-Modell ausgewählt",
+    "Dieses Studio-Konto ist nicht Eigentümer der Desktop-Konfiguration: Ein Administrator muss sharedDevaUserId auf Konto {userId} setzen (aktuell {configured}), damit diese Seite {path} liest.",
+    "{baseUrl} ist eine lokale, private oder HTTP-Adresse, die Deva noch nicht direkt erreichen darf. Das Lesen der Desktop-Einstellungen ist nicht betroffen; um sie aus Studio zu nutzen, muss ein Administrator genau {baseUrl} in modelTrustedBases des Plugins eintragen.",
+    "Die Desktop-config.json verweist auf {ref}, aber dieser Anbieter oder dieses Modell existiert nicht mehr. Wähle im Desktop erneut ein Modell und lade diese Seite neu.",
+    "Dieser Host kann POSIX-Dateieigentum nicht prüfen (Windows): Die Desktop-Datei wird über die obige Kontofreigabe gelesen, nicht über eine uid-Prüfung.",
+    "{path} wird gelesen.",
+    "Der Pfad der Desktop-Konfiguration ließ sich nicht auflösen; prüfe, ob sharedDevaHome (oder DEVA_HOME) ein absoluter Pfad ist.", "Aktiv: {name}",
+    "Der Desktop hat noch kein Standardmodell. Wähle eines im Desktop oder trage unten Basis-URL und Modellnamen ein, um einen Anbieter hinzuzufügen.",
+  ],
+  pt: [
+    "O endereço e o modelo são compartilhados com o aplicativo de desktop. Feche-o antes de salvar aqui e reabra-o depois. Configure a chave de API separadamente em cada aplicativo.",
+    "Modelo padrão do desktop", "Adicionar provedor Chat Completions", "Modelos por identidade", "Usar padrão do desktop",
+    "Nenhum modelo do desktop selecionado",
+    "Esta conta do Studio não é a proprietária da configuração do desktop: um administrador precisa definir sharedDevaUserId na conta {userId} (atualmente {configured}) para esta página ler {path}.",
+    "{baseUrl} é um endereço local, de rede privada ou HTTP que o Deva ainda não pode acessar diretamente. A leitura das configurações não é afetada; para usar de fato no Studio, um administrador precisa adicionar exatamente {baseUrl} em modelTrustedBases do plugin.",
+    "O config.json do desktop aponta para {ref}, mas esse provedor ou modelo não existe mais. Selecione um modelo novamente no desktop e recarregue esta página.",
+    "Este host não consegue verificar a propriedade POSIX de arquivos (Windows): o arquivo do desktop é lido sob a autorização de conta acima, sem checagem de uid.",
+    "Lendo {path}.",
+    "Não foi possível resolver o caminho da configuração do desktop; verifique se sharedDevaHome (ou DEVA_HOME) é um caminho absoluto.", "Ativo agora: {name}",
+    "O desktop ainda não tem modelo padrão. Escolha um no desktop ou informe URL base e nome do modelo abaixo para adicionar um provedor.",
+  ],
+  ru: [
+    "Адрес и модель общие с настольным приложением. Закройте его перед сохранением и откройте снова после. Ключ API настраивается отдельно в каждом приложении.",
+    "Модель по умолчанию", "Добавить поставщика Chat Completions", "Модели идентичностей", "Использовать модель по умолчанию",
+    "Модель по умолчанию не выбрана",
+    "Эта учётная запись Studio не владеет конфигурацией настольного приложения: администратор должен задать sharedDevaUserId = {userId} (сейчас {configured}), чтобы страница читала {path}.",
+    "{baseUrl} — локальный, внутренний или HTTP-адрес, к которому Deva пока не может подключаться напрямую. Чтение настроек не затрагивается; чтобы реально использовать модель из Studio, администратор должен добавить именно {baseUrl} в modelTrustedBases плагина.",
+    "config.json настольного приложения указывает на {ref}, но такого поставщика или модели больше нет. Выберите модель заново в приложении и перезагрузите страницу.",
+    "Этот хост не может проверить POSIX-владельца файлов (Windows): файл читается по указанному выше разрешению учётной записи, без проверки uid.",
+    "Чтение {path}.",
+    "Не удалось определить путь конфигурации настольного приложения; проверьте, что sharedDevaHome (или DEVA_HOME) — абсолютный путь.", "Сейчас активно: {name}",
+    "В настольном приложении ещё нет модели по умолчанию. Выберите её там или укажите ниже базовый URL и имя модели, чтобы добавить поставщика.",
+  ],
+  ar: [
+    "عنوان URL والنموذج مشتركان مع تطبيق سطح المكتب. أغلقه قبل الحفظ ثم أعد فتحه. اضبط مفتاح API بشكل منفصل في كل تطبيق.",
+    "نموذج سطح المكتب الافتراضي", "إضافة موفر Chat Completions", "نماذج الهويات", "استخدام الإعداد الافتراضي",
+    "لم يُحدّد نموذج افتراضي",
+    "حساب Studio هذا ليس مالك إعدادات سطح المكتب: على المسؤول ضبط sharedDevaUserId على الحساب {userId} (حاليًا {configured}) لتتمكن هذه الصفحة من قراءة {path}.",
+    "{baseUrl} عنوان محلي أو شبكة خاصة أو HTTP ولا يمكن لـ Deva الاتصال به مباشرة بعد. قراءة إعدادات سطح المكتب غير متأثرة؛ لاستخدامه فعليًا من Studio يجب على المسؤول إضافة {baseUrl} تحديدًا إلى modelTrustedBases في إعدادات الإضافة.",
+    "يشير config.json في سطح المكتب إلى {ref}، لكن هذا الموفر أو النموذج لم يعد موجودًا. أعد اختيار نموذج في سطح المكتب ثم أعد تحميل هذه الصفحة.",
+    "لا يستطيع هذا المضيف التحقق من ملكية ملفات POSIX (Windows): يُقرأ ملف سطح المكتب وفق إذن الحساب أعلاه دون فحص uid.",
+    "جارٍ قراءة {path}.",
+    "تعذر تحديد مسار إعدادات سطح المكتب؛ تحقق من أن sharedDevaHome (أو DEVA_HOME) مسار مطلق.", "المستخدم الآن: {name}",
+    "لا يوجد نموذج افتراضي في سطح المكتب بعد. اختر واحدًا هناك أو أدخل العنوان الأساسي واسم النموذج أدناه لإضافة موفر.",
+  ],
+  tr: [
+    "Adres ve model masaüstü uygulamasıyla paylaşılır. Burada kaydetmeden önce masaüstü uygulamasını kapatıp ardından yeniden açın. API anahtarını her uygulamada ayrı ayarlayın.",
+    "Masaüstü varsayılan modeli", "Chat Completions sağlayıcısı ekle", "Kimliğe göre modeller", "Masaüstü varsayılanını kullan",
+    "Masaüstü modeli seçilmedi",
+    "Bu Studio hesabı masaüstü yapılandırmasının sahibi değil: bu sayfanın {path} okuması için yönetici sharedDevaUserId değerini {userId} hesabına ayarlamalı (şu an {configured}).",
+    "{baseUrl} yerel, özel ağ veya HTTP adresi olduğu için Deva henüz doğrudan bağlanamaz. Masaüstü ayarlarını okumak etkilenmez; Studio'dan gerçekten kullanmak için yönetici eklenti ayarındaki modelTrustedBases'e tam olarak {baseUrl} eklemeli.",
+    "Masaüstü config.json dosyası {ref} adresini gösteriyor ancak bu sağlayıcı veya model artık yok. Masaüstünde modeli yeniden seçip bu sayfayı yenileyin.",
+    "Bu ana makine POSIX dosya sahipliğini doğrulayamaz (Windows): masaüstü dosyası yukarıdaki hesap düzeyi yetkilendirmeyle okunur, uid denetimi yapılmaz.",
+    "{path} okunuyor.",
+    "Masaüstü yapılandırma yolu çözümlenemedi; sharedDevaHome (veya DEVA_HOME) mutlak bir yol mu kontrol edin.", "Şu anda etkin: {name}",
+    "Masaüstünde henüz varsayılan model yok. Orada bir tane seçin veya aşağıda temel URL ve model adı girerek sağlayıcı ekleyin.",
+  ],
 }
 
 /** 与 lib/model-selection.mjs 的 REASONING_EFFORTS 一致（前端不能引 node 模块）。 */
@@ -935,10 +1066,13 @@ export async function mount(root, ctx) {
 }
 
 async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLabel, configured, clearLabel, legacy, effortLabel, effortDefault],
-  [sharedHint, desktopLabel, newProvider, bindingsLabel, follow, notSelected, accessRequired, confirmNeeded]) {
+  [sharedHint, desktopLabel, newProvider, bindingsLabel, follow, notSelected, accessRequired, confirmNeeded,
+    unresolvedRef, unverifiableOwnership, reading, pathUnknown, activeNow, noDesktopModel]) {
+  // 桌面标签按位置索引太脆，这里一次命名：文案全部显式引用，漏配会立刻暴露成 undefined。
+  const modelCopy = { accessRequired, networkApproval: confirmNeeded, unresolvedRef, unverifiableOwnership, reading, pathUnknown, activeNow, noDesktopModel }
   const header = el('div', 'deva-header')
   const heading = el('div')
-  heading.append(el('p', '', sharedHint), el('p', '', confirmNeeded))
+  heading.append(el('p', '', sharedHint))
   header.append(heading)
   const card = el('div', 'deva-card')
   const body = el('div', 'deva-card-body deva-model-form')
@@ -981,6 +1115,10 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
   body.append(effortRow, effortProblem)
   problems.push([effort, effortProblem])
   const clear = field(clearLabel, 'checkbox')
+  // 桌面无法校验归属时（Windows）单独一行说明：不是安全断言，只让用户知道读的依据。
+  const ownership = el('p', 'deva-muted')
+  ownership.hidden = true
+  body.append(ownership)
   const fields = { baseUrl: address, modelName: name, apiKey: key, reasoningEffort: effort }
   const bindings = el('div', 'deva-card-body deva-model-form')
   let current
@@ -997,23 +1135,35 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
   container.append(header, card)
 
   const setBusy = busy => {
-    choose.disabled = address.disabled = name.disabled = key.disabled = effort.disabled = clear.disabled = save.disabled = busy || current?.desktopAccessRequired === true
+    // 未授权账号禁用写入（服务端也会拒绝），但不禁用整页：页面要能说清缺哪项配置。
+    const readOnly = current?.desktopAccessRequired === true || current?.desktopWriteRequired === true
+    choose.disabled = address.disabled = name.disabled = key.disabled = effort.disabled = clear.disabled = busy || readOnly
+    save.disabled = busy || readOnly
   }
-  /** 字段级错误：标在出错的输入项下方；传 null 清空。 */
+  /** 字段级错误：标在出错的输入项下方；传 null 清空。占位符必须填好再看，不能把 {baseUrl} 直接显示给用户。 */
+  const problemText = error => (error.code === 'confirmation-required'
+    ? label(confirmNeeded, { baseUrl: address.value.trim() || '（待填写）' })
+    : error.message)
   const setProblem = error => {
     for (const [input, problem] of problems) {
       const hit = Boolean(error) && fields[error.field === 'allowNonPublic' ? 'baseUrl' : error.field] === input
       problem.hidden = !hit
-      problem.textContent = hit ? (error.code === 'confirmation-required' ? confirmNeeded : error.message) : ''
+      problem.textContent = hit ? problemText(error) : ''
       input.ariaInvalid = hit ? 'true' : 'false'
     }
     if (!error) return
     status.className = 'deva-status error'
-    status.textContent = error.code === 'confirmation-required' ? confirmNeeded : error.message
+    status.textContent = problemText(error)
   }
   const setError = error => {
     status.className = 'deva-status error'
     status.textContent = errorText(error)
+  }
+  const label = (template, values) => format(template, values)
+  /** 下拉选项显示「provider 名 / 模型名」这类真实值，而不是把复合 id 直接丢给用户看。 */
+  const refTitle = model => {
+    const provider = model.providerName || model.providerId || ''
+    return provider && model.modelName ? `${provider} / ${model.modelName}` : model.ref
   }
   const show = settings => {
     current = settings
@@ -1026,9 +1176,10 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
       clear.checked = false
     }
     choose.innerHTML = ''
+    // 「未选择」只作为“新增提供方”的前提项存在；桌面确有选择时不会被选中，也就不会显示成未选择。
     option(choose, '', notSelected)
-    for (const model of models) option(choose, model.ref, `${model.ref} (${model.adapter})`)
-    const ref = settings.modelRef || ''
+    for (const model of models) option(choose, model.ref, refTitle(model))
+    const ref = settings.modelRef || settings.unresolvedModelRef || ''
     if (ref && !models.some(model => model.ref === ref)) option(choose, ref, ref)
     option(choose, custom, newProvider)
     choose.value = ref
@@ -1037,9 +1188,33 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
     effort.value = settings.reasoningEffort || ''
     setProblem(null)
     status.className = 'deva-status'
-    shared.hidden = !settings.sharedConfigPath
-    shared.textContent = settings.sharedConfigPath || ''
-    status.textContent = settings.desktopAccessRequired ? accessRequired : settings.needsNetworkApproval ? confirmNeeded : !ref ? (settings.legacyNeedsSetup ? legacy : notSelected) : ''
+    shared.hidden = !settings.desktopConfigPath
+    shared.textContent = settings.desktopConfigPath ? label(modelCopy.reading, { path: settings.desktopConfigPath }) : ''
+    // 每段提示只说一件事：未授权 / 批准 / 引用失效 / 桌面空态。不要把“读取桌面既有选择”判成授权失败。
+    if (settings.desktopAccessRequired) {
+      status.className = 'deva-status error'
+      status.textContent = label(modelCopy.accessRequired, {
+        userId: settings.desktopOwnerUserId || '?',
+        configured: settings.desktopOwnerUserId ? settings.desktopOwnerUserId : '未设置',
+        path: settings.desktopConfigPath || modelCopy.pathUnknown,
+      })
+    } else if (settings.needsNetworkApproval) {
+      status.textContent = label(modelCopy.networkApproval, { baseUrl: settings.baseUrl })
+    } else if (settings.unresolvedModelRef) {
+      status.className = 'deva-status error'
+      status.textContent = label(modelCopy.unresolvedRef, { ref: settings.unresolvedModelRef })
+    } else if (!ref) {
+      // 桌面确实没有默认模型时给空态说明；有模型清单却解析不出默认值，属于引用失效而不是“未选择”。
+      status.textContent = settings.legacyNeedsSetup ? legacy : (models.length ? notSelected : modelCopy.noDesktopModel)
+    } else {
+      // 读出真实生效项时，状态行给出「provider / 模型」，让用户一眼对上桌面的选择。
+      status.textContent = label(modelCopy.activeNow, { name: [settings.providerName, settings.modelName].filter(Boolean).join(' / ') || ref })
+    }
+    if (settings.desktopWriteRequired) status.textContent += ctx.locale?.startsWith('zh')
+      ? ' 只读模式；保存需管理员将 sharedDevaUserId 设为当前 Studio 账号 ID。'
+      : ' Read-only; saving requires the administrator to set sharedDevaUserId to your Studio account ID.'
+    ownership.hidden = settings.desktopOwnership !== 'unverifiable'
+    ownership.textContent = ownership.hidden ? '' : modelCopy.unverifiableOwnership
     bindings.innerHTML = ''
     if (settings.personaModels?.length) bindings.append(el('h3', '', bindingsLabel))
     for (const persona of settings.personaModels || []) {
@@ -1048,6 +1223,7 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
       option(model, '', follow)
       for (const item of models) option(model, item.ref, item.ref)
       if (persona.model && !models.some(item => item.ref === persona.model)) option(model, persona.model, persona.model)
+      model.disabled = settings.desktopWriteRequired === true
       model.value = persona.model
       model.onchange = async () => {
         model.disabled = true
@@ -1055,7 +1231,8 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
           const updated = await ctx.rpc.call('save-persona-model', { personaId: persona.id, modelRef: model.value })
           if (!ctx.signal?.aborted) show(updated)
         } catch (error) {
-          model.value = persona.model
+          model.disabled = settings.desktopWriteRequired === true
+      model.value = persona.model
           if (!ctx.signal?.aborted) setError(error)
         } finally { model.disabled = false }
       }

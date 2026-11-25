@@ -24,18 +24,27 @@ export class DevaIdentityError extends Error {
   }
 }
 
-const posix = typeof process.getuid === 'function'
+/** POSIX 归属能力在调用时判断：Windows 上没有 getuid，模块级缓存会让平台判定与运行期不一致。 */
+const hasPosixOwnership = () => typeof process.getuid === 'function'
 
-/** Deva 配置根：`sharedDevaHome` → `DEVA_HOME` → `~/.deva`；必须是绝对路径且不是主目录/根目录。 */
-export function resolveDevaRoot(config = {}) {
+/**
+ * Deva 配置根：`sharedDevaHome` → `DEVA_HOME` → `~/.deva`；必须是绝对路径且不是主目录/根目录。
+ * 同时返回来源，供 Windows 这类拿不到 POSIX 归属的平台判断「这个路径是谁给的」。
+ */
+export function resolveDevaRootSource(config = {}) {
   const configured = typeof config?.sharedDevaHome === 'string' ? config.sharedDevaHome.trim() : ''
-  const root = configured || process.env.DEVA_HOME?.trim() || join(homedir(), '.deva')
+  const fromEnv = process.env.DEVA_HOME?.trim() || ''
+  const root = configured || fromEnv || join(homedir(), '.deva')
   if (!isAbsolute(root)) throw new DevaIdentityError('DEVA_HOME_NOT_ABSOLUTE', `Deva 配置目录必须是绝对路径：${root}`)
   const path = resolve(root)
   if (path === dirname(path) || path === resolve(homedir())) {
     throw new DevaIdentityError('DEVA_HOME_TOO_BROAD', `Deva 配置目录不能是根目录或用户主目录：${path}`)
   }
-  return path
+  return { path, source: configured ? 'config' : fromEnv ? 'env' : 'home' }
+}
+
+export function resolveDevaRoot(config = {}) {
+  return resolveDevaRootSource(config).path
 }
 
 export function statOrNull(path) {
@@ -61,7 +70,7 @@ export function ensurePrivateDirectory(path) {
   }
   if (stat?.isSymbolicLink()) throw new DevaIdentityError('DEVA_DIR_SYMLINK', `Deva 目录不能是符号链接：${path}`, { path })
   if (!stat?.isDirectory()) throw new DevaIdentityError('DEVA_NOT_DIRECTORY', `Deva 路径不是目录：${path}`, { path })
-  if (!posix) return created
+  if (!hasPosixOwnership()) return created
   if (stat.uid !== process.getuid()) {
     throw new DevaIdentityError('DEVA_DIR_OWNER', `Deva 目录不属于当前进程用户（uid ${process.getuid()}）：${path}`, { path })
   }
@@ -86,11 +95,11 @@ export function readStrictText(path) {
   if (stat.isSymbolicLink()) throw new DevaIdentityError('DEVA_FILE_SYMLINK', `不能是符号链接：${path}`, { path })
   if (!stat.isFile()) throw new DevaIdentityError('DEVA_NOT_FILE', `不是普通文件：${path}`, { path })
   if (stat.nlink !== 1) throw new DevaIdentityError('DEVA_FILE_HARDLINK', `不能是硬链接：${path}`, { path })
-  if (posix && stat.uid !== process.getuid()) {
+  if (hasPosixOwnership() && stat.uid !== process.getuid()) {
     throw new DevaIdentityError('DEVA_FILE_OWNER', `文件不属于当前进程用户（uid ${process.getuid()}）：${path}`, { path })
   }
   let repaired = false
-  if (posix && (stat.mode & 0o077)) {
+  if (hasPosixOwnership() && (stat.mode & 0o077)) {
     try {
       chmodSync(path, 0o600)
       repaired = true
@@ -133,7 +142,7 @@ export function writeAtomic(path, content, { expectedRaw } = {}) {
         throw new DevaIdentityError('DEVA_CONCURRENT_WRITE', `文件在保存期间被其它进程修改，没有覆盖：${path}；请重新打开再保存`, { path })
       }
     }
-    if (posix) {
+    if (hasPosixOwnership()) {
       try { chmodSync(tmp, 0o600) } catch { /* 创建时已是 0600 */ }
     }
     renameSync(tmp, path)

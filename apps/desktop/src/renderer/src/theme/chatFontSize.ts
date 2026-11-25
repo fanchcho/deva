@@ -32,8 +32,8 @@ export function applyChatFontSize(size: ChatFontSize): void {
   else root.setAttribute('data-chat-fs', size)
 }
 
-/** 立即生效并落盘。 */
-export function saveChatFontSize(size: ChatFontSize): void {
+/** 先落盘，再生效；失败时保留旧显示并向调用方报错。 */
+export async function saveChatFontSize(size: ChatFontSize): Promise<void> {
+  await window.deva.config.set({ chatFontSize: size })
   applyChatFontSize(size)
-  void window.deva?.config?.set({ chatFontSize: size })
 }

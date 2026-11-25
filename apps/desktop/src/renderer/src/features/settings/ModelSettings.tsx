@@ -58,7 +58,9 @@ export function ModelSettings(): React.JSX.Element {
     removeProvider,
     hasKey,
     setApiKey,
-    secretsAvailable
+    secretsAvailable,
+    persistError,
+    retryPersist
   } = useModels()
 
   // 钻取导航：'list' 浏览服务商列表，'detail' 编辑单个服务商，'model' 编辑该服务商下的单个模型
@@ -71,7 +73,7 @@ export function ModelSettings(): React.JSX.Element {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [keyDraft, setKeyDraft] = useState('')
   // 密钥自动保存的状态指示（替代原「保存」按钮的反馈）
-  const [keySaveState, setKeySaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const [keySaveState, setKeySaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   // 输入防抖计时器：边打字边落盘，失焦/回车时立即冲刷
   const keyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [nameDraft, setNameDraft] = useState('')
@@ -123,12 +125,9 @@ export function ModelSettings(): React.JSX.Element {
 
   // 列表只呈现「在用」的服务商：已启用 / 已配密钥，以及全部自定义（用户自建，恒显以免新建后走丢）。
   // 其余官方对话预置藏进编辑页的「供应商」下拉。
-  // 决策模型（purpose==='decision'）当前整体隐藏：不进列表、也无新建入口，详情页因而不可达
-  //（view 每次挂载都从 'list' 起，不存在被持久化的选中项直接落进决策详情的情况）。
-  // 主进程运行时（services/decision.ts）与本文件的决策分支一并保留，
-  // 恢复时改回此处过滤 + 右上角「新增」按钮即可。
+  // 决策供应商恒显，即使还没启用或配置密钥，也能进入详情配置。
   const visibleProviders = providers.filter(
-    (p) => (p.purpose ?? 'llm') === 'llm' && (p.enabled || hasKey(p.id) || p.kind === 'custom')
+    (p) => p.purpose === 'decision' || p.enabled || hasKey(p.id) || p.kind === 'custom'
   )
 
   const renderProviderRow = (p: (typeof providers)[number]): React.JSX.Element => {
@@ -219,7 +218,7 @@ export function ModelSettings(): React.JSX.Element {
   }
 
   // 新建自定义服务商后直接进入其详情编辑（addCustomProvider 已把它设为选中项）。
-  // purpose 决定新建的是对话模型还是决策模型；决策模型隐藏期间只会以 'llm' 调用。
+  // purpose 决定新建的是对话模型还是决策模型。
   const onAddProvider = (purpose: ProviderPurpose): void => {
     addCustomProvider(
       purpose === 'decision' ? t('models.newDecisionName') : t('models.newProviderName'),
@@ -319,8 +318,12 @@ export function ModelSettings(): React.JSX.Element {
     const key = value.trim()
     if (!key) return
     setKeySaveState('saving')
-    const res = await setApiKey(providerId, key)
-    setKeySaveState(res.ok ? 'saved' : 'idle')
+    try {
+      const res = await setApiKey(providerId, key)
+      setKeySaveState(res.ok ? 'saved' : 'error')
+    } catch {
+      setKeySaveState('error')
+    }
   }
 
   // 输入变化：更新草稿并防抖自动保存（~600ms）
@@ -343,6 +346,12 @@ export function ModelSettings(): React.JSX.Element {
 
   return (
     <div className="models">
+      {persistError && (
+        <div role="alert" className="field__warn">
+          {t('models.persistFailed')}: {persistError}{' '}
+          <button type="button" className="btn" onClick={retryPersist}>{t('models.retryPersist')}</button>
+        </div>
+      )}
       {view === 'model' && selectedProvider && editingModel ? (
         <ModelDetail
           key={`${selectedProvider.id}:${editingModel.id}`}
@@ -356,8 +365,14 @@ export function ModelSettings(): React.JSX.Element {
         <>
           <div className="models__head">
             <h2 className="models__title">{t('models.providers')}</h2>
-            {/* 决策模型隐藏期间「新增」只剩一种结果，故去掉浮动菜单，点按直接新建对话模型 */}
             <div className="models__addwrap">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => onAddProvider('decision')}
+              >
+                {t('models.addDecisionModel')}
+              </button>
               <button
                 className="models__add-btn"
                 title={t('models.addProvider')}
@@ -508,6 +523,8 @@ export function ModelSettings(): React.JSX.Element {
                   <ShieldCheck size={12} />
                   {t('models.keySaved')}
                 </span>
+              ) : keySaveState === 'error' ? (
+                <span role="alert" className="field__warn">{t('models.keySaveFailed')}</span>
               ) : hasKey(selectedProvider.id) ? (
                 <span className="key-status">
                   <ShieldCheck size={12} />
@@ -584,6 +601,7 @@ export function ModelSettings(): React.JSX.Element {
                   step={0.05}
                   value={selectedProvider.threshold ?? 0.6}
                   onChange={(e) => {
+                    if (e.target.value === '') return
                     const n = Number(e.target.value)
                     updateProvider(selectedProvider.id, {
                       threshold: Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0.6

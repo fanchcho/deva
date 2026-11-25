@@ -9,6 +9,8 @@ import type { EffortLevel } from '../../../preload'
  */
 interface ModelsContextValue {
   providers: Provider[]
+  persistError: string | null
+  retryPersist: () => void
   selectedProviderId: string
   selectedProvider: Provider | undefined
   selectProvider: (id: string) => void
@@ -130,6 +132,8 @@ export function ModelsProvider({ children }: { children: ReactNode }): React.JSX
 
   // 配置载入完成前不回写，避免用默认种子覆盖已存 ~/.deva/config.json
   const [hydrated, setHydrated] = useState(false)
+  const [persistError, setPersistError] = useState<string | null>(null)
+  const [persistAttempt, setPersistAttempt] = useState(0)
 
   useEffect(() => {
     let alive = true
@@ -196,8 +200,14 @@ export function ModelsProvider({ children }: { children: ReactNode }): React.JSX
   useEffect(() => {
     if (!hydrated) return
     // models 段整块替换（config:set 只做顶层浅合并），新增的兄弟字段必须一并写，漏写即被清掉。
+    let alive = true
     void window.deva.config.set({ models: { providers, activeModelId, activeEffort } })
-  }, [hydrated, providers, activeModelId, activeEffort])
+      .then(() => { if (alive) setPersistError(null) })
+      .catch((error: unknown) => {
+        if (alive) setPersistError(error instanceof Error ? error.message : String(error))
+      })
+    return () => { alive = false }
+  }, [hydrated, providers, activeModelId, activeEffort, persistAttempt])
 
   const patchProvider = (id: string, fn: (p: Provider) => Provider): void =>
     setProviders((list) => list.map((p) => (p.id === id ? fn(p) : p)))
@@ -205,6 +215,8 @@ export function ModelsProvider({ children }: { children: ReactNode }): React.JSX
   const value = useMemo<ModelsContextValue>(
     () => ({
       providers,
+      persistError,
+      retryPersist: () => setPersistAttempt((n) => n + 1),
       selectedProviderId,
       selectedProvider: providers.find((p) => p.id === selectedProviderId),
       selectProvider: setSelectedProviderId,
@@ -331,7 +343,7 @@ export function ModelsProvider({ children }: { children: ReactNode }): React.JSX
       secretsAvailable,
       ready: hydrated
     }),
-    [providers, selectedProviderId, activeModelId, activeEffort, keyStatus, secretsAvailable, hydrated]
+    [providers, selectedProviderId, activeModelId, activeEffort, keyStatus, secretsAvailable, hydrated, persistError]
   )
 
   return <ModelsContext.Provider value={value}>{children}</ModelsContext.Provider>

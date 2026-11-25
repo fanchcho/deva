@@ -10,15 +10,16 @@
   "scripts": {
     "dev": "npm run build:mobile && electron-vite dev",
     "build": "electron-vite build && npm run build:mobile",
+    "build:package": "npm run build",
     "build:mobile": "vite build --config vite.mobile.config.ts",
     "start": "electron-vite preview",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "test": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./test/support/register.mjs --test test/*.test.mjs",
-    "build:win": "electron-vite build && electron-builder --win",
-    "build:mac": "electron-vite build && electron-builder --mac",
-    "build:linux": "electron-vite build && electron-builder --linux"
+    "build:win": "npm run build:package && electron-builder --win",
+    "build:mac": "npm run build:package && electron-builder --mac",
+    "build:linux": "npm run build:package && electron-builder --linux"
   },
   "dependencies": {
     "@electron-toolkit/utils": "^3.0.0",

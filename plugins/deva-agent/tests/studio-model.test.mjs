@@ -36,7 +36,7 @@ test('Desktop shares the route but not credentials across Profiles or users', as
   assert.deepEqual(core(await readModelSelection(active)), follow)
   assert.deepEqual(core(await saveModelSelection(active, { baseUrl, modelName, apiKey: key })), { baseUrl, modelName, hasApiKey: true, legacyNeedsSetup: false })
   assert.ok((await readCustomModel(scope())).apiKey === key)
-  assert.equal((await readModelSelection(scope(2))).desktopAccessRequired, true)
+  assert.equal((await readModelSelection(scope(2))).desktopWriteRequired, true)
   assert.deepEqual(core(await readModelSelection(scope(1, 'other'))), { ...follow, baseUrl, modelName })
   assert.equal((await saveModelSelection(active, { baseUrl, modelName: 'new' })).hasApiKey, true)
   assert.equal((await saveModelSelection(active, { baseUrl, modelName, apiKey: '' })).hasApiKey, false)
@@ -77,7 +77,8 @@ test('non-public and HTTP bases require exact administrator approval; old user c
   assert.equal(denied.baseUrl, a)
   await run.state.profile.namespace('1').set('modelNetworkConsent', { baseUrl: a })
   run.config.modelTrustedBases = []
-  await assert.rejects(turn(), /尚未确认放行/)
+  // 直连被拦时给出「哪个地址、为什么、到哪里批」，而不是只说“尚未确认放行”。
+  await assert.rejects(turn(), error => /Studio 管理员批准/.test(error.message) && error.message.includes(a) && /modelTrustedBases/.test(error.message))
   assert.equal(seen.length, 1)
 })
 
@@ -119,7 +120,7 @@ test('Desktop effort is shared, sent as reasoning_effort, and fails without fall
     assert.equal((await saveModelSelection(run, { ...route, reasoningEffort: 'low' })).reasoningEffort, 'low')
     assert.equal((await turn()).reasoning_effort, 'low')
     // 其他账号、其他 Profile 互不影响。
-    assert.equal((await readModelSelection(scope(2))).reasoningEffort, undefined)
+    assert.equal((await readModelSelection(scope(2))).reasoningEffort, 'low')
     assert.equal((await readModelSelection(scope(1, 'other'))).reasoningEffort, 'low')
 
     // 非法取值：字段级错误、不写入、不降级。
@@ -192,6 +193,9 @@ test('legacy route imports once; same provider is reused and credentials stay ou
   await mkdir(root, { mode: 0o700 })
   const provider = { id: 'legacy-mirror', apiHost: baseUrl, adapter: 'openai', enabled: true, models: [{ id: modelName, enabled: true }] }
   await writeFile(configFile, JSON.stringify({ models: { providers: [provider], activeModelId: null } }))
+  assert.equal((await readModelSelection(run)).modelRef, '')
+  assert.ok(await store.get('customModel'), 'read must not migrate')
+  await readCustomModel(run)
   const view = await readModelSelection(run)
   assert.equal(view.sharedConfigPath, configFile)
   assert.equal(view.modelRef, 'legacy-mirror:old')
@@ -199,7 +203,7 @@ test('legacy route imports once; same provider is reused and credentials stay ou
   assert.equal(await store.get('customModel'), undefined)
   assert.equal((await readCustomModel(run)).apiKey, apiKey)
   assert.equal((await readCustomModel(create(1, 'other'))).apiKey, '')
-  assert.equal((await readModelSelection(create(2))).desktopAccessRequired, true)
+  assert.equal((await readModelSelection(create(2))).desktopWriteRequired, true)
   const contents = await readFile(configFile, 'utf8')
   assert.equal(contents.includes(apiKey), false)
   assert.equal(JSON.stringify(view).includes(apiKey), false)
@@ -222,6 +226,8 @@ test('a conflicting old Profile choice stays selectable without overwriting Desk
   await writeFile(persona, content)
   const provider = { id: 'desk', apiHost: baseUrl, adapter: 'openai', enabled: true, models: [{ id: 'default:model', enabled: true }] }
   await writeFile(configFile, JSON.stringify({ models: { providers: [provider], activeModelId: 'desk:default:model' } }))
+  assert.equal((await readModelSelection(run)).desktopModels.length, 1)
+  await readCustomModel(run)
   const view = await readModelSelection(run)
   const old = view.desktopModels.find(item => item.modelName === 'old')
   assert.ok(old)

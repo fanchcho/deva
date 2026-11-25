@@ -15,7 +15,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { normalizeBaseUrl } from './custom-model-network.mjs'
-import { ensurePrivateDirectory, resolveDevaRoot, statOrNull, writeAtomic } from './deva-fs.mjs'
+import { ensurePrivateDirectory, resolveDevaRoot, resolveDevaRootSource, statOrNull, writeAtomic } from './deva-fs.mjs'
 import { readDevaConfig } from './persona-store.mjs'
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -29,14 +29,38 @@ export function readDesktopConfig(config = {}) {
   return readDevaConfig(config)
 }
 
-function checkDesktopRoot(config) {
-  if (typeof process.getuid !== 'function') throw new Error('共享桌面模型需要可校验 POSIX 文件归属的 Studio 主机')
-  const root = resolveDevaRoot(config)
-  const stat = statOrNull(root)
-  if (stat && (!stat.isDirectory() || stat.uid !== process.getuid() || (stat.mode & 0o022))) {
-    throw new Error('共享 Deva 配置目录必须是当前 OS 用户拥有的不可由其他用户写入的普通目录')
+/**
+ * 桌面配置根的归属审计。
+ *
+ * POSIX 主机上照旧严格校验：目录必须存在、是普通目录、属于当前进程用户、且组/其他不可写。
+ *
+ * Windows 等没有 `process.getuid` 的宿主上，Node 的 `mode` 是合成的（目录通常是 `0o40777`），
+ * 既不能用来判断归属，也不能用来判断他人可写。此时**不假装校验通过**，而是返回
+ * `ownership: 'unverifiable'` 让页面显式说明；真正的访问控制由 Studio 账号级授权
+ * （`sharedDevaUserId`）与管理员给的绝对路径承担。绝不因为校验不了就把目录当成别人的、直接拒读。
+ */
+export function desktopRootAudit(config = {}) {
+  const { path, source } = resolveDevaRootSource(config)
+  const stat = statOrNull(path)
+  if (typeof process.getuid === 'function') {
+    if (stat && (!stat.isDirectory() || stat.uid !== process.getuid() || (stat.mode & 0o022))) {
+      throw new Error('共享 Deva 配置目录必须是当前 OS 用户拥有的不可由其他用户写入的普通目录')
+    }
+    return { root: path, source, ownership: 'verified' }
   }
-  return root
+  if (stat && !stat.isDirectory()) throw new Error(`Deva 配置路径不是目录：${path}`)
+  return { root: path, source, ownership: 'unverifiable' }
+}
+
+function checkDesktopRoot(config) {
+  return desktopRootAudit(config).root
+}
+
+/** 路径位置与是否存在：只用于页面/自检核对「读的是不是桌面那一份」，不返回任何内容。 */
+export function desktopConfigLocation(config = {}) {
+  const { root, ownership, source } = desktopRootAudit(config)
+  const path = join(root, 'config.json')
+  return { path, exists: Boolean(statOrNull(path)), ownership, source }
 }
 
 function readModels(value) {

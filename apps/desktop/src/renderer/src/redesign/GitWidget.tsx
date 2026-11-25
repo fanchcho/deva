@@ -37,6 +37,7 @@ import { useDialog } from '../components/DialogProvider'
 import { useToast, type ToastOptions } from '../components/ToastProvider'
 import { Modal } from '../components/Modal'
 import { basename } from './shell-common'
+import { GitIdentityForm } from './GitIdentityForm'
 import { type CtxEntry, ContextMenu } from './ContextMenu'
 
 /* ─────────────────────────── Git 快捷面板（IDEA 式点击浮出） ───────────────────────────
@@ -617,6 +618,7 @@ function CommitModal({
   const [msg, setMsg] = useState('')
   const [gen, setGen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [identityNeeded, setIdentityNeeded] = useState(false)
   // 进行中的生成请求 id：停止生成 / 关闭提交框时据此中断。
   const genIdRef = useRef<string | null>(null)
   const msgRef = useRef<HTMLTextAreaElement>(null)
@@ -660,7 +662,7 @@ function CommitModal({
   }, [status])
 
   const hasConflicts = status.conflicts.length > 0
-  const canCommit = Boolean(msg.trim()) && changed > 0 && !hasConflicts && !busy && !gen
+  const canCommit = Boolean(msg.trim()) && changed > 0 && !hasConflicts && !busy && !gen && !identityNeeded
 
   const stopGenerate = (): void => {
     if (genIdRef.current) void window.deva.git.cancelCommitMessage(genIdRef.current)
@@ -722,6 +724,7 @@ function CommitModal({
         toast.show({ variant: 'success', message: t('cf.git.doneCommit') })
         onDone()
       } else {
+        if (cres.reason === 'identity-needed') setIdentityNeeded(true)
         toast.show(gitErrorToast(t, cres))
       }
     } catch {
@@ -752,6 +755,16 @@ function CommitModal({
         readOnly={gen}
         autoFocus
       />
+      {identityNeeded && (
+        <GitIdentityForm
+          root={root}
+          onSaved={() => setIdentityNeeded(false)}
+          onCancel={() => {
+            toast.show({ message: t('cf.git.identityCanceled') })
+            onClose()
+          }}
+        />
+      )}
       <div className="cf-commit__bar">
         {gen ? (
           <button type="button" className="btn btn--ghost" onClick={stopGenerate}>

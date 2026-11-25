@@ -34,7 +34,7 @@ function readConfigMode(): ThemeMode | null {
 interface ThemeContextValue {
   mode: ThemeMode
   resolved: ResolvedTheme
-  setMode: (mode: ThemeMode) => void
+  setMode: (mode: ThemeMode) => Promise<void>
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
@@ -77,10 +77,10 @@ export function ThemeProvider({ children }: { children: ReactNode }): React.JSX.
     void window.deva?.window.setOverlaySymbolColor(symbolColor)
   }, [resolved])
 
-  const setMode = (next: ThemeMode): void => {
+  const setMode = async (next: ThemeMode): Promise<void> => {
+    await window.deva.config.set({ theme: next })
     setModeState(next)
     // 主存 ~/.deva/config.json；localStorage 作为兜底缓存
-    void window.deva?.config?.set({ theme: next })
     try {
       localStorage.setItem(STORAGE_KEY, next)
     } catch {

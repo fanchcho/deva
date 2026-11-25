@@ -23,7 +23,7 @@ import {
   SIDEBAR_DEFAULT,
   clampSidebar,
   loadLayout,
-  saveLayout,
+  useSaveLayout,
   useViewport
 } from './resizable'
 import { clipName, IS_MAC, DEFAULT_PERSONA_ID, fill } from './shell-common'
@@ -121,12 +121,15 @@ export function ChatFirstShell(): React.JSX.Element {
   }, [sessionStates, currentSessionId, storedSessions, boundTaskSessions])
   // 左侧对话面板宽（可拖动）：存的是用户意图值，渲染时按窗口宽再夹取——窗口缩小时自动收窄、放大后复原。
   const viewport = useViewport()
+  const saveLayout = useSaveLayout()
   const trafficLights = useTrafficLights()
   const railW = trafficLights ? ICONRAIL_W_MAC : ICONRAIL_W
   const [sidebarW, setSidebarW] = useState(() => loadLayout().sidebarWidth ?? SIDEBAR_DEFAULT)
   const sidebarShown = clampSidebar(sidebarW, viewport.w, railW)
   const sidebarRef = useRef(sidebarShown)
   sidebarRef.current = sidebarShown
+  const saveSidebarWidth = (width?: number): void =>
+    saveLayout({ sidebarWidth: width }, (saved) => setSidebarW(saved.sidebarWidth ?? SIDEBAR_DEFAULT))
   // 收起会话列表：只有「对话」页能收起（角色页右侧只是资料卡，收起没意义；定时任务 / 机器人页本就占满）。
   // 收起状态记住（切页再回来、重启都保持）。收起时悬停「对话」图标，列表整块浮在对话区上方（peek），
   // 点会话即切过去（列表留着，可以接着点别的，鼠标离开才收回）——不用先展开就能换对话。
@@ -142,7 +145,7 @@ export function ChatFirstShell(): React.JSX.Element {
     clearPeekTimer()
     setPeek(false)
     setListCollapsed(next)
-    saveLayout({ sidebarCollapsed: next || undefined })
+    saveLayout({ sidebarCollapsed: next || undefined }, (saved) => setListCollapsed(saved.sidebarCollapsed ?? false))
   }
   // 浮出：停 0.2 秒才浮出（鼠标路过不弹）；离开图标与列表 0.15 秒才收回（从图标移到列表要穿过图标栏右侧
   // 约 9px 的空白；再长收回就显得拖沓。同「新建对话」悬停菜单的 0.14 秒）。
@@ -617,16 +620,16 @@ export function ChatFirstShell(): React.JSX.Element {
             onChange={(v) => {
               if (railTab === 'chats' && v < SIDEBAR_COLLAPSE_AT) {
                 // 收起后手柄卸下、不再走 onCommit：拖到下限前改过的宽度在这里落盘。
-                saveLayout({ sidebarWidth: sidebarRef.current })
+                saveSidebarWidth(sidebarRef.current)
                 setCollapsed(true)
                 return
               }
               setSidebarW(clampSidebar(v, window.innerWidth, railW))
             }}
-            onCommit={() => saveLayout({ sidebarWidth: sidebarRef.current })}
+            onCommit={() => saveSidebarWidth(sidebarRef.current)}
             onReset={() => {
               setSidebarW(SIDEBAR_DEFAULT)
-              saveLayout({ sidebarWidth: undefined })
+              saveSidebarWidth()
             }}
           />
         )}
@@ -776,7 +779,7 @@ export function ChatFirstShell(): React.JSX.Element {
           hideRunMode
           onClose={() => setEditTaskId(null)}
           onSubmit={async (input) => {
-            await updateTask({ id: editTask.id, ...input })
+            if (!await updateTask({ id: editTask.id, ...input })) return 'tasks.saveFailed'
             setEditTaskId(null)
             return null
           }}
