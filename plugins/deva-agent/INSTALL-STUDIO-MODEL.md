@@ -172,3 +172,7 @@ Windows 自检：安装 0.8.25，关闭重开 Studio 的 Deva 模型页；下拉
 打开模型页，先核对桌面默认模型下拉和读取诊断，再点「获取模型列表」。该按钮重新读取桌面配置；「刷新远端模型列表」才发起网络请求。无 Key 或远端失败仍可选择已有模型并保存。
 
 Windows 请比较桌面与 Studio 进程的 AI_UPPER_HOME / DEVA_HOME，以及运行账号的用户目录。若 Studio 在另一机器，默认 ~/.deva 指的是 Studio 服务器，无法读取 Windows 本地配置；必须使用在该设备运行的宿主或明确配置其可访问的 sharedDevaHome。核对页面 path、exists、stat、providerCount、modelCount；不存在、权限拒绝或 JSON 错误均按页面诊断处理，不要提交 secrets.json 或 API Key。桌面 Electron 的 safeStorage 密文不由插件解密。
+
+### 0.8.27 旧形态核对
+
+若看到“不兼容的桌面模型配置字段”，记录诊断中的字段路径及 config.json 绝对路径，不要删除原配置或只复制 API Key。当前桌面读取的是 models.providers[].models[]、apiHost 和 models.activeModelId；provider/model/defaultModel/baseUrl 等别名未获当前桌面迁移代码支持，因此明确拒绝猜测转换。若实际桌面版本能读取这些形态，需要对应版本的读取代码或不含密钥的配置结构样本来补兼容。

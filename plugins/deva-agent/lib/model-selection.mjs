@@ -187,7 +187,7 @@ export async function readModelSelection(run) {
   } catch (error) {
     return { baseUrl: '', modelName: '', hasApiKey: false, legacyNeedsSetup: false,
       desktopModels: [], personaModels: [], desktopWriteRequired: true,
-      desktopDiagnostics: diagnostic + '\n' + safeReadError(error) }
+      desktopDiagnostics: JSON.stringify({ ...JSON.parse(diagnostic), error: safeReadError(error) }, null, 2) }
   }
 }
 

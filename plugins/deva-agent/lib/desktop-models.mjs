@@ -1,3 +1,4 @@
+import { readModels } from './desktop-model-schema.mjs'
 /**
  * 桌面端模型配置（`~/.deva/config.json`）的只读视图与受控写入。
  *
@@ -63,13 +64,6 @@ export function desktopConfigLocation(config = {}) {
   return { path, exists: Boolean(statOrNull(path)), ownership, source }
 }
 
-function readModels(value) {
-  if (value.models != null && !object(value.models)) throw new Error('桌面 config.json 的 models 不是对象')
-  const models = value.models ?? {}
-  if (models.providers != null && !Array.isArray(models.providers)) throw new Error('桌面 config.json 的 models.providers 不是数组')
-  const providers = Array.isArray(models.providers) ? models.providers.filter(object) : []
-  return { models, providers }
-}
 
 function defaultRoute(models, providers, reference = models.activeModelId) {
   const separator = typeof reference === 'string' ? reference.indexOf(':') : -1
@@ -96,7 +90,7 @@ export function listDesktopModels(config = {}) {
       apiHost: String(item.apiHost || ''),
       adapter: String(item.adapter || ''),
       enabled: item.enabled !== false,
-      models: (Array.isArray(item.models) ? item.models : []).map(model => ({ id: String(model.id || ''), name: String(model.name || model.id || ''), enabled: model.enabled !== false })),
+      models: (Array.isArray(item.models) ? item.models : []).filter(model => object(model) && typeof model.id === 'string' && model.id).map(model => ({ id: String(model.id || ''), name: String(model.name || model.id || ''), enabled: model.enabled !== false })),
     })),
   }
 }

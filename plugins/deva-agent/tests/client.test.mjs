@@ -739,8 +739,19 @@ test('desktop discovery works without credentials and retains local choices on r
   const key = findAll(root, n => n.type === 'password')[0]
   key.value = 'fixture'; key.oninput()
   await fetch.onclick()
+  key.value = 'fixture'; key.oninput()
   await remote.onclick()
   assert.equal(select.hidden, false)
   assert.equal(select.children[0].value, 'local')
   assert.ok(findAll(root, n => /获取失败.*401/.test(n.textContent)).length)
+})
+
+test('desktop fetch refreshes default dropdown after the desktop file changes', async () => {
+  let id = 'old'
+  const root = await mountPage(fakeContext('zh', async () => ({ baseUrl: 'https://example.com/v1', modelRef: `p:${id}`, modelName: id, hasApiKey: false,
+    desktopModels: [{ ref: `p:${id}`, baseUrl: 'https://example.com/v1', modelName: id }] }), { view: 'model' }))
+  id = 'new'
+  await findAll(root, n => n.tag === 'button' && n.textContent === '获取模型列表')[0].onclick()
+  assert.equal(findAll(root, n => n.tag === 'select')[0].value, 'p:new')
+  assert.equal(findAll(root, n => n.tag === 'select' && n.size === 5)[0].children[0].value, 'new')
 })

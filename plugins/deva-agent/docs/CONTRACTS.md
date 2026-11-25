@@ -327,3 +327,11 @@ modelSettingsView.desktopWriteMessage 是可选拒绝提示，含当前调用账
 模型页和「获取模型列表」读取桌面 config.json，不依赖 API Key。另设「刷新远端模型列表」作为补充，失败保留桌面候选。modelSettingsView.desktopDiagnostics 为 JSON 文本，包含 path/source/exists/stat/providerCount/modelCount/error；计数未知为 null。credentialError 只说明凭据读取错误，不使桌面列表失效。设置页展示已配置但未启用的模型，运行时启用过滤保持不变。
 
 路径优先级：显式 sharedDevaHome、AI_UPPER_HOME、DEVA_HOME、默认 ~/.deva。当前仓库桌面 config.ts 只支持 DEVA_HOME；AI_UPPER_HOME 是插件兼容项，不能声称桌面此版本已支持。诊断明确标明 env 来源。secrets.json 继续由桌面 safeStorage 管理，插件不解密、不覆盖，不把其不可读视为 config 模型不存在；远端请求使用服务端可用凭据。
+
+## 0.8.27 已有配置形态核对
+
+读取标准来自桌面 `services/model-resolve.ts` 与 `store/models.tsx`：models.providers 数组、provider.apiHost、provider.models 数组及 models.activeModelId。模型 ID 按第一个冒号拆分引用；缺 purpose 视为 llm；设置页可展示未启用项。未设默认值时仍列出现有模型。
+
+在当前字段缺失时出现顶层 providers/provider/model/defaultModel、models.provider/model/defaultModel、provider.model/baseUrl/baseURL，或 providers/models 非数组，均显式报告不兼容字段路径并禁用写入，不自动猜测或迁移。当前桌面源码不提供这些别名迁移，不能将例子称为已经证实的历史版本格式。真正空配置仍是空态，不是结构错误。未知的桌面扩展字段继续保留，不作为别名覆盖现有标准字段。
+
+读取错误时 desktopDiagnostics 保持合法 JSON 文本，包含 path/exists/stat 和 error；无法解析的条数为 null。保存继续写原 config.json，不建立模型副本；回归验证顶层扩展、models 扩展、provider headers/threshold、model name/tags 等不丢失。

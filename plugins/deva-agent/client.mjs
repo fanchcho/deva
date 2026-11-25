@@ -1085,7 +1085,7 @@ export async function mount(root, ctx) {
 
 
 // The discovery panel stays inside the existing form; manual model entry remains available.
-function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syncPreview, setBusy, saveSelected }) {
+function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syncPreview, setBusy, saveSelected, reloadDesktop }) {
   const zh = pickLocale(ctx.locale).startsWith('zh')
   const copy = (cn, en) => zh ? cn : en
   body.append(el('h3', 'deva-section-title', copy('从供应商获取模型', 'Discover provider models')))
@@ -1185,7 +1185,7 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
     setBusy(true)
     try {
       const settings = await ctx.rpc.call('get-model-selection')
-      setDesktop(settings)
+      reloadDesktop(settings)
     } catch (error) { message.textContent = copy('读取桌面失败：', 'Desktop read failed: ') + errorText(error) }
     finally { setBusy(false) }
   }
@@ -1254,7 +1254,7 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
   body.append(el('h3', 'deva-section-title', keyLabel))
   const key = field(keyLabel, 'password', 4096)
   key.autocomplete = 'new-password'
-  const discovery = mountModelDiscovery(body, ctx, { address, key, name, choose, field, syncPreview: () => syncPreview(), setBusy: value => setBusy(value), saveSelected: () => save.onclick() })
+  const discovery = mountModelDiscovery(body, ctx, { address, key, name, choose, field, syncPreview: () => syncPreview(), setBusy: value => setBusy(value), saveSelected: () => save.onclick(), reloadDesktop: settings => show(settings) })
   // 档位值就是下发给上游的 reasoning_effort，原样显示；空值表示不发送。
   const effort = el('select', 'deva-select')
   for (const value of ['', ...REASONING_EFFORTS]) {
