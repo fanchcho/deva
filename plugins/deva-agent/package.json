@@ -1,0 +1,55 @@
+{
+  "name": "studio-plugin-deva",
+  "version": "0.8.15",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "ekko-studio plugins dev .",
+    "harness:check": "node scripts/plugin-harness.mjs check",
+    "test": "node --test tests/*.test.mjs",
+    "prepack": "npm run harness:check && npm test && npm run build --if-present && npm run harness:check"
+  },
+  "devDependencies": {
+    "@ekko-studio/plugin-sdk": "file:./sdk"
+  },
+  "description": "Deva project Agent for Ekko Studio with shared, editable desktop identities.",
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "plugin.json",
+    "plugin.harness.json",
+    "server.mjs",
+    "client.mjs",
+    "icon.png",
+    "lib/",
+    "identities/",
+    "contracts/",
+    "docs/",
+    "sdk/",
+    "scripts/",
+    "tests/",
+    "AGENTS.md",
+    "INSTALL.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sqfcyily/deva.git",
+    "directory": "plugins/deva-agent"
+  },
+  "homepage": "https://github.com/sqfcyily/deva/tree/feat/plugin-deva-agent/plugins/deva-agent",
+  "bugs": {
+    "url": "https://github.com/sqfcyily/deva/issues"
+  },
+  "keywords": [
+    "ekko-studio",
+    "hermes",
+    "agent",
+    "deva",
+    "coding",
+    "mcp"
+  ]
+}

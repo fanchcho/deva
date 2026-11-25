@@ -1,0 +1,1718 @@
+{
+  "schemaVersion": 1,
+  "description": "Deva 注册一个 Agent。身份内容在桌面 personas/*.md，默认选择、会话选择和启用排序在桌面 config.json。",
+  "models": {
+    "empty": {
+      "type": "null",
+      "description": "无参数请求；前端省略 RPC input 时宿主传入 null。"
+    },
+    "commandArgs": {
+      "type": "string",
+      "description": "斜杠命令后的原始参数字符串；不带参数时为空字符串。"
+    },
+    "modelSettingsInput": {
+      "type": "object",
+      "description": "更新模型设置。共享模式只共享路由；密钥始终属于当前用户与 Profile。apiKey 省略时同地址保留、换地址清除；显式空字符串清除。",
+      "properties": {
+        "baseUrl": {
+          "type": "string",
+          "description": "自定义 Chat Completions Base URL，空字符串表示跟随会话。",
+          "maxLength": 2048
+        },
+        "modelName": {
+          "type": "string",
+          "description": "用户手填模型名，空地址时应留空。",
+          "maxLength": 256
+        },
+        "apiKey": {
+          "type": "string",
+          "description": "仅服务端持久化和用于 Bearer 请求；不进入 RPC 输出。",
+          "maxLength": 4096
+        },
+        "allowNonPublic": {
+          "type": "boolean",
+          "description": "用户在模型页显式确认允许直连本次保存的这一个 Base URL（本机、内网或 HTTP）。省略或 false 表示未确认：仅公网 HTTPS 可保存，并清除此前的确认。"
+        },
+        "reasoningEffort": {
+          "type": "string",
+          "description": "模型强度，作为 Chat Completions 的 reasoning_effort 原样下发：minimal / low / medium / high / xhigh。空字符串表示不发送该参数；省略表示保留已保存的档位。其它取值返回字段级 error，不写入。",
+          "maxLength": 32
+        }
+      },
+      "required": [
+        "baseUrl",
+        "modelName"
+      ],
+      "additionalProperties": false
+    },
+    "modelSettingsView": {
+      "type": "object",
+      "description": "公开读回：不返回原始 API Key。",
+      "properties": {
+        "baseUrl": {
+          "type": "string",
+          "description": "自定义 Chat Completions Base URL，空字符串表示跟随会话。",
+          "maxLength": 2048
+        },
+        "modelName": {
+          "type": "string",
+          "description": "用户手填模型名，空地址时应留空。",
+          "maxLength": 256
+        },
+        "hasApiKey": {
+          "type": "boolean",
+          "description": "是否保存了当前地址的 API Key。"
+        },
+        "legacyNeedsSetup": {
+          "type": "boolean",
+          "description": "发现旧目录模型选择；需重新配置，本轮不使用旧值。"
+        },
+        "sharedConfigPath": {
+          "type": "string",
+          "description": "仅授权账号可见；Studio 进程解析的共享 config.json 绝对路径。"
+        },
+        "sharedNeedsSetup": {
+          "type": "boolean",
+          "description": "存在旧的私有直连配置；没有共享路由时旧地址仅用作迁移草稿，保存一次后移除。"
+        },
+        "allowNonPublic": {
+          "type": "boolean",
+          "description": "仅在当前用户 + Profile 已确认放行读回的这个 Base URL 时出现且为 true；未确认时省略。"
+        },
+        "reasoningEffort": {
+          "type": "string",
+          "description": "已保存的模型强度档位；未设置（不发送 reasoning_effort）时省略。",
+          "enum": ["minimal", "low", "medium", "high", "xhigh"]
+        },
+        "error": {
+          "type": "object",
+          "description": "仅在保存因输入被拒时出现：本次没有写入任何内容，其余字段是保存前已持久化的设置。",
+          "properties": {
+            "field": { "type": "string", "description": "需要用户修正的表单字段。", "enum": ["baseUrl", "modelName", "apiKey", "allowNonPublic", "reasoningEffort"] },
+            "code": { "type": "string", "description": "稳定错误码，供页面本地化。", "enum": ["base-url-required", "base-url-invalid", "confirmation-required", "model-name-invalid", "api-key-invalid", "api-key-misplaced", "reasoning-effort-invalid"] },
+            "message": { "type": "string", "description": "可直接展示的中文原因与下一步动作；不含密钥。", "minLength": 1, "maxLength": 4096 }
+          },
+          "required": ["field", "code", "message"],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "baseUrl",
+        "modelName",
+        "hasApiKey",
+        "legacyNeedsSetup"
+      ],
+      "additionalProperties": false
+    },
+    "customModel": {
+      "type": "object",
+      "description": "非共享模式或迁移前的宿主私有直连配置，也用于运行时校验。",
+      "properties": {
+        "baseUrl": {
+          "type": "string",
+          "description": "自定义 Chat Completions Base URL，空字符串表示跟随会话。",
+          "maxLength": 2048
+        },
+        "modelName": {
+          "type": "string",
+          "description": "用户手填模型名，空地址时应留空。",
+          "maxLength": 256
+        },
+        "apiKey": {
+          "type": "string",
+          "description": "仅服务端持久化和用于 Bearer 请求；不进入 RPC 输出。",
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "baseUrl",
+        "modelName",
+        "apiKey"
+      ],
+      "additionalProperties": false
+    },
+    "sharedModelRoute": {
+      "type": "object",
+      "description": "从桌面 provider 字段投影出的非敏感模型路由。",
+      "properties": {
+        "baseUrl": { "type": "string", "description": "规范化的 Chat Completions Base URL。", "minLength": 1, "maxLength": 2048 },
+        "modelName": { "type": "string", "description": "送往模型 API 的模型 ID。", "minLength": 1, "maxLength": 256 }
+      },
+      "required": ["baseUrl", "modelName"],
+      "additionalProperties": false
+    },
+    "sharedModelKey": {
+      "type": "object",
+      "description": "Studio 私有密钥，仅匹配当前规范 Base URL 时使用；不读写桌面 safeStorage 密文。",
+      "properties": {
+        "baseUrl": { "type": "string", "description": "规范化的 Chat Completions Base URL。", "minLength": 1, "maxLength": 2048 },
+        "apiKey": { "type": "string", "description": "仅 Studio 服务端使用的 Bearer 密钥。", "minLength": 1, "maxLength": 4096 }
+      },
+      "required": ["baseUrl", "apiKey"],
+      "additionalProperties": false
+    },
+    "modelNetworkConsent": {
+      "type": "object",
+      "description": "用户在模型页确认放行的唯一一个规范化 Base URL（本机、内网或 HTTP）；精确匹配，不是来源或路径前缀。",
+      "properties": {
+        "baseUrl": { "type": "string", "description": "规范化的 Chat Completions Base URL。", "minLength": 1, "maxLength": 2048 }
+      },
+      "required": ["baseUrl"],
+      "additionalProperties": false
+    },
+    "modelOptions": {
+      "type": "object",
+      "description": "直连模型的请求选项；目前只有模型强度。没有任何选项时整条记录删除。",
+      "properties": {
+        "reasoningEffort": { "type": "string", "description": "随每轮直连请求下发的 reasoning_effort。", "enum": ["minimal", "low", "medium", "high", "xhigh"] }
+      },
+      "required": ["reasoningEffort"],
+      "additionalProperties": false
+    },
+    "sharedDesktopProvider": {
+      "type": "object",
+      "description": "桌面 models.providers[] 下约定的共享 provider；其余桌面字段保留。",
+      "properties": {
+        "id": { "type": "string", "description": "桌面服务商或模型的稳定 ID。", "enum": ["deva-studio-shared"] },
+        "apiHost": { "type": "string", "description": "桌面字段：Base URL。", "maxLength": 2048 },
+        "adapter": { "type": "string", "description": "桌面协议适配器；共享仅支持 OpenAI Chat Completions。", "enum": ["openai"] },
+        "kind": { "type": "string", "description": "桌面服务商类型。", "enum": ["custom"] },
+        "purpose": { "type": "string", "description": "仅共享对话模型。", "enum": ["llm"] },
+        "enabled": { "type": "boolean", "description": "桌面服务商或模型的启用状态。" },
+        "models": {
+          "type": "array", "description": "该共享服务商的模型列表。",
+          "items": {
+            "type": "object",
+            "description": "桌面模型条目；额外字段原样保留。",
+            "properties": {
+              "id": { "type": "string", "description": "桌面服务商或模型的稳定 ID。", "minLength": 1 },
+              "enabled": { "type": "boolean", "description": "桌面服务商或模型的启用状态。" }
+            },
+            "required": ["id", "enabled"],
+            "additionalProperties": true
+          }
+        }
+      },
+      "required": ["id", "apiHost", "adapter", "enabled", "models"],
+      "additionalProperties": true
+    },
+    "desktopModelKey": {
+      "type": "object",
+      "description": "桌面 provider/model 的 Studio 私有密钥记录。",
+      "properties": {
+        "providerId": { "type": "string", "description": "provider id。", "maxLength": 128 },
+        "baseUrl": { "type": "string", "description": "绑定的 Base URL。", "maxLength": 2048 },
+        "apiKey": { "type": "string", "description": "密钥明文，仅服务端使用，不回传。", "maxLength": 4096 }
+      },
+      "required": ["providerId", "baseUrl", "apiKey"],
+      "additionalProperties": false
+    },
+    "modelMode": {
+      "type": "object",
+      "description": "模型来源模式。",
+      "properties": {
+        "mode": { "type": "string", "description": "desktop/custom/session。", "enum": ["desktop", "custom", "session"] }
+      },
+      "required": ["mode"],
+      "additionalProperties": false
+    },
+    "sessionIdentityView": {
+      "type": "object",
+      "description": "当前会话的 persona 选择视图。",
+      "properties": {
+        "sessionId": { "type": "string", "description": "Studio 会话 id；空串表示当前调用没有会话上下文。", "maxLength": 128 },
+        "identity": { "type": "string", "description": "会话使用/将使用的 persona id；无会话时为空串。", "maxLength": 64 },
+        "source": { "type": "string", "description": "来源：session=会话覆盖，default=默认选择，none=无会话。", "enum": ["session", "default", "none"] }
+      },
+      "required": ["sessionId", "identity", "source"],
+      "additionalProperties": false
+    },
+    "sessionIdentitySaved": {
+      "type": "object",
+      "description": "会话身份写入/清除结果。",
+      "properties": {
+        "ok": { "type": "boolean", "description": "仅在写入完成后 true。", "enum": [true] },
+        "sessionId": { "type": "string", "description": "Studio 会话 id。", "maxLength": 128 },
+        "identity": { "type": "string", "description": "写入后的 persona id（清除后为默认 id）。", "maxLength": 64 }
+      },
+      "required": ["ok", "sessionId", "identity"],
+      "additionalProperties": false
+    },
+    "personaId": {
+      "type": "object",
+      "description": "指定或返回桌面 persona 文件的稳定 id。",
+      "properties": {
+        "id": { "type": "string", "description": "文件名，不含 .md 扩展名；1–64 个 ASCII 安全字符。", "minLength": 1, "maxLength": 64 }
+      },
+      "required": ["id"],
+      "additionalProperties": false
+    },
+    "personaCreate": {
+      "type": "object",
+      "description": "创建新身份；随机 id 由服务端生成。名字和描述须为单行。",
+      "properties": {
+        "name": { "type": "string", "description": "显示名称；标准化后不可重名。", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "description": "单行说明；空串表示无描述。", "maxLength": 400 },
+        "prompt": { "type": "string", "description": "非空 Markdown 提示词正文。", "minLength": 1, "maxLength": 131072 }
+      },
+      "required": ["name", "description", "prompt"],
+      "additionalProperties": false
+    },
+    "personaEditor": {
+      "type": "object",
+      "description": "编辑的读回与提交形状。桌面专属元数据不进入编辑载荷；空正文的旧文件可打开编辑，但保存必须补正文。",
+      "properties": {
+        "id": { "type": "string", "description": "当前 persona 的稳定 id；编辑不改 id。", "minLength": 1, "maxLength": 64 },
+        "name": { "type": "string", "description": "显示名称。", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "description": "单行说明；空串表示无描述。", "maxLength": 400 },
+        "prompt": { "type": "string", "description": "Markdown 提示词正文。", "maxLength": 131072 },
+        "revision": { "type": "string", "description": "读入时整份 persona 文件的 SHA-256；文件变动时拒绝覆盖。", "minLength": 64, "maxLength": 64 }
+      },
+      "required": ["id", "name", "description", "prompt", "revision"],
+      "additionalProperties": false
+    },
+    "identityList": {
+      "type": "object",
+      "description": "桌面 `~/.deva/personas/*.md` 里的全部可选身份与当前默认选择（`config.json → personas.selected`）。",
+      "properties": {
+        "identities": {
+          "type": "array",
+          "description": "身份目录，顺序即设置页下拉与命令提示的顺序。",
+          "items": {
+            "type": "object",
+            "description": "一个可选身份。",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "身份 id，稳定不变，用于保存与回读。",
+                "maxLength": 64
+              },
+              "name": {
+                "type": "string",
+                "description": "显示名。",
+                "maxLength": 120
+              },
+              "description": {
+                "type": "string",
+                "description": "一句话说明这个身份适合什么任务。",
+                "maxLength": 400
+              },
+              "promptSha256": {
+                "type": "string",
+                "description": "身份正文（桌面 persona 文件正文）的 sha256，便于两端核对是否为同一份内容。",
+                "maxLength": 64
+              },
+              "avatar": {
+                "type": "string",
+                "description": "桌面 persona 的头像 spec（frontmatter avatar）；空串表示由桌面按 id 生成。",
+                "maxLength": 4096
+              },
+              "model": {
+                "type": "string",
+                "description": "桌面 persona 绑定的偏好模型 providerId:modelId；空串表示跟随默认。",
+                "maxLength": 256
+              },
+              "workspace": {
+                "type": "string",
+                "description": "桌面 persona 绑定的工作区绝对路径；空串表示默认工作区。",
+                "maxLength": 4096
+              },
+              "enabled": {
+                "type": "boolean",
+                "description": "桌面 personas.enabled 的启用位（桌面语义是多条叠加）。"
+              },
+              "hasPrompt": { "type": "boolean", "description": "有可运行提示词。空正文身份仍可编辑，不可设为默认或应用到会话。" },
+              "avatarImage": {
+                "type": "string",
+                "description": "自定义头像图片的 data URI（只读自 personas/avatars/<id>.<webp|png|jpg>）；空串表示没有自定义图片，前端回退首字母。",
+                "maxLength": 3000000
+              },
+              "avatarError": {
+                "type": "string",
+                "description": "头像文件被安全校验拒绝时的原因（仅供诊断；此时 avatarImage 为空并回退）。",
+                "maxLength": 400
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "description"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "selected": {
+          "type": "string",
+          "description": "身份文件里的默认身份 id；文件新建时先取宿主旧记录，再退回 deva。",
+          "maxLength": 64
+        },
+        "filePath": {
+          "type": "string",
+          "description": "插件写入的默认/会话身份所在的桌面 config.json 路径；正文在 personasDir。",
+          "maxLength": 4096
+        },
+        "personasDir": {
+          "type": "string",
+          "description": "身份正文目录（`<root>/personas`），与桌面端读写同一份 persona 文件。",
+          "maxLength": 4096
+        },
+        "created": {
+          "type": "boolean",
+          "description": "本次读取是否刚刚创建了身份选择文件（含 seed）。"
+        },
+        "migrated": {
+          "type": "boolean",
+          "description": "本次读取是否把旧 deva-agent 布局迁移成了桌面 config.json/mcp.json 并删除旧目录。"
+        },
+        "permissionRepaired": {
+          "type": "boolean",
+          "description": "本次读取是否把目录/文件权限收紧到 0700/0600。"
+        },
+        "canEdit": { "type": "boolean", "description": "当前 Studio 账号是否可读取编辑正文和增改共享身份。" }
+      },
+      "required": [
+        "identities",
+        "selected"
+      ],
+      "additionalProperties": false
+    },
+    "identityState": {
+      "type": "object",
+      "description": "命令执行后的身份状态：本轮生效的身份、来源与可选目录。",
+      "properties": {
+        "current": {
+          "type": "string",
+          "description": "当前生效的身份 id（会话覆盖优先于默认）。",
+          "maxLength": 64
+        },
+        "source": {
+          "type": "string",
+          "description": "生效来源：session 表示本会话覆盖，profile 表示用户/Profile 默认。",
+          "enum": [
+            "session",
+            "file"
+          ]
+        },
+        "identities": {
+          "type": "array",
+          "description": "可选身份目录。",
+          "items": {
+            "type": "object",
+            "description": "一个可选身份。",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "身份 id。",
+                "maxLength": 64
+              },
+              "name": {
+                "type": "string",
+                "description": "显示名。",
+                "maxLength": 120
+              },
+              "description": {
+                "type": "string",
+                "description": "一句话说明。",
+                "maxLength": 400
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "description"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "current",
+        "source",
+        "identities"
+      ],
+      "additionalProperties": false
+    },
+    "selection": {
+      "type": "object",
+      "description": "要保存的默认身份选择。",
+      "properties": {
+        "identity": {
+          "type": "string",
+          "description": "身份 id，必须是身份目录内的 id；未知 id 会被拒绝。",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "identity"
+      ],
+      "additionalProperties": false
+    },
+    "saved": {
+      "type": "object",
+      "description": "保存成功的结果。",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "仅在写入完成后返回 true；失败抛错。",
+          "enum": [
+            true
+          ]
+        },
+        "selected": {
+          "type": "string",
+          "description": "保存后的身份 id。",
+          "maxLength": 64
+        },
+        "filePath": {
+          "type": "string",
+          "description": "写盘的身份文件绝对路径，便于用户核对与备份。",
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "ok",
+        "selected"
+      ],
+      "additionalProperties": false
+    },
+    "studioMcpList": {
+      "type": "object",
+      "description": "插件自带（独立存储）的 MCP 服务清单与启用状态；与 Studio 自己的 MCP 列表互不影响。",
+      "properties": {
+        "servers": {
+          "type": "array",
+          "description": "插件管理的全部 MCP 服务（来自桌面 mcp.json 的 mcpServers）。",
+          "items": {
+            "type": "object",
+            "description": "插件自带的一个 MCP 服务（只含展示字段，不含连接配置与密钥）。",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "服务名，用作 MCP 工具命名空间。",
+                "maxLength": 64
+              },
+              "transport": {
+                "type": "string",
+                "description": "传输类型：stdio 或 http（Studio 的 streamable_http 统一显示为 http）；无法判断时为空字符串。",
+                "maxLength": 32
+              },
+              "managed": {
+                "type": "boolean",
+                "description": "保留字段；插件自带服务恒为 false。"
+              },
+              "enabled": {
+                "type": "boolean",
+                "description": "是否启用；停用的服务本轮不会连接。"
+              }
+            },
+            "required": [
+              "name",
+              "transport",
+              "managed",
+              "enabled"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 200
+        },
+        "selected": {
+          "type": "array",
+          "description": "当前启用（本轮会连接）的服务名。",
+          "items": {
+            "type": "string",
+            "description": "服务名。",
+            "maxLength": 64
+          },
+          "maxItems": 32
+        },
+        "migratedFromStudio": {
+          "type": "boolean",
+          "description": "本次读取是否把旧版「Studio MCP 勾选」迁移进了插件私有存储。"
+        }
+      },
+      "required": [
+        "servers",
+        "selected"
+      ],
+      "additionalProperties": false
+    },
+    "mcpSelection": {
+      "type": "object",
+      "description": "要保存的 Studio MCP 服务勾选（只存服务名，不存连接配置或密钥）。",
+      "properties": {
+        "servers": {
+          "type": "array",
+          "description": "勾选的服务名，最多 32 个；重名去重，非法名字整批拒绝。",
+          "items": {
+            "type": "string",
+            "description": "服务名：字母或数字开头，最多 64 位，可含点、下划线、连字符（与 Studio 规则一致）。",
+            "maxLength": 64
+          },
+          "maxItems": 32
+        }
+      },
+      "required": [
+        "servers"
+      ],
+      "additionalProperties": false
+    },
+    "mcpSaved": {
+      "type": "object",
+      "description": "保存成功后的 Studio MCP 勾选。",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "仅在写入完成后返回 true；失败抛错。",
+          "enum": [
+            true
+          ]
+        },
+        "selected": {
+          "type": "array",
+          "description": "实际写入的服务名（去重后）。",
+          "items": {
+            "type": "string",
+            "description": "服务名。",
+            "maxLength": 64
+          },
+          "maxItems": 32
+        }
+      },
+      "required": [
+        "ok",
+        "selected"
+      ],
+      "additionalProperties": false
+    },
+    "mcpConfig": {
+      "type": "object",
+      "description": "Studio MCP 服务的连接配置（由 Studio 规范化：stdio 需要 command，streamable_http 需要 http(s) url，enabled 为布尔）。",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "传输类型；只接受 stdio 或 streamable_http（http 视作 streamable_http）。",
+          "enum": [
+            "stdio",
+            "streamable_http"
+          ],
+          "maxLength": 32
+        },
+        "command": {
+          "type": "string",
+          "description": "stdio 的启动命令（可执行文件名或绝对路径）。",
+          "maxLength": 4096
+        },
+        "args": {
+          "type": "array",
+          "description": "stdio 命令参数，按顺序传入。",
+          "items": {
+            "type": "string",
+            "description": "一个命令行参数。",
+            "maxLength": 4096
+          },
+          "maxItems": 128
+        },
+        "env": {
+          "type": "object",
+          "description": "敏感键值：详情回传固定 __EKKO_SECRET_UNCHANGED__；保存时省略/掩码保留，字符串替换，null 显式清除。",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "url": {
+          "type": "string",
+          "description": "streamable_http 的服务地址，必须是 http 或 https。",
+          "maxLength": 4096
+        },
+        "headers": {
+          "type": "object",
+          "description": "敏感键值：详情回传固定 __EKKO_SECRET_UNCHANGED__；保存时省略/掩码保留，字符串替换，null 显式清除。",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "是否启用；停用的服务不会连接，也不能测试。"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "mcpServer": {
+      "type": "object",
+      "description": "Studio 里一个 MCP 服务的展示字段（不含连接配置与密钥）。",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "服务名，Studio 与插件都用它做工具命名空间。",
+          "maxLength": 64
+        },
+        "transport": {
+          "type": "string",
+          "description": "传输类型：stdio 或 http（Studio 的 streamable_http 统一显示为 http）。",
+          "maxLength": 32
+        },
+        "managed": {
+          "type": "boolean",
+          "description": "保留字段；插件自带服务恒为 false。"
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "是否启用；停用的服务本轮不会连接。"
+        }
+      },
+      "required": [
+        "name",
+        "transport",
+        "managed",
+        "enabled"
+      ],
+      "additionalProperties": false
+    },
+    "mcpServerDetail": {
+      "type": "object",
+      "description": "服务展示与掩码配置；任何 env/headers 值不回显。",
+      "properties": {
+        "server": {
+          "type": "object",
+          "description": "服务名、传输与启停状态。",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "服务名，Studio 与插件都用它做工具命名空间。",
+              "maxLength": 64
+            },
+            "transport": {
+              "type": "string",
+              "description": "传输类型：stdio 或 http（Studio 的 streamable_http 统一显示为 http）。",
+              "maxLength": 32
+            },
+            "managed": {
+              "type": "boolean",
+              "description": "保留字段；插件自带服务恒为 false。"
+            },
+            "enabled": {
+              "type": "boolean",
+              "description": "是否启用；停用的服务本轮不会连接。"
+            }
+          },
+          "required": [
+            "name",
+            "transport",
+            "managed",
+            "enabled"
+          ],
+          "additionalProperties": false
+        },
+        "config": {
+          "type": "object",
+          "description": "Studio MCP 服务的连接配置（由 Studio 规范化：stdio 需要 command，streamable_http 需要 http(s) url，enabled 为布尔）。",
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "传输类型；只接受 stdio 或 streamable_http（http 视作 streamable_http）。",
+              "enum": [
+                "stdio",
+                "streamable_http"
+              ],
+              "maxLength": 32
+            },
+            "command": {
+              "type": "string",
+              "description": "stdio 的启动命令（可执行文件名或绝对路径）。",
+              "maxLength": 4096
+            },
+            "args": {
+              "type": "array",
+              "description": "stdio 命令参数，按顺序传入。",
+              "items": {
+                "type": "string",
+                "description": "一个命令行参数。",
+                "maxLength": 4096
+              },
+              "maxItems": 128
+            },
+            "env": {
+              "type": "object",
+              "description": "敏感键值：详情回传固定 __EKKO_SECRET_UNCHANGED__；保存时省略/掩码保留，字符串替换，null 显式清除。",
+              "properties": {},
+              "required": [],
+              "additionalProperties": true
+            },
+            "url": {
+              "type": "string",
+              "description": "streamable_http 的服务地址，必须是 http 或 https。",
+              "maxLength": 4096
+            },
+            "headers": {
+              "type": "object",
+              "description": "敏感键值：详情回传固定 __EKKO_SECRET_UNCHANGED__；保存时省略/掩码保留，字符串替换，null 显式清除。",
+              "properties": {},
+              "required": [],
+              "additionalProperties": true
+            },
+            "enabled": {
+              "type": "boolean",
+              "description": "是否启用；停用的服务不会连接，也不能测试。"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "server",
+        "config"
+      ],
+      "additionalProperties": false
+    },
+    "mcpServerTarget": {
+      "type": "object",
+      "description": "按名字定位一个已有的 Studio MCP 服务。",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "服务名，必须与 Studio 里的名字完全一致（字母或数字开头，最多 64 位，可含点、下划线、连字符）。",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "mcpServerDraft": {
+      "type": "object",
+      "description": "要写入 Studio 的 MCP 服务：名字 + 完整连接配置。",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "服务名，Studio 里不能重名。",
+          "maxLength": 64
+        },
+        "config": {
+          "type": "object",
+          "description": "Studio MCP 服务的连接配置（由 Studio 规范化：stdio 需要 command，streamable_http 需要 http(s) url，enabled 为布尔）。",
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "传输类型；只接受 stdio 或 streamable_http（http 视作 streamable_http）。",
+              "enum": [
+                "stdio",
+                "streamable_http"
+              ],
+              "maxLength": 32
+            },
+            "command": {
+              "type": "string",
+              "description": "stdio 的启动命令（可执行文件名或绝对路径）。",
+              "maxLength": 4096
+            },
+            "args": {
+              "type": "array",
+              "description": "stdio 命令参数，按顺序传入。",
+              "items": {
+                "type": "string",
+                "description": "一个命令行参数。",
+                "maxLength": 4096
+              },
+              "maxItems": 128
+            },
+            "env": {
+              "type": "object",
+              "description": "敏感键值：详情回传固定 __EKKO_SECRET_UNCHANGED__；保存时省略/掩码保留，字符串替换，null 显式清除。",
+              "properties": {},
+              "required": [],
+              "additionalProperties": true
+            },
+            "url": {
+              "type": "string",
+              "description": "streamable_http 的服务地址，必须是 http 或 https。",
+              "maxLength": 4096
+            },
+            "headers": {
+              "type": "object",
+              "description": "敏感键值：详情回传固定 __EKKO_SECRET_UNCHANGED__；保存时省略/掩码保留，字符串替换，null 显式清除。",
+              "properties": {},
+              "required": [],
+              "additionalProperties": true
+            },
+            "enabled": {
+              "type": "boolean",
+              "description": "是否启用；停用的服务不会连接，也不能测试。"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "name",
+        "config"
+      ],
+      "additionalProperties": false
+    },
+    "mcpServerUpdate": {
+      "type": "object",
+      "description": "要覆盖的 MCP 服务：名字 + 新的完整连接配置（整体替换，不做字段级合并）。",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "服务名，必须已存在于 Studio。",
+          "maxLength": 64
+        },
+        "config": {
+          "type": "object",
+          "description": "Studio MCP 服务的连接配置（由 Studio 规范化：stdio 需要 command，streamable_http 需要 http(s) url，enabled 为布尔）。",
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "传输类型；只接受 stdio 或 streamable_http（http 视作 streamable_http）。",
+              "enum": [
+                "stdio",
+                "streamable_http"
+              ],
+              "maxLength": 32
+            },
+            "command": {
+              "type": "string",
+              "description": "stdio 的启动命令（可执行文件名或绝对路径）。",
+              "maxLength": 4096
+            },
+            "args": {
+              "type": "array",
+              "description": "stdio 命令参数，按顺序传入。",
+              "items": {
+                "type": "string",
+                "description": "一个命令行参数。",
+                "maxLength": 4096
+              },
+              "maxItems": 128
+            },
+            "env": {
+              "type": "object",
+              "description": "敏感键值：详情回传固定 __EKKO_SECRET_UNCHANGED__；保存时省略/掩码保留，字符串替换，null 显式清除。",
+              "properties": {},
+              "required": [],
+              "additionalProperties": true
+            },
+            "url": {
+              "type": "string",
+              "description": "streamable_http 的服务地址，必须是 http 或 https。",
+              "maxLength": 4096
+            },
+            "headers": {
+              "type": "object",
+              "description": "敏感键值：详情回传固定 __EKKO_SECRET_UNCHANGED__；保存时省略/掩码保留，字符串替换，null 显式清除。",
+              "properties": {},
+              "required": [],
+              "additionalProperties": true
+            },
+            "enabled": {
+              "type": "boolean",
+              "description": "是否启用；停用的服务不会连接，也不能测试。"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "name",
+        "config"
+      ],
+      "additionalProperties": false
+    },
+    "mcpServerEnabled": {
+      "type": "object",
+      "description": "启停一个 Studio MCP 服务。",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "服务名，必须已存在于 Studio。",
+          "maxLength": 64
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "true 启用，false 停用。"
+        }
+      },
+      "required": [
+        "name",
+        "enabled"
+      ],
+      "additionalProperties": false
+    },
+    "mcpServerSaved": {
+      "type": "object",
+      "description": "写入 Studio 后返回的规范化服务。",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "仅在 Studio 写入完成后返回 true；失败抛错。",
+          "enum": [
+            true
+          ]
+        },
+        "server": {
+          "type": "object",
+          "description": "Studio 里一个 MCP 服务的展示字段（不含连接配置与密钥）。",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "服务名，Studio 与插件都用它做工具命名空间。",
+              "maxLength": 64
+            },
+            "transport": {
+              "type": "string",
+              "description": "传输类型：stdio 或 http（Studio 的 streamable_http 统一显示为 http）。",
+              "maxLength": 32
+            },
+            "managed": {
+              "type": "boolean",
+              "description": "保留字段；插件自带服务恒为 false。"
+            },
+            "enabled": {
+              "type": "boolean",
+              "description": "是否启用；停用的服务本轮不会连接。"
+            }
+          },
+          "required": [
+            "name",
+            "transport",
+            "managed",
+            "enabled"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "ok",
+        "server"
+      ],
+      "additionalProperties": false
+    },
+    "mcpServerRemoved": {
+      "type": "object",
+      "description": "删除 Studio MCP 服务的结果。",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "仅在 Studio 删除完成后返回 true；失败抛错。",
+          "enum": [
+            true
+          ]
+        },
+        "name": {
+          "type": "string",
+          "description": "被删除的服务名。",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "ok",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "mcpTools": {
+      "type": "object",
+      "description": "Studio 实测连接的 MCP 服务工具清单。",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "仅在测试完成后返回 true；服务停用或连接失败时抛错。",
+          "enum": [
+            true
+          ]
+        },
+        "tools": {
+          "type": "array",
+          "description": "该服务暴露的工具。",
+          "items": {
+            "type": "object",
+            "description": "一个 MCP 工具。",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "工具名。",
+                "maxLength": 200
+              },
+              "description": {
+                "type": "string",
+                "description": "工具说明；服务没提供时为空字符串。",
+                "maxLength": 4000
+              }
+            },
+            "required": [
+              "name",
+              "description"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 1000
+        }
+      },
+      "required": [
+        "ok",
+        "tools"
+      ],
+      "additionalProperties": false
+    },
+    "memoryEntries": {
+      "type": "array",
+      "description": "记忆条目数组；不因旧数据超过新增额度而拒绝读取。",
+      "items": {
+        "type": "object",
+        "description": "v2 记忆；兼容 v1 content，扩展字段原样保留。",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "稳定条目 ID。"
+          },
+          "type": {
+            "type": "string",
+            "description": "记忆类型。",
+            "enum": [
+              "user",
+              "feedback",
+              "project",
+              "reference"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "description": "一句话标题；v1 从 content 派生。"
+          },
+          "body": {
+            "type": "string",
+            "description": "正文；v1 content 原文完整保留。"
+          },
+          "createdAt": {
+            "type": "number",
+            "description": "创建毫秒时间戳；缺省 0。"
+          },
+          "updatedAt": {
+            "type": "number",
+            "description": "更新时间；缺省 createdAt。"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "title",
+          "body",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": true
+      }
+    },
+    "todos": {
+      "type": "array",
+      "description": "当前会话待办完整清单。",
+      "items": {
+        "type": "object",
+        "description": "待办记录；未知字段保留。",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "任务说明。"
+          },
+          "status": {
+            "type": "string",
+            "description": "缺失时 pending。",
+            "enum": [
+              "pending",
+              "in_progress",
+              "completed"
+            ]
+          }
+        },
+        "required": [
+          "content",
+          "status"
+        ],
+        "additionalProperties": true
+      }
+    },
+    "subagentRecord": {
+      "type": "object",
+      "description": "可续聊子轮记录。",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "记录 ID。"
+        },
+        "agent": {
+          "type": "string",
+          "description": "类型，缺省 General。"
+        },
+        "description": {
+          "type": "string",
+          "description": "任务说明，缺省空。"
+        },
+        "system": {
+          "type": "string",
+          "description": "系统提示词，缺省空。"
+        },
+        "messages": {
+          "type": "array",
+          "description": "历史原顺序保留，不在迁移时删工具调用。",
+          "items": {
+            "type": "object",
+            "description": "子轮归一化消息；多模态及供应商扩展字段保留。",
+            "properties": {
+              "role": {
+                "type": "string",
+                "description": "角色。",
+                "enum": [
+                  "user",
+                  "assistant",
+                  "tool",
+                  "system"
+                ]
+              },
+              "text": {
+                "type": "string",
+                "description": "文本内容。"
+              }
+            },
+            "required": [
+              "role"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "缺省 0。"
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "缺省 createdAt。"
+        },
+        "checkpoint": {
+          "type": "object",
+          "description": "会话恢复 envelope；仅 schemaVersion=1，身份不匹配/损坏拒绝恢复。",
+          "properties": {
+            "schemaVersion": {
+              "type": "integer",
+              "description": "检查点格式版本。",
+              "enum": [
+                1
+              ]
+            },
+            "data": {
+              "type": "object",
+              "description": "不包含模型 token 或 MCP 配置。",
+              "properties": {
+                "owner": {
+                  "type": "object",
+                  "description": "宿主身份隔离。",
+                  "properties": {
+                    "userId": {
+                      "type": "integer",
+                      "description": "真实用户 ID。"
+                    },
+                    "profile": {
+                      "type": "string",
+                      "description": "Profile。"
+                    },
+                    "sessionId": {
+                      "type": "string",
+                      "description": "会话 ID。"
+                    },
+                    "agentId": {
+                      "type": "string",
+                      "description": "Agent ID。"
+                    }
+                  },
+                  "required": [
+                    "userId",
+                    "profile",
+                    "sessionId",
+                    "agentId"
+                  ],
+                  "additionalProperties": true
+                },
+                "active": {
+                  "type": "boolean",
+                  "description": "是否有未完成轮。"
+                },
+                "messages": {
+                  "type": "array",
+                  "description": "归一化历史，包含已完成结果。",
+                  "items": {
+                    "type": "object",
+                    "description": "子轮归一化消息；多模态及供应商扩展字段保留。",
+                    "properties": {
+                      "role": {
+                        "type": "string",
+                        "description": "角色。",
+                        "enum": [
+                          "user",
+                          "assistant",
+                          "tool",
+                          "system"
+                        ]
+                      },
+                      "text": {
+                        "type": "string",
+                        "description": "文本内容。"
+                      }
+                    },
+                    "required": [
+                      "role"
+                    ],
+                    "additionalProperties": true
+                  }
+                },
+                "calls": {
+                  "type": "object",
+                  "description": "callId -> key/status/text；写前日志，完成/失败保留，running 恢复为结果未知。",
+                  "properties": {},
+                  "required": [],
+                  "additionalProperties": true
+                },
+                "reply": {
+                  "type": "string",
+                  "description": "已累计回复，防止丢失完成文本。"
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "单会话单调递增版本，优先使用较新的已持久化检查点。"
+                }
+              },
+              "required": [
+                "owner",
+                "active",
+                "messages",
+                "calls",
+                "reply"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "data"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "id",
+        "agent",
+        "description",
+        "system",
+        "messages",
+        "createdAt",
+        "updatedAt"
+      ],
+      "additionalProperties": true
+    },
+    "subagents": {
+      "type": "object",
+      "description": "按子轮 ID 索引的存储；逐条额外以 subagentRecord 校验。",
+      "properties": {},
+      "required": [],
+      "additionalProperties": true
+    },
+    "attachmentLedger": {
+      "type": "object",
+      "description": "会话累计附件预算及首次访问时间，禁止重置过期时间。",
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "description": "记录版本。",
+          "enum": [
+            1
+          ]
+        },
+        "entries": {
+          "type": "object",
+          "description": "assetId 到首次时间与计费字节数；逐条校验。",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "entries"
+      ],
+      "additionalProperties": true
+    },
+    "attachmentEntry": {
+      "type": "object",
+      "description": "一项附件计费记录。",
+      "properties": {
+        "firstSeenAt": {
+          "type": "number",
+          "description": "首次成功解析 UTC 毫秒。"
+        },
+        "bytes": {
+          "type": "integer",
+          "description": "本会话为该 assetId 已计费的最大文件字节数。",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "firstSeenAt",
+        "bytes"
+      ],
+      "additionalProperties": true
+    },
+    "agentCheckpoint": {
+      "type": "object",
+      "description": "会话恢复 envelope；仅 schemaVersion=1，身份不匹配/损坏拒绝恢复。",
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "description": "检查点格式版本。",
+          "enum": [
+            1
+          ]
+        },
+        "data": {
+          "type": "object",
+          "description": "不包含模型 token 或 MCP 配置。",
+          "properties": {
+            "owner": {
+              "type": "object",
+              "description": "宿主身份隔离。",
+              "properties": {
+                "userId": {
+                  "type": "integer",
+                  "description": "真实用户 ID。"
+                },
+                "profile": {
+                  "type": "string",
+                  "description": "Profile。"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "description": "会话 ID。"
+                },
+                "agentId": {
+                  "type": "string",
+                  "description": "Agent ID。"
+                }
+              },
+              "required": [
+                "userId",
+                "profile",
+                "sessionId",
+                "agentId"
+              ],
+              "additionalProperties": true
+            },
+            "active": {
+              "type": "boolean",
+              "description": "是否有未完成轮。"
+            },
+            "messages": {
+              "type": "array",
+              "description": "归一化历史，包含已完成结果。",
+              "items": {
+                "type": "object",
+                "description": "子轮归一化消息；多模态及供应商扩展字段保留。",
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "description": "角色。",
+                    "enum": [
+                      "user",
+                      "assistant",
+                      "tool",
+                      "system"
+                    ]
+                  },
+                  "text": {
+                    "type": "string",
+                    "description": "文本内容。"
+                  }
+                },
+                "required": [
+                  "role"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "calls": {
+              "type": "object",
+              "description": "callId -> key/status/text；写前日志，完成/失败保留，running 恢复为结果未知。",
+              "properties": {},
+              "required": [],
+              "additionalProperties": true
+            },
+            "reply": {
+              "type": "string",
+              "description": "已累计回复，防止丢失完成文本。"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "单会话单调递增版本，优先使用较新的已持久化检查点。"
+            },
+            "inputKey": {
+              "type": "string",
+              "description": "原始归一化输入摘要，用于完成但未送达的恢复去重。"
+            },
+            "finishReason": {
+              "type": "string",
+              "description": "完成轮的原始结束原因。",
+              "enum": [
+                "stop",
+                "length",
+                "tool_limit"
+              ]
+            }
+          },
+          "required": [
+            "owner",
+            "active",
+            "messages",
+            "calls",
+            "reply"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "data"
+      ],
+      "additionalProperties": true
+    },
+    "checkpointCall": {
+      "type": "object",
+      "description": "单工具写前状态及结果。",
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "工具名与规范化参数 SHA256。"
+        },
+        "status": {
+          "type": "string",
+          "description": "pending 未执行，running 结果未知，completed/failed 已保存结果。",
+          "enum": [
+            "pending",
+            "running",
+            "completed",
+            "failed"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "description": "完整结果/失败说明；未知为空。"
+        }
+      },
+      "required": [
+        "key",
+        "status",
+        "text"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "rpc": {
+    "get-model-selection": {
+      "description": "读取当前用户/Profile 模型设置及密钥设置状态。",
+      "input": "empty",
+      "output": "modelSettingsView"
+    },
+    "save-model-selection": {
+      "description": "校验并保存自定义配置，或清除以跟随会话；只返回公开读回值。输入不合规时不写入，返回带 error 的读回值而不是抛错。",
+      "input": "modelSettingsInput",
+      "output": "modelSettingsView"
+    },
+    "get-identities": {
+      "description": "读取身份文件里的身份目录与默认选择；文件不存在时以插件内置身份 seed 创建（selected 先取宿主旧记录），文件损坏或权限异常时明确报错、不静默回退。",
+      "input": "empty",
+      "output": "identityList"
+    },
+    "get-persona-editor": {
+      "description": "授权 Deva 账号读取单个文件的可编辑字段和写入版本；不返回其它字段。",
+      "input": "personaId",
+      "output": "personaEditor"
+    },
+    "create-persona": {
+      "description": "授权 Deva 账号在桌面目录创建身份并登记到 order/enabled；不自动改变默认或会话选择。",
+      "input": "personaCreate",
+      "output": "personaId"
+    },
+    "update-persona": {
+      "description": "授权 Deva 账号按读入版本原子修改同一个文件，保留桌面专属字段；输入冲突或写入失败明确报错。",
+      "input": "personaEditor",
+      "output": "personaId"
+    },
+    "save-selection": {
+      "description": "把默认身份写进身份文件（原子写入，只改 selected），下一轮运行生效；宿主旧记录保留不删。",
+      "input": "selection",
+      "output": "saved"
+    },
+    "get-session-identity": {
+      "description": "读取当前会话的 persona 选择：宿主会话存储优先，其次 config.json → personas.sessionSelected；没有覆盖时返回默认身份。",
+      "input": "empty",
+      "output": "sessionIdentityView"
+    },
+    "save-session-identity": {
+      "description": "把 persona 选择写入当前会话（宿主会话存储 + config.json → personas.sessionSelected）；只影响该会话，不复制 persona 内容。",
+      "input": "selection",
+      "output": "sessionIdentitySaved"
+    },
+    "clear-session-identity": {
+      "description": "清除当前会话的 persona 覆盖，回落到默认选择。",
+      "input": "empty",
+      "output": "sessionIdentitySaved"
+    },
+    "get-mcp-servers": {
+      "description": "读取当前用户/Profile 可勾选的 MCP 服务：名称、传输、启用状态、工具数，以及已勾选的服务名。服务清单来自 Studio 自己的 MCP 管理（GET /api/ekko/mcp/servers）；宿主通道不可用或请求失败时抛错，不返回空表。",
+      "input": "empty",
+      "output": "studioMcpList"
+    },
+    "save-mcp-selection": {
+      "description": "保存当前用户/Profile 勾选的 Studio MCP 服务名；下一轮运行按这份清单取连接配置。只存名字，不存配置与密钥。",
+      "input": "mcpSelection",
+      "output": "mcpSaved"
+    },
+    "get-mcp-server": {
+      "description": "读取单个服务供编辑；env/headers 固定掩码，不回传密钥明文。",
+      "input": "mcpServerTarget",
+      "output": "mcpServerDetail"
+    },
+    "create-mcp-server": {
+      "description": "创建 Studio 服务；不接受无原值掩码，宿主错误按安全类别返回。",
+      "input": "mcpServerDraft",
+      "output": "mcpServerSaved"
+    },
+    "update-mcp-server": {
+      "description": "更新配置；env/headers 未传或掩码保留宿主原值，字符串替换，null 显式清除，不存占位符。",
+      "input": "mcpServerUpdate",
+      "output": "mcpServerSaved"
+    },
+    "set-mcp-server-enabled": {
+      "description": "在 Studio 里启用或停用 MCP 服务（PATCH /api/ekko/mcp/servers/:name {enabled}）。停用的服务本轮不连接。",
+      "input": "mcpServerEnabled",
+      "output": "mcpServerSaved"
+    },
+    "delete-mcp-server": {
+      "description": "从 Studio 删除 MCP 服务（DELETE /api/ekko/mcp/servers/:name）。插件只删 Studio 里的服务表项，不动自己的勾选记录；下一轮勾选里缺失的服务会在提示词里点名。",
+      "input": "mcpServerTarget",
+      "output": "mcpServerRemoved"
+    },
+    "test-mcp-server": {
+      "description": "让 Studio 连一次该 MCP 服务并列出工具（POST /api/ekko/mcp/servers/:name/test）。服务停用或连不上时抛错，不返回空表。",
+      "input": "mcpServerTarget",
+      "output": "mcpTools"
+    }
+  },
+  "tools": {},
+  "commands": {
+    "identity": {
+      "description": "在会话里查看或切换身份：无参数查看，传身份 id 切换（只影响本会话，可选值来自身份文件），传 default 清除会话覆盖。",
+      "input": "commandArgs",
+      "output": "identityState"
+    }
+  },
+  "actions": {},
+  "events": {},
+  "storage": {
+    "customModel": {
+      "description": "未开启共享时的私有配置；启用共享后仅作为迁移草稿，旧 model 不参与推理。",
+      "model": "customModel",
+      "version": 2,
+      "scope": "state.profile.namespace(String(run.identity.userId)).customModel"
+    },
+    "sharedModelKey": {
+      "description": "共享模式下，仅在 Studio 保存的密钥及主机绑定；不是路由配置源。",
+      "model": "sharedModelKey",
+      "version": 1,
+      "scope": "state.profile.namespace(String(run.identity.userId)).sharedModelKey"
+    },
+    "modelNetworkConsent": {
+      "description": "用户对本机/内网/HTTP Base URL 的显式确认；私有与共享模式通用，换地址或未勾选保存时删除。",
+      "model": "modelNetworkConsent",
+      "version": 1,
+      "scope": "state.profile.namespace(String(run.identity.userId)).modelNetworkConsent"
+    },
+    "modelOptions": {
+      "description": "模型页保存的模型强度；私有与共享模式通用，清空地址时删除。只存 Studio 侧，不写桌面 config.json。",
+      "model": "modelOptions",
+      "version": 1,
+      "scope": "state.profile.namespace(String(run.identity.userId)).modelOptions"
+    },
+    "desktopModelKey": {
+      "description": "桌面 provider/model 路由在 Studio 侧保存的密钥（按 providerId + baseUrl 绑定）；不写桌面 secrets.json。",
+      "model": "desktopModelKey",
+      "version": 1,
+      "scope": "state.profile.namespace(String(run.identity.userId)).desktopModelKey"
+    },
+    "modelMode": {
+      "description": "模型来源选择：desktop / custom / session；只存模式，不存密钥。",
+      "model": "modelMode",
+      "version": 1,
+      "scope": "state.profile.namespace(String(run.identity.userId)).modelMode"
+    },
+    "sharedDesktopProvider": {
+      "description": "共享模式的非敏感模型路由，唯一真源；使用桌面原生 schema。",
+      "model": "sharedDesktopProvider",
+      "version": 1,
+      "scope": "$DEVA_HOME/config.json:models.providers[id=deva-studio-shared]"
+    },
+    "identity": {
+      "description": "0.8.3 及更早的旧身份选择记录：只在身份文件第一次创建时作为 seed 参考并写入 legacyHostSelection，之后不再读取、不删除、不覆盖文件；会话级覆盖仍由宿主会话存储承载。",
+      "model": "selection",
+      "version": 1,
+      "scope": "namespace(String(run.identity.userId), run.identity.profile)"
+    },
+    "mcp": {
+      "description": "用户与 Profile 命名空间下勾选的 Studio MCP 服务名（只有名字，不含连接配置与密钥）；每轮运行时按名字去 Studio 取最新配置。",
+      "model": "mcpSelection",
+      "version": 1,
+      "scope": "namespace(String(run.identity.userId), run.identity.profile)"
+    },
+    "memory": {
+      "description": "memory 持久化契约；迁移只补缺省字段，保留全部未知字段，校验失败不覆盖旧数据。",
+      "model": "memoryEntries",
+      "version": 2,
+      "scope": "state.user.namespace(memory[, role, identityId | project, realpath hash]).entries"
+    },
+    "todos": {
+      "description": "todos 持久化契约；迁移只补缺省字段，保留全部未知字段，校验失败不覆盖旧数据。",
+      "model": "todos",
+      "version": 1,
+      "scope": "state.agentSession.todos"
+    },
+    "subagents": {
+      "description": "subagents 持久化契约；迁移只补缺省字段，保留全部未知字段，校验失败不覆盖旧数据。",
+      "model": "subagents",
+      "version": 1,
+      "scope": "state.agentSession.subagents"
+    },
+    "attachments": {
+      "description": "attachments 持久化契约；迁移只补缺省字段，保留全部未知字段，校验失败不覆盖旧数据。",
+      "model": "attachmentLedger",
+      "version": 1,
+      "scope": "state.agentSession.attachments"
+    },
+    "checkpoint": {
+      "description": "写前日志；每次副作用前写 running，完成后写结果，未知调用不重放。",
+      "model": "agentCheckpoint",
+      "version": 1,
+      "scope": "state.agentSession.checkpoint"
+    }
+  },
+  "checkpoints": {
+    "agent": {
+      "description": "宿主 resumeState 与 runtime.checkpoint 同一结构；跨身份拒绝。",
+      "model": "agentCheckpoint",
+      "version": 1,
+      "scope": "agent/user/profile/session"
+    }
+  }
+}

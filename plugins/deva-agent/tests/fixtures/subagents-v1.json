@@ -1,0 +1,33 @@
+{
+  "sub-abcd1234": {
+    "id": "sub-abcd1234",
+    "agent": "Explore",
+    "description": "中断的任务",
+    "system": "sys",
+    "messages": [
+      {
+        "role": "user",
+        "text": "开始"
+      },
+      {
+        "role": "assistant",
+        "text": "",
+        "toolCalls": [
+          {
+            "id": "t1",
+            "name": "grep",
+            "arguments": "{}"
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "toolCallId": "t1",
+        "name": "grep",
+        "text": "半截结果"
+      }
+    ],
+    "createdAt": 1,
+    "updatedAt": 1
+  }
+}
