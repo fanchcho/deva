@@ -17,6 +17,8 @@ import { registerWorkspaceIpc } from '@deva/main/services/workspace'
 import { registerSecretsIpc } from '@deva/main/services/secrets'
 import { registerProviderIpc } from '@deva/main/services/provider'
 import { registerChatIpc } from '@deva/main/services/chat'
+import { registerReadSyncIpc } from '@deva/main/services/read-sync'
+import { registerContextUsageIpc } from '@deva/main/services/context-usage'
 import { listSessions } from '@deva/main/services/chat-store'
 import { sweepCheckpoints } from '@deva/main/services/checkpoints'
 import { sweepSubagents } from '@deva/main/services/subagent-store'
@@ -94,6 +96,8 @@ export async function createBackend(options: BackendOptions): Promise<Backend> {
   step('secrets', () => registerSecretsIpc())
   step('provider', () => registerProviderIpc())
   step('chat', () => registerChatIpc(getWindow))
+  step('context usage', () => registerContextUsageIpc())
+  step('read sync', () => registerReadSyncIpc(getWindow))
   step('remote', () => registerRemoteIpc(getWindow))
 
   const ids = listSessions().map((m) => m.id)
