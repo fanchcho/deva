@@ -908,6 +908,24 @@ function format(template, values) {
  */
 const STYLE_ID = 'deva-agent-settings-style'
 const STYLES = `
+.deva-model-page{container-type:inline-size;gap:16px;box-sizing:border-box;width:100%;max-width:920px;margin-inline:auto;overflow-wrap:anywhere}
+.deva-model-page *{min-width:0;box-sizing:border-box}
+.deva-model-page .deva-header{display:block}
+.deva-model-page .deva-card{padding:16px}
+.deva-model-page .deva-model-form{gap:14px}
+.deva-model-page .deva-model-form label:not(.deva-check-row){display:flex;flex-direction:column;gap:7px}
+.deva-model-page .deva-select{min-width:0;width:100%;min-height:40px;height:auto;padding:9px 10px}
+.deva-model-page .deva-btn{min-height:40px;height:auto;padding:9px 14px;white-space:normal;overflow-wrap:anywhere;width:100%}
+.deva-model-page .deva-check-row{display:flex;align-items:center;gap:8px;min-height:36px}
+.deva-model-page .deva-section-title{margin:16px 0 0;padding-top:16px;border-top:1px solid var(--border-color,#e0e0e0);font-size:1em;font-weight:600}
+.deva-model-page .deva-value-preview{margin:0;color:var(--text-secondary,#666);font-size:12px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.deva-model-page .deva-status{white-space:pre-wrap;overflow-wrap:anywhere}
+.deva-model-page .deva-model-actions{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-top:12px}
+.deva-model-page :is(input,select,button):focus-visible{outline:2px solid var(--accent-primary,#333);outline-offset:2px}
+.deva-model-page [aria-invalid=true]{border-color:var(--error,#c62828)}
+@container (min-width:688px){.deva-model-page .deva-model-actions{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){.deva-settings.deva-model-page{padding:12px}.deva-model-page .deva-card{padding:12px}}
+
 .deva-settings{display:flex;flex-direction:column;padding:calc(20px * var(--spacing-scale,1));min-width:0;color:var(--text-primary,#1a1a1a);font-family:var(--font-family,inherit);font-size:var(--font-size-base,14px);line-height:var(--line-height,1.4)}
 .deva-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .deva-header h2{margin:0;font-size:calc(var(--font-size-base,14px) * 16 / 14);font-weight:600;color:var(--text-primary,#1a1a1a)}
@@ -1069,6 +1087,7 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
   [sharedHint, desktopLabel, newProvider, bindingsLabel, follow, notSelected, accessRequired, confirmNeeded,
     unresolvedRef, unverifiableOwnership, reading, pathUnknown, activeNow, noDesktopModel]) {
   // 桌面标签按位置索引太脆，这里一次命名：文案全部显式引用，漏配会立刻暴露成 undefined。
+  container.className += ' deva-model-page'
   const modelCopy = { accessRequired, networkApproval: confirmNeeded, unresolvedRef, unverifiableOwnership, reading, pathUnknown, activeNow, noDesktopModel }
   const header = el('div', 'deva-header')
   const heading = el('div')
@@ -1096,9 +1115,15 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
     problems.push([input, problem])
     return input
   }
+  const title = el('h2', '', desktopLabel)
+  heading.innerHTML = ''
+  heading.append(title, el('p', '', sharedHint))
+  body.append(el('h3', 'deva-section-title', addressLabel))
   const address = field(addressLabel, 'url', 2048)
   address.placeholder = 'https://api.example.com/v1'
+  body.append(el('h3', 'deva-section-title', nameLabel))
   const name = field(nameLabel, 'text', 256)
+  body.append(el('h3', 'deva-section-title', keyLabel))
   const key = field(keyLabel, 'password', 4096)
   key.autocomplete = 'new-password'
   // 档位值就是下发给上游的 reasoning_effort，原样显示；空值表示不发送。
@@ -1108,6 +1133,7 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
     option.value = value
     effort.append(option)
   }
+  body.append(el('h3', 'deva-section-title', effortLabel))
   const effortRow = el('label', '', effortLabel)
   effortRow.append(effort)
   const effortProblem = el('div', 'deva-field-error')
@@ -1130,8 +1156,23 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
   const custom = '__deva_new_provider__'
   const save = button(text.save, 'deva-btn primary')
   const status = el('div', 'deva-status')
-  body.append(save)
+  const cancel = button(pickLocale(ctx.locale).startsWith('zh') ? '取消' : 'Cancel')
+  cancel.hidden = true
+  const actions = el('div', 'deva-model-actions')
+  actions.append(save, cancel)
+  body.append(actions)
   card.append(body, status, bindings)
+  cancel.onclick = () => { if (current) { show(current); setBusy(false) } }
+  const preview = el('p', 'deva-value-preview')
+  preview.hidden = true
+  choiceRow.append(preview)
+  const syncPreview = () => {
+    preview.textContent = [address.value, name.value].filter(Boolean).join('\n')
+    preview.hidden = !preview.textContent
+    title.textContent = choose.value === custom ? newProvider : desktopLabel
+    cancel.hidden = choose.value !== custom
+  }
+  address.oninput = name.oninput = syncPreview
   container.append(header, card)
 
   const setBusy = busy => {
@@ -1139,6 +1180,7 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
     const readOnly = current?.desktopAccessRequired === true || current?.desktopWriteRequired === true
     choose.disabled = address.disabled = name.disabled = key.disabled = effort.disabled = clear.disabled = busy || readOnly
     save.disabled = busy || readOnly
+    cancel.disabled = busy
   }
   /** 字段级错误：标在出错的输入项下方；传 null 清空。占位符必须填好再看，不能把 {baseUrl} 直接显示给用户。 */
   const problemText = error => (error.code === 'confirmation-required'
@@ -1174,6 +1216,7 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
       key.value = ''
       key.placeholder = model?.ref === settings.modelRef && settings.hasApiKey ? configured : ''
       clear.checked = false
+      syncPreview()
     }
     choose.innerHTML = ''
     // 「未选择」只作为“新增提供方”的前提项存在；桌面确有选择时不会被选中，也就不会显示成未选择。

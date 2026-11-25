@@ -96,3 +96,13 @@ Remove-Item Env:STUDIO_API_TOKEN
 回滚仍使用官方 PATCH action=rollback 并带实时 revision，回到 previousVersion；或重装备份 0.8.21 包。回滚会恢复目录/运行授权断层；不要回滚桌面 config 或密钥。批准记录可由管理员从 modelTrustedBases 精确删除对应项，保留其他地址。
 
 验证限制：Windows 真接口、角色、7863 端口与 Key 状态未实测；本机真实 Studio 对话和受控 HTTP/SSE 夹具分开记录，后者不等于 Windows 代理已通。没有真实 UI 渲染截图。
+
+## 0.8.23：Studio 窄面板布局
+
+模型页沿用真实入口「桌面默认模型 → 新增 Chat Completions 提供方」，新增状态显示独立标题与取消操作。当前插件只支持该自定义 Chat Completions 表单：地址、单个模型名、Key、强度；没有宿主式供应商类型切换、独立供应商名称或批量模型增删编辑器，本次未新增这些数据能力。
+
+模型页限定单列、所有字段上置标签，控件和操作按钮最小 40px，窄面板按钮纵排，宽面板操作两列。地址/模型名提供可换行完整预览，目录路径及错误文本可任意断行；没有 overflow:hidden 遮挡内容。操作区保留在文档流，可滚动到达，不遮最后一个字段。深色主题、字号、焦点及禁用状态沿用宿主 token。客户端仍为自包含模块，兼容 Studio Blob 加载，不引入 UI 依赖。
+
+升级：通过官方插件安装接口/入口安装 0.8.23，无需重启 Studio；关闭重开 Deva 模型页，选择「新增 Chat Completions 提供方」，320–520px 面板应显示单列字段、40px 保存/取消按钮和可换行 URL/模型预览。填写地址和模型名，保存后应回显桌面选择；取消应恢复原选择而不写文件。Key 仍仅显示已设置状态，网络批准与运行解析不变。
+
+本机 Chromium 的 320/360/420/768 等价宽度截图和量测另存报告；harness 使用真实 client.mjs/样式与真实 readModelSelection/saveModelSelection，仅替换宿主 RPC 传输、账号存储和通知接口，并使用隔离 config。不是 Studio/Windows 真机验收。宿主面板宽度因无授权 Desktop 浏览器未知。回滚使用官方插件 rollback 或重装备份 0.8.22；不回滚用户 config。

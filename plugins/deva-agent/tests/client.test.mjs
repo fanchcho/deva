@@ -636,3 +636,19 @@ test('authorized desktop model remains saveable while network approval is pendin
   assert.equal(findAll(root, node => node.tag === 'button')[0].disabled, false)
   assert.match(findAll(root, node => node.textContent).map(node => node.textContent).join(' '), /modelTrustedBases/)
 })
+
+test('new provider cancel restores the desktop route without saving or exposing a key', async () => {
+  let saves = 0
+  const current = { baseUrl: 'https://example.com/v1', modelName: 'model', modelRef: 'p:model', hasApiKey: true, legacyNeedsSetup: false, desktopModels: [{ ref: 'p:model', baseUrl: 'https://example.com/v1', modelName: 'model' }] }
+  const root = await mountPage(fakeContext('zh', async name => { if (name !== 'get-model-selection') saves++; return current }, { view: 'model' }))
+  const choose = findAll(root, node => node.tag === 'select')[0]
+  choose.value = '__deva_new_provider__'
+  choose.onchange()
+  const cancel = findAll(root, node => node.tag === 'button' && node.textContent === '取消')[0]
+  assert.equal(cancel.hidden, false)
+  assert.equal(findAll(root, node => node.type === 'password')[0].value, '')
+  cancel.onclick()
+  assert.equal(choose.value, 'p:model')
+  assert.equal(cancel.hidden, true)
+  assert.equal(saves, 0)
+})
