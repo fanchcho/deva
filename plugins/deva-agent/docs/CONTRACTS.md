@@ -3,18 +3,18 @@
 宿主接口为 plugin API v1 与 Agent API v1。本插件注册一个 Agent、身份读写及会话选择 RPC、模型和 MCP RPC、三个 `agent-settings`
 页面（`identity` 身份页、`mcp` MCP 页、`model` 模型页）和一条 `identity` 命令；不注册插件级工具、动作、事件
 （Agent 自己的工具表见下文，不属于 `contracts/plugin.json#tools`）；业务数据写在两类地方：身份**内容**是桌面端自己的 `~/.deva/personas/<id>.md` + `config.json` 的
-`personas.*`（见[身份与 persona](#身份与-persona文件deva)）；默认/会话选择写桌面 `config.json → personas.selected/sessionSelected`；MCP 写 `<root>/mcp.json` + `config.json.mcp.enabled`；会话数据写 agent 会话存储（`todos`、`subagents`、附件预算与 checkpoint）。旧 `deva-agent/` 只做一次性迁移备份，不再创建。
+`personas.*`（见[身份与 persona](#身份与-persona文件deva)）；默认/会话选择写桌面 `config.json → personas.selected/sessionSelected`；Studio MCP 管理走宿主 API，Deva 勾选写当前用户/Profile 状态；会话数据写 agent 会话存储（`todos`、`subagents`、附件预算与 checkpoint）。旧 `deva-agent/` 只做一次性迁移备份，不再创建。
 `storage.identity` 只是 0.8.3 的旧记录，仅作 seed 参考。插件的 `configSchema` 定义附件、可选策略和仅管理员可改的自定义模型网络批准列表：
-MCP 连接配置只存插件自己的 0600 私有文件，与 Studio 的 MCP 列表互不影响。
+Studio MCP 连接配置保留在宿主，旧桌面 MCP 文件不迁入 Studio。
 
 ## 清单
 
 `plugin.json`：`id: deva`、`apiVersion: 1`、`server: server.mjs`、`client: client.mjs`、
-`permissions: ["agents", "ui", "commands", "browser.cdp", "api.read", "api.write", "compression"]`（技能通道读接口用 `api.read`、写接口用 `api.write`；插件自带 MCP 不再访问 Studio 服务表）、
-`views: [{id: identity, slot: agent-settings, icon: bot, order: 0}, {id: mcp, slot: agent-settings, icon: mcp, order: 1}, {id: model, slot: agent-settings, icon: bot, order: 2}]`
+`permissions: ["agents", "ui", "commands", "browser.cdp", "api.read", "api.write", "compression"]`（技能通道读接口用 `api.read`、写接口用 `api.write`；MCP 走 Studio API）、
+`views: [{id: identity, slot: agent-settings, icon: book, order: 0}, {id: mcp, slot: agent-settings, icon: mcp, order: 1}, {id: model, slot: agent-settings, icon: settings, order: 2}]`
 （同一个 client 入口按 `ctx.view` 分流，三个页面由宿主 Agent 设置侧栏自动排在一起），
-`navigation.main` 的 Deva 快捷入口指向同一身份页；`configSchema` 默认关闭审批与普通单聊摘要。`i18n` 覆盖 `PLUGIN_LOCALES` 全部
-12 种语言的名称、描述、三个页面标题与快捷入口。插件版本与 `package.json` 的 `version` 必须一致（harness 校验）。
+不注册 `navigation.main`；`configSchema` 默认关闭审批与普通单聊摘要。`i18n` 覆盖 `PLUGIN_LOCALES` 全部
+12 种语言的名称、描述和三个页面标题。插件版本与 `package.json` 的 `version` 必须一致（harness 校验）。
 
 ## Agent 注册
 
@@ -67,22 +67,18 @@ MCP 连接配置只存插件自己的 0600 私有文件，与 Studio 的 MCP 列
 
 ## 自定义模型 API（RPC、存储与推理）
 
-| RPC | 输入 | 输出 |
+| RPC | 输入 | 行为 |
 | --- | --- | --- |
-| `get-model-selection` | `null` | `{baseUrl,modelName,hasApiKey,legacyNeedsSetup,allowNonPublic?,reasoningEffort?}`；空地址表示跟随 |
-| `save-model-selection` | `{baseUrl,modelName,apiKey?,allowNonPublic?,reasoningEffort?}` | 同上；只返回公开字段。输入被拒时多一个 `error` |
+| `get-model-selection` | `null` | 桌面默认的 `modelRef`、地址、模型名、强度、已启用的候选模型及身份绑定；只回显 Studio 密钥是否已设置 |
+| `save-model-selection` | `{modelRef?,baseUrl,modelName,apiKey?,reasoningEffort?}` | 选择已有的桌面模型，更新所选提供方，或以空 ref 新建独立提供方；地址和模型名均为空可清除默认引用。输入被拒时返回字段级 `error` |
+| `save-persona-model` | `{personaId,modelRef}` | 只改身份文件的 `model`，空 ref 删除覆盖；读回同模型页 |
 
-- 模型强度 `reasoningEffort`：`minimal / low / medium / high / xhigh`，保存在 `modelOptions = {reasoningEffort}`（与路由同在 `state.profile.namespace(String(userId))`，私有与共享模式通用，不写桌面 `config.json`）。直连请求体原样带 `reasoning_effort`；未设置时不带该字段。输入空字符串清除、省略保留已保存值、清空地址一并清除；默认即未设置，读回时省略。其它取值返回 `error.field="reasoningEffort"`，不写入、不降级。上游以 400/422 拒绝时该轮失败，错误里带状态码、参数值和「到模型页改档位」的指引，不去掉参数重试。宿主代理通道（未配置直连）的请求体不受影响。
-- Agent 运行模式：`scoped`（用 Studio 会话选的模型；配置了直连则直连，会话选模栏不变）与 `global`（Agent 自带模型，只用模型页的直连配置）。`global` 的模型目录只有已配置的那一个模型（固定 id `deva-direct`，显示名与 `resolvedModel` 为模型名）并声明上述档位，不含地址与密钥；每轮实际使用模型页当前保存的地址与模型名，改名后旧会话照常可用；未配置时目录为 `empty`、运行直接报错说明去模型页配置，不回退。`global` 会话里显式选的档位优先于模型页默认；`scoped` 会话的档位属于 Studio 模型，不用于直连。
-
-- 默认只允许公网 HTTPS。`http://`、字面本机/内网 IP 的 Base URL 需要输入里带 `allowNonPublic:true`（模型页的确认勾选）；确认写入 `modelNetworkConsent = {baseUrl}`，与路由同在 `state.profile.namespace(String(userId))`，私有与共享模式通用。只精确匹配这一个规范化 Base URL：不是来源、通配或路径前缀；换地址、未勾选保存或清空地址都会删除它。读回仅在「已确认的地址 == 当前地址」时带 `allowNonPublic:true`，否则省略该字段（默认即未确认）。管理员配置 `modelTrustedBases` 仍可为所有账号预先放行，二者取并集。已确认/已放行的地址跳过公网解析检查，但仍固定本次 DNS 结果、不跟随重定向，非 2xx 与非 SSE 直接报错不回退。
-- 输入不合规（地址为空却填了模型名/密钥、URL 非法、未确认的非公网地址、模型名非法、密钥格式不对或填错位置）时**不写入、不抛异常**：返回保存前的读回值加 `error:{field,code,message}`，`field` 取 `baseUrl|modelName|apiKey|allowNonPublic`，`message` 是可直接展示的中文原因与下一步。宿主把插件异常一律包装成 HTTP 500，所以只有存储/共享文件故障这类非输入问题才抛错。运行期（共享文件被改到未确认的非公网地址等）仍按轮失败并给出同样的指引，不回退到会话模型。
-- 兼容：0.8.8 及更早没有 `modelNetworkConsent`，视为未确认；此前靠 `modelTrustedBases` 放行的地址行为不变。回滚到旧版时该键被旧版忽略。
-
-- 缺省保持 Studio `user + Profile` 私有模型配置。管理员将 `sharedDevaUserId` 设为指定账号后，仅该账号共享：配置目录优先取 `sharedDevaHome`（绝对路径）、再取进程 `DEVA_HOME`（绝对路径）、否则取 `os.homedir()/.deva`。读回仅增加提示用的 `sharedConfigPath` 与 `sharedNeedsSetup`，不回显密钥。启用共享时，所指目录应由 Studio 和桌面端在同一文件系统以同一 OS 用户访问。
-- 共享路由唯一真源是桌面 `config.json → models.providers[id=deva-studio-shared]`；`apiHost` 是 Base URL，协议固定 `openai`，只读启用的对话模型：若桌面 `activeModelId` 指向这个 provider 的启用模型则用它，否则用该 provider 的第一个启用模型。Studio 保存会将指定模型放到该 provider 首位；仅当 Desktop 默认已指向该 provider 才更新默认引用。清空地址停用该 provider（不删除模型清单或桌面密钥）；下一轮跟随会话。Studio 每轮重读，Desktop 需完整退出再读取外部写入。
-- 页面与 RPC 都不列举桌面 provider、不返回 `desktop`、`activeModelId` 或 `mode`，也不接受 `providerId` / `modelId`。未配置的 Studio 默认跟随会话，不自动采用桌面默认。已显式保存的旧 `modelMode=desktop` 仍可在后台读取一个路由，缺失/空/非字符串默认 ID 不选中任何路由；手填保存后切换为 `custom`，清空切换为 `session`。未指定共享账号时，如果桌面 `config.json` 已存在，仍可镜像手填值到 `deva-studio-shared`，不改变其它 provider 的桌面默认；Studio 的路由在该模式仍以自身已保存配置为准。指定共享账号后，非授权账号只读写私有设置。
-- `customModel` 私有路由在共享模式仅作迁移草稿；首次确认保存可保留同地址密钥并删除原路由记录和无效旧 `model` ID。`sharedModelKey` 保存 Studio 私有 `{baseUrl,apiKey}`，仅匹配规范地址时使用；省略时同地址保留，显式 `apiKey:""` 清除。桌面 `secrets.json` 密文不可互通；只在 Studio 修改 base 时检查对应密文条目是否存在，防止误把桌面旧钥发到新地址；不会读取明文、解密或写入桌面库。
+- 管理员显式指定 `sharedDevaUserId`，只有该账号可访问桌面模型；未授权只显示提示，不读取旧私有路由。路径依次为 `sharedDevaHome`、Studio 进程的 `DEVA_HOME`、`~/.deva`。共享目录和文件必须同 OS 用户、同文件系统，保留 POSIX 归属、安全文件类型和写前原文比对。两端不跨机器自动传输配置。
+- 桌面唯一真源：`config.json.models.providers[].{adapter,apiHost,models[]}`、`activeModelId`、`activeEffort`；模型引用按首个冒号拆开。`personas/*.md` 的有效绑定优先于桌面默认。未选中时不造默认；`scoped` 可跟随 Studio 会话，`global` 无路线时报错。已有明确选择但适配器不是 OpenAI Chat Completions 或无明确地址时，Studio 推理报错，不冒用其它协议。桌面不修改运行中快照，外部保存前请退出桌面 Deva、保存后重新打开。
+- 迁移只对授权账号发生：匹配同地址＋模型的 Desktop provider 时重用；否则导入一个独立提供方。已有有效桌面默认不覆盖，旧选择保留在候选项里；没有有效默认才采用可迁移旧值。迁移成功后删除原私有路由；需要批准的新增地址未经允许时明确报错并保留旧记录。只有旧 Studio 目录 ID、没有可解释的路由时提示重新选择。
+- API Key 存 Studio 服务端用户 + Profile，按 providerId 与规范化 Base URL 绑定；不写 Desktop 配置，不读/解密 Electron safeStorage 明文。省略保留，空串清除；已存在桌面凭据的 provider 更换 URL 被拒。修改环境复用同一 Desktop 路径时，不把旧地址 Key 带到新地址。
+- 本机、内网与 HTTP 只有在管理员精确配置 `modelTrustedBases` 时允许直连。旧 `allowNonPublic` 输入与 `modelNetworkConsent` 不会授予网络权限。DNS 固定、出站不继承重定向；错误状态、非 SSE 或连接失败不回退。新版强度 `low/medium/high/xhigh/max` 写桌面 `activeEffort`，默认不发送；旧版专有 `minimal` 不改写成其他档位。
+- `global` 模型目录保留稳定 ID `deva-direct`；有配置才返回，目录不含 Base URL 或 Key。会话显式强度仍优先于默认，直连被上游拒绝时不移除参数偷偷重试。
 
 ## 会话内切换的两种文本入口
 
@@ -127,8 +123,8 @@ MCP 连接配置只存插件自己的 0600 私有文件，与 Studio 的 MCP 列
 规则：旧 `deva-agent/` 整目录备份到 `~/.deva-backups/` 后迁移并删除；插件不创建任何新的 `.deva` 顶层条目；
 `config.json` 顶层浅合并、段内未知键保留；persona 正文只读写唯一文件、不复制；损坏/权限异常明确报错。
 
-宿主的设置 action 与 `navigation.main` 快捷入口 `plugin:deva/identity` 共用 `agent-settings` 身份页；
-顶部返回链接及三页侧栏由宿主渲染。会话 Agent ID 不变。
+宿主的设置 action 打开 `agent-settings` 身份页；三页侧栏及返回入口由宿主渲染。
+不依赖独立导航注册，也不改用户保存的导航偏好；会话 Agent ID 不变。
 新增/编辑按真实调用账号校验：`sharedDevaUserId`（配置时）否则宿主激活插件的账号。
 显示名按 NFKC / 不区分大小写判重，保留原显示文本；名称/描述拒绝换行和控制字符，
 不接受手填 id。新 id 与桌面相同：最多 40 字符的 ASCII slug（无则 `persona`）+ 8 位随机 hex。
@@ -218,32 +214,20 @@ MCP 连接配置只存插件自己的 0600 私有文件，与 Studio 的 MCP 列
 | `run_subagent` / `send_to_subagent` | 复用 `runAgentTurn` 跑隔离子轮：自己的系统提示词与历史（fork 继承主对话），工具表按类型收窄且剔除交互/派生/记忆写删/技能/待办，MCP 工具全量附加；子轮 `silent`，事件不进主对话流；`depth>0` 拒绝再派生；结论 ≤20000 字符并截断标注；派发记录写 `state.agentSession` 的 `subagents`（最近 20 个），记录里保存的是子轮自己的完整消息数组（含它每轮的结论），续聊据此接上 |
 | MCP 工具 | 参数与结果都当数据；单次调用 60s 超时；成功结果超 30000 字符同样落盘 + 首尾预览（错误文本原样回给模型）；服务连接失败只写进系统提示词 |
 
-MCP 配置有两个来源：
-
-1. **插件管理的 MCP（与桌面同构）**：`<root>/mcp.json` 的 `mcpServers` + `config.json → mcp.enabled`。MCP 页增删改/启停/测试/删除
-   只操作这个文件，不调用 Studio 的 `/api/ekko/mcp/servers`，Studio 自己的 MCP 列表零变化。
-   首次读取时若存在旧版 `storage.mcp` 选择，会按名字从 Studio 取一次配置迁入，原选择备份到
-   整目录备份到 `~/.deva-backups/` 后删除旧文件。`resolveDevamcpServers`（`lib/mcp-store.mjs`）
-   每轮读启用的条目交给 `parseServerConfig`；坏条目写进系统提示词的「MCP 连接状态」，不静默跳过。
-2. 宿主注入的 `run.mcpServers`（由宿主按运行入口决定，**只读、不入库**）。
-
-连接保存在会话内存中，每轮按当前配置与凭证核对后复用；停用、配置变化或会话释放时关闭。
-插件不把 Studio 的凭据复制到磁盘；自己的 `env`/`headers` 存在 0600 的私有文件里，只在本机使用。
+Studio 权威清单来自 `GET /api/ekko/mcp/servers`，按当前调用者的 Profile 与权限执行。可用工具由 Studio 原生 `/test` 执行 `tools/list`；探测失败计数未知，清单 401/403、结构异常和服务错误都不是空态。桌面 `mcp.json` 保留，只消费 Studio 清单中无同名项的桌面服务。宿主本轮注入与 Studio 已勾选服务同名时优先使用其配置，不落盘。
 
 ## Deva MCP（RPC）
 
-| RPC | 输入 | 输出 | 行为 |
-| --- | --- | --- | --- |
-| `get-mcp-servers` | `null` | `{servers:[{name,transport,managed,enabled}], selected:[name], migratedFromStudio}` | 列表来自插件私有存储；只下发展示字段，**不含**连接配置与密钥 |
-| `save-mcp-selection` | `{servers:[name]}` | `{ok:true, selected:[name]}` | 只切换插件存储里的 `enabled`；未知名字报错；最多 32 个 |
-| `get-mcp-server` | `{name}` | `{server, config}` | 单条详情；env/headers 固定掩码，不回传明文 |
-| `create-mcp-server` | `{name, config}` | `{ok:true, server}` | 写插件存储；重名/非法配置原样报错 |
-| `update-mcp-server` | `{name, config}` | `{ok:true, server}` | 覆盖该条；掩码保留原值，null 显式清除 |
-| `set-mcp-server-enabled` | `{name, enabled}` | `{ok:true, server}` | 停用的服务本轮不连接 |
-| `delete-mcp-server` | `{name}` | `{ok:true, name}` | 只删插件存储里的条目 |
-| `test-mcp-server` | `{name}` | `{ok:true, tools:[{name,description}]}` | 插件自己连一次并列工具；失败按安全类别报错 |
-
-写入类 RPC 只回传展示字段（`server` 里没有 `config`），配置与密钥只经 `get-mcp-server` 按需下发。
+| RPC | 输入 | 行为 |
+| --- | --- | --- |
+| `get-mcp-servers` | `null` | 读 Studio 已启用/已禁用及默认服务、真实工具数或探测失败位、Deva 勾选；不下发连接配置 |
+| `save-mcp-selection` | `{servers:[name]}` | 当前账号/Profile 的 Deva 勾选，最多 32 项。不存在或宿主已停用的名称拒绝保存；不改宿主启用位 |
+| `get-mcp-server` | `{name}` | 读来自 Studio 的连接详情；env/headers 值只回掩码 |
+| `create-mcp-server` | `{name,config}` | 新增 Studio 服务 |
+| `update-mcp-server` | `{name,config}` | 更新 Studio 服务，env/headers 掩码保留、null 清除 |
+| `set-mcp-server-enabled` | `{name,enabled}` | 更新 Studio 启用位，与保存勾选的作用域不同 |
+| `delete-mcp-server` | `{name}` | 删除 Studio 服务；残留勾选在下一次读取时标记 |
+| `test-mcp-server` | `{name}` | 由 Studio 实测并返回安全的工具名称与描述 |
 
 ## 技能（Skills）
 
@@ -306,8 +290,8 @@ Studio MCP CRUD 由设置页 RPC 提供，不等同模型工具 `create_mcp`；�
 
 ## 兼容性
 
-只面向声明了 Agent API v1、支持 `agent-settings` 和 `navigation.main` 并注入 scoped 模型的
-Ekko Studio（本仓库验证版本 0.8.28）。宿主升级 Agent 契约时按 `sdk/src/agents.ts`
+只面向声明了 Agent API v1、支持 `agent-settings` 并注入 scoped 模型的
+Ekko Studio（本仓库验证版本 0.8.30）。宿主升级 Agent 契约时按 `sdk/src/agents.ts`
 同步更新本文件与实现，不通过修改宿主类型绕过。
 
 ## Ekko SDK v1 对照补充

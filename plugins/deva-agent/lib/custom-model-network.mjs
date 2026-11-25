@@ -52,7 +52,7 @@ export function customModelEndpoint(baseUrl, trustedBases = []) {
   const family = isIP(hostname)
   if (!trusted && (url.protocol !== 'https:' || (family && !publicAddress({ address: hostname, family })))) {
     throw new ModelInputError('allowNonPublic', 'confirmation-required',
-      `${base} 是本机、内网或 HTTP 地址，尚未确认放行；请在 Deva 模型设置页勾选「我确认允许 Deva 直连此本机/内网/HTTP 地址」后保存，或改用公网 HTTPS 地址`)
+      `${base} 是本机、内网或 HTTP 地址，尚未确认放行；请联系 Studio 管理员将此完整地址加入 modelTrustedBases，或改用公网 HTTPS 地址`)
   }
   return { url, trusted, hostname, family }
 }
@@ -65,7 +65,7 @@ export async function requestCustomModel({ url, trusted, hostname, family }, { h
   catch { throw new Error('自定义模型 API DNS 解析失败；未回退') }
   signal?.throwIfAborted()
   if (!addresses.length || (!trusted && addresses.some(address => !publicAddress(address)))) {
-    throw new Error('自定义模型 API 的域名未解析到公网地址；如确属本机/内网服务，请在 Deva 模型设置页勾选确认后保存；未回退')
+    throw new Error('自定义模型 API 的域名未解析到公网地址；如确属本机/内网服务，请联系 Studio 管理员批准该 Base URL；未回退')
   }
   const send = url.protocol === 'https:' ? httpsRequest : httpRequest
   return new Promise((resolve, reject) => {

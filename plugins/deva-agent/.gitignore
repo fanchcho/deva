@@ -2,3 +2,11 @@ node_modules/
 dist/
 .env
 .env.*
+
+# 本地证据、审计报告与临时打包产物（不入库，也不进 npm 包）
+.tmp/
+evidence/
+*.tgz
+*-REPORT.md
+EKKO-*.md
+INSTALL-STUDIO-*.md

@@ -12,11 +12,12 @@
     },
     "modelSettingsInput": {
       "type": "object",
-      "description": "更新模型设置。共享模式只共享路由；密钥始终属于当前用户与 Profile。apiKey 省略时同地址保留、换地址清除；显式空字符串清除。",
+      "description": "更新桌面默认模型（config.json）及当前账号的 Studio 凭据；apiKey 省略保留、空串清除。",
       "properties": {
+        "modelRef": { "type": "string", "description": "要选择或编辑的桌面 providerId:modelId；空串新增独立提供方，省略使用当前默认。", "maxLength": 512 },
         "baseUrl": {
           "type": "string",
-          "description": "自定义 Chat Completions Base URL，空字符串表示跟随会话。",
+          "description": "自定义 Chat Completions Base URL，空字符串表示没有桌面选定模型或桌面适配器使用隐式地址。",
           "maxLength": 2048
         },
         "modelName": {
@@ -31,11 +32,11 @@
         },
         "allowNonPublic": {
           "type": "boolean",
-          "description": "用户在模型页显式确认允许直连本次保存的这一个 Base URL（本机、内网或 HTTP）。省略或 false 表示未确认：仅公网 HTTPS 可保存，并清除此前的确认。"
+          "description": "兼容旧客户端；不会授权网络。仅管理员 modelTrustedBases 可批准非公网或 HTTP 地址。"
         },
         "reasoningEffort": {
           "type": "string",
-          "description": "模型强度，作为 Chat Completions 的 reasoning_effort 原样下发：minimal / low / medium / high / xhigh。空字符串表示不发送该参数；省略表示保留已保存的档位。其它取值返回字段级 error，不写入。",
+          "description": "模型强度，作为 Chat Completions 的 reasoning_effort 原样下发：low / medium / high / xhigh / max。空字符串表示不发送该参数；省略表示保留桌面 activeEffort。其它取值返回字段级 error，不写入。",
           "maxLength": 32
         }
       },
@@ -51,7 +52,7 @@
       "properties": {
         "baseUrl": {
           "type": "string",
-          "description": "自定义 Chat Completions Base URL，空字符串表示跟随会话。",
+          "description": "自定义 Chat Completions Base URL，空字符串表示没有桌面选定模型或桌面适配器使用隐式地址。",
           "maxLength": 2048
         },
         "modelName": {
@@ -71,18 +72,48 @@
           "type": "string",
           "description": "仅授权账号可见；Studio 进程解析的共享 config.json 绝对路径。"
         },
-        "sharedNeedsSetup": {
-          "type": "boolean",
-          "description": "存在旧的私有直连配置；没有共享路由时旧地址仅用作迁移草稿，保存一次后移除。"
+        "desktopAccessRequired": { "type": "boolean", "description": "未获桌面配置所有者授权；不返回共享数据，也不读写旧的私有路由。" },
+        "modelRef": { "type": "string", "description": "桌面默认模型引用；未选为空。" },
+        "needsNetworkApproval": { "type": "boolean", "description": "当前桌面 Base URL 尚未获 Studio 管理员网络批准。" },
+        "desktopModels": {
+          "type": "array",
+          "description": "已启用的桌面对话模型，只含路由展示字段。",
+          "items": {
+            "type": "object",
+            "description": "桌面模型选项，不含密钥。",
+            "properties": {
+              "ref": { "type": "string", "description": "providerId:modelId，可选择为默认。" },
+              "adapter": { "type": "string", "description": "桌面协议名；Studio 直连只支持 openai Chat Completions。" },
+              "baseUrl": { "type": "string", "description": "不含认证信息的 Base URL；隐式、无效或含敏感组件时为空。" },
+              "modelName": { "type": "string", "description": "桌面 ModelDef.id。" }
+            },
+            "required": ["ref", "adapter", "baseUrl", "modelName"],
+            "additionalProperties": false
+          }
+        },
+        "personaModels": {
+          "type": "array",
+          "description": "磁盘身份的模型绑定，不含提示词。",
+          "items": {
+            "type": "object",
+            "description": "身份和对应的 frontmatter.model。",
+            "properties": {
+              "id": { "type": "string", "description": "身份文件名 ID。" },
+              "name": { "type": "string", "description": "身份显示名称。" },
+              "model": { "type": "string", "description": "桌面模型引用；空串跟随默认。" }
+            },
+            "required": ["id", "name", "model"],
+            "additionalProperties": false
+          }
         },
         "allowNonPublic": {
           "type": "boolean",
-          "description": "仅在当前用户 + Profile 已确认放行读回的这个 Base URL 时出现且为 true；未确认时省略。"
+          "description": "管理员已将当前 Base URL 加入 modelTrustedBases 时为 true；否则省略。"
         },
         "reasoningEffort": {
           "type": "string",
           "description": "已保存的模型强度档位；未设置（不发送 reasoning_effort）时省略。",
-          "enum": ["minimal", "low", "medium", "high", "xhigh"]
+          "enum": ["low", "medium", "high", "xhigh", "max"]
         },
         "error": {
           "type": "object",
@@ -104,9 +135,19 @@
       ],
       "additionalProperties": false
     },
+    "personaModelInput": {
+      "type": "object",
+      "description": "更新桌面身份文件的 model 字段，不重写其余元数据和正文。",
+      "properties": {
+        "personaId": { "type": "string", "description": "身份 ID。", "minLength": 1, "maxLength": 64 },
+        "modelRef": { "type": "string", "description": "桌面模型引用；空串删除身份覆盖。", "maxLength": 512 }
+      },
+      "required": ["personaId", "modelRef"],
+      "additionalProperties": false
+    },
     "customModel": {
       "type": "object",
-      "description": "非共享模式或迁移前的宿主私有直连配置，也用于运行时校验。",
+      "description": "0.8.17 及更早的宿主私有直连配置；仅供一次性迁移。",
       "properties": {
         "baseUrl": {
           "type": "string",
@@ -153,7 +194,7 @@
     },
     "modelNetworkConsent": {
       "type": "object",
-      "description": "用户在模型页确认放行的唯一一个规范化 Base URL（本机、内网或 HTTP）；精确匹配，不是来源或路径前缀。",
+      "description": "旧版地址确认记录；不参与 0.8.18 网络授权。",
       "properties": {
         "baseUrl": { "type": "string", "description": "规范化的 Chat Completions Base URL。", "minLength": 1, "maxLength": 2048 }
       },
@@ -477,14 +518,14 @@
     },
     "studioMcpList": {
       "type": "object",
-      "description": "插件自带（独立存储）的 MCP 服务清单与启用状态；与 Studio 自己的 MCP 列表互不影响。",
+      "description": "Studio 原生 /ekko/mcp 服务清单、宿主启停、工具探测计数及本 Agent 勾选。",
       "properties": {
         "servers": {
           "type": "array",
-          "description": "插件管理的全部 MCP 服务（来自桌面 mcp.json 的 mcpServers）。",
+          "description": "当前 Profile 下所有 Studio Ekko MCP 服务（含默认项）。",
           "items": {
             "type": "object",
-            "description": "插件自带的一个 MCP 服务（只含展示字段，不含连接配置与密钥）。",
+            "description": "一个 Studio MCP 服务（只含展示字段，不含连接配置与密钥）。",
             "properties": {
               "name": {
                 "type": "string",
@@ -498,12 +539,14 @@
               },
               "managed": {
                 "type": "boolean",
-                "description": "保留字段；插件自带服务恒为 false。"
+                "description": "是否由 Studio 管理。"
               },
               "enabled": {
                 "type": "boolean",
-                "description": "是否启用；停用的服务本轮不会连接。"
-              }
+                "description": "Studio 全局启用态，不等同于当前 Agent 勾选。"
+              },
+              "toolCount": { "type": "integer", "description": "Studio tools/list 探测的数量；停用为零，探测失败省略。", "minimum": 0 },
+              "toolCountUnavailable": { "type": "boolean", "description": "探测失败，数量未知而非零。" }
             },
             "required": [
               "name",
@@ -517,17 +560,13 @@
         },
         "selected": {
           "type": "array",
-          "description": "当前启用（本轮会连接）的服务名。",
+          "description": "当前 Agent 已勾选且 Studio 启用的服务名；保留已删除名称供页面提示。",
           "items": {
             "type": "string",
             "description": "服务名。",
             "maxLength": 64
           },
-          "maxItems": 32
-        },
-        "migratedFromStudio": {
-          "type": "boolean",
-          "description": "本次读取是否把旧版「Studio MCP 勾选」迁移进了插件私有存储。"
+          "maxItems": 200
         }
       },
       "required": [
@@ -1570,6 +1609,11 @@
       "input": "empty",
       "output": "sessionIdentitySaved"
     },
+    "save-persona-model": {
+      "description": "从模型页更新桌面身份绑定。",
+      "input": "personaModelInput",
+      "output": "modelSettingsView"
+    },
     "get-mcp-servers": {
       "description": "读取当前用户/Profile 可勾选的 MCP 服务：名称、传输、启用状态、工具数，以及已勾选的服务名。服务清单来自 Studio 自己的 MCP 管理（GET /api/ekko/mcp/servers）；宿主通道不可用或请求失败时抛错，不返回空表。",
       "input": "empty",
@@ -1641,25 +1685,25 @@
       "scope": "state.profile.namespace(String(run.identity.userId)).modelNetworkConsent"
     },
     "modelOptions": {
-      "description": "模型页保存的模型强度；私有与共享模式通用，清空地址时删除。只存 Studio 侧，不写桌面 config.json。",
+      "description": "0.8.17 及更早的 Studio 私有强度，仅做迁移；新强度使用 Desktop activeEffort。",
       "model": "modelOptions",
       "version": 1,
       "scope": "state.profile.namespace(String(run.identity.userId)).modelOptions"
     },
     "desktopModelKey": {
-      "description": "桌面 provider/model 路由在 Studio 侧保存的密钥（按 providerId + baseUrl 绑定）；不写桌面 secrets.json。",
+      "description": "Studio 侧凭据（按 providerId + baseUrl 摘要分键存储）；不参与模型选择，不写桌面 secrets.json。",
       "model": "desktopModelKey",
       "version": 1,
-      "scope": "state.profile.namespace(String(run.identity.userId)).desktopModelKey"
+      "scope": "state.profile.namespace(String(run.identity.userId), \"desktopModelKeys\")[SHA256(providerId + NUL + baseUrl)]；兼容旧 desktopModelKey 键"
     },
     "modelMode": {
-      "description": "模型来源选择：desktop / custom / session；只存模式，不存密钥。",
+      "description": "0.8.17 及更早的模型来源选择，升级后不参与选模。",
       "model": "modelMode",
       "version": 1,
       "scope": "state.profile.namespace(String(run.identity.userId)).modelMode"
     },
     "sharedDesktopProvider": {
-      "description": "共享模式的非敏感模型路由，唯一真源；使用桌面原生 schema。",
+      "description": "兼容旧镜像 provider 的磁盘形状；新版本使用正常 Desktop provider 与 activeModelId。",
       "model": "sharedDesktopProvider",
       "version": 1,
       "scope": "$DEVA_HOME/config.json:models.providers[id=deva-studio-shared]"
@@ -1671,7 +1715,7 @@
       "scope": "namespace(String(run.identity.userId), run.identity.profile)"
     },
     "mcp": {
-      "description": "用户与 Profile 命名空间下勾选的 Studio MCP 服务名（只有名字，不含连接配置与密钥）；每轮运行时按名字去 Studio 取最新配置。",
+      "description": "用户与 Profile 命名空间下勾选的 Studio MCP 服务名；缺省继承 Studio 已启用项，空数组表示不连接。每轮重新取 Studio 配置。",
       "model": "mcpSelection",
       "version": 1,
       "scope": "namespace(String(run.identity.userId), run.identity.profile)"

@@ -2,26 +2,19 @@ import { registerCompression } from './lib/compression.mjs'
 /**
  * 插件入口：一个 Deva Agent、身份/模型/MCP RPC 和一条会话身份命令。
  */
-import { maskMcpConfig } from './lib/mcp-secrets.mjs'
+import { maskMcpConfig, mergeMcpSecrets } from './lib/mcp-secrets.mjs'
 import { readFileSync } from 'node:fs'
 import { assertContracts, registerRpc } from './sdk/harness/contracts.mjs'
 import { createAgentDefinition } from './lib/agent.mjs'
 import { listIdentities } from './lib/identities.mjs'
-import { readModelSelection, saveModelSelection } from './lib/model-selection.mjs'
+import { readModelSelection, saveModelSelection, savePersonaModel } from './lib/model-selection.mjs'
 import { readIdentitySnapshot, readSessionIdentityId, writeIdentityId, writeSessionIdentityId } from './lib/selection.mjs'
 import { identityFilePath } from './lib/deva-home.mjs'
 import { addStudioPersona, readStudioPersona, updateStudioPersona } from './lib/persona-store.mjs'
 import {
-  createDevamcpServer,
-  deleteDevamcpServer,
-  ensureDevamcpStore,
-  getDevamcpServer,
-  listDevamcpServers,
-  publicServer,
-  setDevamcpServerEnabled,
-  testDevamcpServer,
-  updateDevamcpServer,
-} from './lib/mcp-store.mjs'
+  createStudioServer, deleteStudioServer, getStudioServer, publicServer, readStudioMcpPage,
+  saveStudioSelection, setStudioServerEnabled, testStudioServer, updateStudioServer,
+} from './lib/studio-mcp.mjs'
 import { identityCommand } from './lib/commands.mjs'
 
 const contract = assertContracts(JSON.parse(readFileSync(new URL('./contracts/plugin.json', import.meta.url), 'utf8')))
@@ -49,6 +42,7 @@ export function apply(ctx) {
   registerCompression(ctx)
   registerRpc(ctx, contract, 'get-model-selection', (_input, run) => readModelSelection(run))
   registerRpc(ctx, contract, 'save-model-selection', (input, run) => saveModelSelection(run, input))
+  registerRpc(ctx, contract, 'save-persona-model', (input, run) => savePersonaModel(run, input))
   // ~/.deva/personas 只存内容；默认与会话选择保留在 config.json。
   registerRpc(ctx, contract, 'get-identities', async (_input, run) => {
     const snapshot = await readIdentitySnapshot(run.state, run.identity, run.config, { includeEmpty: true })
@@ -70,7 +64,7 @@ export function apply(ctx) {
   registerRpc(ctx, contract, 'get-persona-editor', personaOperation(activationUserId, (config, input) => readStudioPersona(config, input.id)))
   registerRpc(ctx, contract, 'create-persona', personaOperation(activationUserId, addStudioPersona))
   registerRpc(ctx, contract, 'update-persona', personaOperation(activationUserId, updateStudioPersona))
-  // 会话内身份：读写当前会话的覆盖（宿主会话存储 + ~/.deva/deva-agent/sessions.json）。
+  // 会话内身份：读写当前会话的覆盖（宿主会话存储 + ~/.deva/config.json → personas.sessionSelected）。
   registerRpc(ctx, contract, 'get-session-identity', async (_input, run) => {
     const sessionId = run.identity?.sessionId || ''
     if (!sessionId) return { sessionId: '', identity: '', source: 'none' }
@@ -97,38 +91,29 @@ export function apply(ctx) {
     const snapshot = await readIdentitySnapshot(run.state, run.identity, run.config)
     return { ok: true, sessionId, identity: snapshot.selected }
   })
-  // 插件自带 MCP：独立存储 <root>/deva-agent/mcp-servers.json，与 Studio 的 MCP 列表互不影响。
-  registerRpc(ctx, contract, 'get-mcp-servers', async (_input, run) => {
-    const migration = await ensureDevamcpStore(run.config, { state: run.state, identity: run.identity, host: run.host, log: ctx.log })
-    const servers = listDevamcpServers(run.config)
-    return { servers, selected: servers.filter(server => server.enabled).map(server => server.name), migratedFromStudio: Boolean(migration.migrated) }
-  })
-  registerRpc(ctx, contract, 'save-mcp-selection', async (input, run) => {
-    await ensureDevamcpStore(run.config, { state: run.state, identity: run.identity, host: run.host, log: ctx.log })
-    const wanted = new Set(input.servers || [])
-    const existing = listDevamcpServers(run.config).map(server => server.name)
-    for (const name of wanted) if (!existing.includes(name)) throw new Error(`未知 MCP 服务：${name}`)
-    for (const name of existing) setDevamcpServerEnabled(run.config, { name, enabled: wanted.has(name) })
-    const servers = listDevamcpServers(run.config)
-    return { ok: true, selected: servers.filter(server => server.enabled).map(server => server.name) }
-  })
+  // Settings and selection use the current caller's Studio catalog, never a copied file.
+  registerRpc(ctx, contract, 'get-mcp-servers', (_input, run) => readStudioMcpPage(run))
+  registerRpc(ctx, contract, 'save-mcp-selection', (input, run) => saveStudioSelection(run, input.servers))
   registerRpc(ctx, contract, 'get-mcp-server', async (input, run) => {
-    const server = getDevamcpServer(run.config, input.name)
-    return { server: publicServer(server), config: maskMcpConfig(server.config || {}) }
+    const server = await getStudioServer(run.host, input.name)
+    return { server: publicServer(server), config: maskMcpConfig(server.config) }
   })
   registerRpc(ctx, contract, 'create-mcp-server', async (input, run) =>
-    saved(createDevamcpServer(run.config, { name: input.name, config: input.config })))
-  registerRpc(ctx, contract, 'update-mcp-server', async (input, run) =>
-    saved(updateDevamcpServer(run.config, { name: input.name, config: input.config })))
+    saved(await createStudioServer(run.host, { ...input, config: mergeMcpSecrets(input.config, {}) })))
+  registerRpc(ctx, contract, 'update-mcp-server', async (input, run) => {
+    const previous = await getStudioServer(run.host, input.name)
+    return saved(await updateStudioServer(run.host, {
+      name: input.name,
+      config: mergeMcpSecrets(input.config, previous.config),
+    }))
+  })
   registerRpc(ctx, contract, 'set-mcp-server-enabled', async (input, run) =>
-    saved(setDevamcpServerEnabled(run.config, { name: input.name, enabled: input.enabled })))
+    saved(await setStudioServerEnabled(run.host, input)))
   registerRpc(ctx, contract, 'delete-mcp-server', async (input, run) => ({
-    ok: true,
-    name: deleteDevamcpServer(run.config, { name: input.name }).name,
+    ok: true, name: (await deleteStudioServer(run.host, input)).name,
   }))
   registerRpc(ctx, contract, 'test-mcp-server', async (input, run) => ({
-    ok: true,
-    tools: await testDevamcpServer(run.config, { name: input.name }),
+    ok: true, tools: await testStudioServer(run.host, input),
   }))
   // 会话窗口里切身份：斜杠命令（命令面板可直接用；@deva:<id> 前缀由 Agent 自己消费）
   ctx.extensions.commands.register({

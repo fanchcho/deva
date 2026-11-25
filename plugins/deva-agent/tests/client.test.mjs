@@ -186,15 +186,15 @@ test('the identity editor and original path hints are wired in every Studio loca
 test('model view reads custom settings, keeps the key field empty and saves via RPC', async () => {
   const calls = []
   const ctx = fakeContext('zh', async (name, input) => {
-    if (name === 'get-model-selection') return { baseUrl: 'https://old.example/v1', modelName: 'old', hasApiKey: true, legacyNeedsSetup: false }
+    if (name === 'get-model-selection') return { baseUrl: 'https://old.example/v1', modelName: 'old', modelRef: 'provider:old', hasApiKey: true, legacyNeedsSetup: false }
     if (name !== 'save-model-selection') throw new Error(`unexpected rpc ${name}`)
     calls.push([name, input.baseUrl, input.modelName, input.apiKey === '' ? 'clear' : 'keep'])
     return { baseUrl: input.baseUrl, modelName: input.modelName, hasApiKey: false, legacyNeedsSetup: false }
   }, { view: 'model' })
   const root = await mountPage(ctx)
   const selects = findAll(root, node => node.tag === 'select')
-  assert.equal(selects.length, 1, '模型设置只有模型强度一个下拉，不渲染桌面 provider 选择器')
-  assert.deepEqual(selects[0].children.map(option => option.value), ['', 'minimal', 'low', 'medium', 'high', 'xhigh'])
+  assert.equal(selects.length, 2, '模型设置包含桌面默认模型和强度下拉')
+  assert.deepEqual(selects[1].children.map(option => option.value), ['', 'low', 'medium', 'high', 'xhigh', 'max'])
   const [address, model, password, clear] = findAll(root, node => node.tag === 'input')
   assert.deepEqual([address.type, model.type, password.type, clear.type], ['url', 'text', 'password', 'checkbox'])
   assert.equal(password.autocomplete, 'new-password')
@@ -207,6 +207,7 @@ test('model view reads custom settings, keeps the key field empty and saves via 
   clear.checked = true
   await save.onclick()
   address.value = ''
+  model.value = ''
   await save.onclick()
   assert.deepEqual(calls, [
     ['save-model-selection', 'https://replacement.example/v1', 'new', 'keep'],
@@ -216,53 +217,58 @@ test('model view reads custom settings, keeps the key field empty and saves via 
   assert.equal(password.value, '')
 })
 
-test('model view confirms a local/private/HTTP address in the page and shows rejected saves on the field', async () => {
+test('model view displays the admin network gate without a self-approval checkbox', async () => {
   for (const locale of ['en', 'zh', 'zh-TW', 'ja', 'ko', 'fr', 'es', 'de', 'pt', 'ru', 'ar', 'tr']) {
     const calls = []
-    let stored = { baseUrl: '', modelName: '', hasApiKey: false, legacyNeedsSetup: false }
+    const settings = { baseUrl: '', modelName: '', hasApiKey: false, legacyNeedsSetup: false }
     const ctx = fakeContext(locale, async (name, input) => {
-      if (name === 'get-model-selection') return stored
+      if (name === 'get-model-selection') return settings
       calls.push(input)
-      if (!input.modelName) return { ...stored, error: { field: 'modelName', code: 'model-name-invalid', message: '请填写有效的模型名' } }
-      if (!input.allowNonPublic) return { ...stored, error: { field: 'allowNonPublic', code: 'confirmation-required', message: 'server zh' } }
-      stored = { baseUrl: input.baseUrl, modelName: input.modelName, hasApiKey: false, legacyNeedsSetup: false, allowNonPublic: true }
-      return stored
+      return { ...settings, error: { field: 'allowNonPublic', code: 'confirmation-required', message: 'server zh' } }
     }, { view: 'model' })
     const root = await mountPage(ctx)
-    const [address, model, , , allow] = findAll(root, node => node.tag === 'input')
+    const [address, model, , clear, allow] = findAll(root, node => node.tag === 'input')
+    assert.equal(clear.type, 'checkbox')
+    assert.equal(allow, undefined)
     const [save] = findAll(root, node => node.tag === 'button')
-    const shown = () => findAll(root, node => node.className === 'deva-field-error' && !node.hidden)
-    assert.equal(allow.type, 'checkbox')
-    assert.equal(allow.checked, false)
-    assert.equal(shown().length, 0)
     address.value = 'http://127.0.0.1:9/v1'
     model.value = 'local'
     await save.onclick()
-    // 被拒：不清空输入、提示标在确认项下、文案按语言给出下一步。
+    const [shown] = findAll(root, node => node.className === 'deva-field-error' && !node.hidden)
     assert.equal(address.value, 'http://127.0.0.1:9/v1')
-    assert.equal(shown().length, 1)
-    assert.equal(allow.ariaInvalid, 'true')
-    assert.notEqual(shown()[0].textContent, 'server zh')
-    if (locale === 'zh') assert.match(shown()[0].textContent, /请勾选下方确认后再保存/)
-    assert.deepEqual(ctx.notices.at(-1), [shown()[0].textContent, 'error'])
-    allow.checked = true
-    await save.onclick()
-    assert.equal(shown().length, 0)
-    assert.equal(allow.checked, true)
-    assert.equal(calls.at(-1).allowNonPublic, true)
-    assert.equal(ctx.notices.at(-1)[1], 'success')
-    // 改地址即取消勾选；其它字段错误显示服务端给出的原因。
-    address.value = 'http://127.0.0.1:9/other'
-    address.oninput()
-    assert.equal(allow.checked, false)
-    model.value = ''
-    await save.onclick()
-    assert.equal(model.ariaInvalid, 'true')
-    assert.equal(shown()[0].textContent, '请填写有效的模型名')
+    assert.equal(address.ariaInvalid, 'true')
+    assert.notEqual(shown.textContent, 'server zh')
+    if (locale === 'zh') assert.match(shown.textContent, /Studio 管理员批准/)
+    assert.deepEqual(ctx.notices.at(-1), [shown.textContent, 'error'])
     assert.equal(calls.at(-1).allowNonPublic, undefined)
   }
-  const reopened = await mountPage(fakeContext('zh', async () => ({ baseUrl: 'http://10.0.0.8/v1', modelName: 'm', hasApiKey: false, legacyNeedsSetup: false, allowNonPublic: true }), { view: 'model' }))
-  assert.equal(findAll(reopened, node => node.tag === 'input')[4].checked, true)
+})
+
+test('model view selects an existing Desktop ref and updates the persona binding separately', async () => {
+  const calls = []
+  const original = {
+    baseUrl: 'https://alpha.example/v1', modelName: 'a', modelRef: 'alpha:a', hasApiKey: false, legacyNeedsSetup: false,
+    desktopModels: [{ ref: 'alpha:a', adapter: 'openai', baseUrl: 'https://alpha.example/v1', modelName: 'a' },
+      { ref: 'beta:b', adapter: 'openai', baseUrl: 'https://beta.example/v1', modelName: 'b' }],
+    personaModels: [{ id: 'qa', name: 'QA', model: 'beta:b' }],
+  }
+  const root = await mountPage(fakeContext('zh', async (name, input) => {
+    calls.push([name, input])
+    if (name === 'save-persona-model') return { ...original, personaModels: [{ id: 'qa', name: 'QA', model: input.modelRef }] }
+    return original
+  }, { view: 'model' }))
+  let [choice, , binding] = findAll(root, node => node.tag === 'select')
+  assert.equal(choice.value, 'alpha:a')
+  assert.equal(binding.value, 'beta:b')
+  choice.value = 'beta:b'
+  choice.onchange()
+  const [save] = findAll(root, node => node.tag === 'button')
+  await save.onclick()
+  assert.deepEqual(calls.at(-1), ['save-model-selection', { modelRef: 'beta:b', baseUrl: 'https://beta.example/v1', modelName: 'b', reasoningEffort: '' }])
+  binding = findAll(root, node => node.tag === 'select')[2]
+  binding.value = ''
+  await binding.onchange()
+  assert.deepEqual(calls.at(-1), ['save-persona-model', { personaId: 'qa', modelRef: '' }])
 })
 
 test('model view loads, saves and reports the reasoning effort in each locale', async () => {
@@ -276,7 +282,7 @@ test('model view loads, saves and reports the reasoning effort in each locale', 
       return { ...base, ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}) }
     }, { view: 'model' })
     const root = await mountPage(ctx)
-    const [effort] = findAll(root, node => node.tag === 'select')
+    const [, effort] = findAll(root, node => node.tag === 'select')
     const [save] = findAll(root, node => node.tag === 'button')
     const texts = findAll(root, node => node.textContent).map(node => node.textContent)
     assert.ok(!texts.join(' ').includes('undefined'))
@@ -327,7 +333,7 @@ test('mcp view lists Studio servers, summarizes them, and saves the checked name
   const rpc = async (name, input) => {
     calls.push([name, input])
     if (name === 'get-mcp-servers') {
-      return { servers: [server('files'), server('ekko-studio-api', { managed: true }), server('off', { enabled: false })], selected: [] }
+      return { servers: [server('files', { toolCount: 2 }), server('ekko-studio-api', { managed: true, toolCount: 3 }), server('off', { enabled: false, toolCount: 0 })], selected: calls.findLast(([method]) => method === 'save-mcp-selection')?.[1].servers || [] }
     }
     if (name === 'save-mcp-selection') return { ok: true, selected: input.servers }
     throw new Error(`unexpected rpc ${name}`)
@@ -343,7 +349,7 @@ test('mcp view lists Studio servers, summarizes them, and saves the checked name
     ['总计', '3'],
     ['已启用', '2'],
     ['已禁用', '1'],
-    ['工具', '0'],
+    ['工具', '5'],
   ], '汇总卡与 Studio 原生页一致，固定四张')
 
   const boxes = findAll(root, node => node.tag === 'input' && node.type === 'checkbox')
@@ -360,7 +366,8 @@ test('mcp view lists Studio servers, summarizes them, and saves the checked name
   const save = findAll(root, node => node.tag === 'button' && node.textContent === '保存勾选')[0]
   assert.ok(save, 'MCP 页必须有保存勾选按钮')
   await save.onclick()
-  assert.deepEqual(calls.at(-1), ['save-mcp-selection', { servers: ['files', 'ekko-studio-api'] }])
+  assert.deepEqual(calls.at(-2), ['save-mcp-selection', { servers: ['files', 'ekko-studio-api'] }])
+  assert.equal(calls.at(-1)[0], 'get-mcp-servers')
   assert.match(ctx.notices.at(-1)[0], /已勾选 2 个 MCP 服务/)
   assert.equal(ctx.notices.at(-1)[1], 'success')
 })

@@ -8,7 +8,7 @@
 
 | 身份 id | 显示名 | 来源 | 适合 |
 | --- | --- | --- | --- |
-| `deva`（默认） | Deva | `apps/desktop/src/main/services/deva-personas.ts` | 改代码、跑检查、写文档 |
+| `general`（默认，旧别名 `deva`） | Deva | `apps/desktop/src/main/services/deva-personas.ts` | 改代码、跑检查、写文档 |
 | `xiaomajiang` | 小码酱 | `apps/desktop/src/main/services/xiaomajiang-personas.ts` | 安全研究、逆向、强度更高的执行 |
 
 - 插件 id：`deva`（`plugin.json`）· 包名：`studio-plugin-deva` · 版本与 `package.json` 同步
@@ -18,7 +18,7 @@
 - 入口：`server.mjs` 的 `apply(ctx)`——只注册**一个**通用 Deva Agent（`ctx.extensions.agents.register(...)`），
   外加身份 RPC / 模型 RPC / MCP RPC 与一条身份命令
 - 只暴露一个 Agent：插件不再按身份各注册一个固定 Agent；身份在会话内切换（见下）
-- 通过 **Agent 管理 → Deva → 设置**，或导航栏里的 **Deva** 快捷入口，打开同一组设置页：
+- 通过 **Agent 管理 → Deva → 设置** 打开设置页；插件不注册单独的主导航快捷入口：
   - **身份**（`views: identity`）：新增、编辑身份直接写 `~/.deva/personas/*.md`（保留桌面专属字段）；默认/会话选择写在桌面 `config.json → personas.selected/sessionSelected`
   - **MCP**（`views: mcp`）：管理与桌面同构的 MCP 服务（`~/.deva/mcp.json` + `config.json.mcp.enabled`）——
     新增、改配置、启停、测试、删除。Studio 自己的 MCP 列表完全不受影响
@@ -43,11 +43,13 @@ Studio 选中 Agent「Deva」并选模型
   → 文本增量、工具起止事件实时回传 Studio；结束返回完整结果与用量
 ```
 
-插件仍注册 Studio `scoped` 模式，进入 Studio 会话仍需要一个宿主可选的会话模型。未配置自定义地址时，照旧使用会话的短期模型代理。
-自定义地址只用 OpenAI 兼容的 `POST {Base URL}/chat/completions`（例如 `https://api.example.com/v1`），由 Deva 服务端直连，不访问 Studio 模型目录或走宿主推理网关；会话选模栏不变。地址、模型名和可选密钥按账号与 Profile 保存；密钥不回传。地址变更时不沿用旧密钥。API 调用失败不回退。所选服务会收到对话和该轮工具描述等数据，只填你信任的服务。
-默认仅允许公网 HTTPS。本机、内网或 HTTP 地址需在模型页勾选「我确认允许 Deva 直连此本机/内网/HTTP 地址」后保存：确认只对当次保存的那一个规范化 Base URL 生效，按用户 + Profile 保存，改地址需重新勾选，未勾选时页面在该项下提示原因且不保存。管理员也可在插件配置 `modelTrustedBases` 为所有账号预先放行精确的 Base URL 列表（可选）。清空地址并保存可删除直连配置，恢复跟随。「模型强度」会作为 `reasoning_effort` 随每轮直连请求下发（默认不发送）；上游不支持该档位时该轮报错并提示改档位。配置直连后，新建会话既可以选 Studio 模型（scoped），也可以选「Agent 自带模型」（global）：后者不需要再选 Studio 模型，直接用这里填的地址和模型名。
+### 桌面模型
 
-身份不再依赖任何授权开关：它总是读写进程用户 `~/.deva` 下的身份文件（可用管理员配置 `sharedDevaHome` 或进程 `DEVA_HOME` 改根）。需要与桌面 Deva 共用**地址和模型**时，再把管理员配置 `sharedDevaUserId` 设为要授权的 Studio 账号 ID。目录依次取 `sharedDevaHome`、进程 `DEVA_HOME`、`~/.deva`（Studio 进程的 HOME）。两端须用同一 OS 用户访问同一份文件。Studio 模型页只填写 Base URL、模型名和 API Key，不列举桌面 provider。共享模式在后台使用桌面可识别的 `Deva Studio Shared` 提供方，API Key 两端分别设置。请先退出桌面端，在 Studio 保存后再打开桌面端；桌面保存后，Studio 下一轮会重新读取。详细契约见 [CONTRACTS](docs/CONTRACTS.md#自定义模型-apirpc存储与推理)。
+0.8.18 起，配置经管理员授权后，模型页直接读写桌面 Deva 的 `config.json → models.providers / activeModelId / activeEffort`，身份优先模型读写 `personas/<id>.md → model`。没有选定的桌面模型时显示空态；不另存 Studio 私有路由。未配置 `sharedDevaUserId` 时，模型页提示管理员授权；不会把机器级桌面配置暴露给其他账号。
+
+两端需指向同一文件系统、同一 OS 用户的目录（`sharedDevaHome` → Studio 进程的 `DEVA_HOME` → `~/.deva`）。请先完整退出 **Deva 桌面应用**，在 Studio 保存后再打开：桌面主进程缓存配置，已打开的窗口不会自动采纳外部修改。桌面保存后，Studio 模型页重新进入或下轮对话读到新值。API Key 必须在两端各自保存，Studio 只回显「已设置」。
+
+Studio 直连只支持有明确 Base URL 的 OpenAI Chat Completions 模型。公网 HTTPS 可用；本机、内网和 HTTP 必须由管理员在 `modelTrustedBases` 批准确切地址，页面不能自行放行。直连失败直接报错，不替换为会话模型。无桌面路由时，`scoped` 仍用宿主会话模型；`global` 需要可用的桌面路由。详见 [契约](docs/CONTRACTS.md#自定义模型-apirpc存储与推理)。
 
 ## Agent 能力
 
@@ -77,13 +79,9 @@ Studio 选中 Agent「Deva」并选模型
 
 ## MCP 配置
 
-Studio 只在「任务计划运行」里给 Agent 注入 `run.mcpServers`，普通插件运行拿到的是空对象，
-所以本插件自带一个零依赖 MCP 客户端（`lib/mcp.mjs`）。**插件自带的 MCP 与 Studio 的 MCP 列表彻底分开**：
+**Studio → Deva → MCP** 显示原生 `/ekko/mcp` 的服务及内置项，并由 Studio 探测已启用服务的工具数。卡片的新增、编辑、启停、测试和删除走官方 Studio 接口，受同样的权限约束。**保存勾选**只改当前账号与 Profile 的 Deva 服务名单；不会启停宿主。未保存过勾选时默认继承所有启用服务，显式空勾选不连接任何 Studio 服务。
 
-1. **插件管理的 MCP（与桌面同构）**：`~/.deva/mcp.json` 的 `mcpServers` + `~/.deva/config.json → mcp.enabled`。到 **Studio → Deva → MCP** 管理：新增、改命令/参数/环境变量或 URL/请求头、启停、测试、删除。写入只改这个文件，
-   不调用 Studio 的 `/api/ekko/mcp/servers`，Studio 的 MCP 页面内容零变化。旧版（≤0.8.5）勾选过的 Studio 服务
-   旧的 `deva-agent/mcp-servers.json` 会一次性迁移到这两个桌面文件，整目录备份到 `~/.deva-backups/` 后删除。
-2. **宿主注入的 `run.mcpServers`**：只在部分运行入口里有内容，**只读、不入库**，同名时宿主优先。
+既有的桌面 `mcp.json` 保留；未在 Studio 登记的桌面服务仍可按桌面启用位使用。与 Studio 同名的旧副本不会覆盖 Studio 配置或绕过勾选。宿主本轮注入的同名配置可用于刷新连接凭据，不写入磁盘。
 
 配置里的 `${VAR}`（环境变量与请求头的值）从插件进程环境展开；变量缺失时该服务连接失败并在
 系统提示词的「MCP 连接状态」里点名缺哪个变量，不会静默跳过。连接失败只影响该服务，不中断对话。

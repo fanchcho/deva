@@ -102,3 +102,23 @@ test('坏 mcp.json 明确报错；resolve 对坏条目报 problems', async () =>
     assert.throws(() => listDevamcpServers(config), /不是合法 JSON/)
   } finally { await rm(dir, { recursive: true, force: true }) }
 })
+
+test('Studio MCP permission and malformed response failures are explicit; probe failures are unknown', async () => {
+  const { readStudioMcpPage } = await import('../lib/studio-mcp.mjs')
+  const run = {
+    identity: { userId: 1, profile: 'default' },
+    state: { profile: { namespace: () => ({ async get() {} }) } },
+  }
+  run.host = { request: async () => { throw Object.assign(new Error('secret upstream detail'), { status: 403 }) } }
+  await assert.rejects(readStudioMcpPage(run), err => /403/.test(err.message) && !/secret/.test(err.message))
+  run.host = { request: async () => ({ ok: true, servers: {} }) }
+  await assert.rejects(readStudioMcpPage(run), /清单格式异常/)
+  run.host = { request: async path => {
+    if (path.endsWith('/test')) throw new Error('probe failed')
+    return { ok: true, servers: [{ name: 'managed', managed: true, config: { command: 'fixture' } }] }
+  } }
+  assert.deepEqual(await readStudioMcpPage(run), {
+    servers: [{ name: 'managed', enabled: true, transport: 'stdio', managed: true, toolCountUnavailable: true }],
+    selected: ['managed'],
+  })
+})

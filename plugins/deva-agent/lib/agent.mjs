@@ -21,6 +21,7 @@ import { runAgentTurn } from './loop.mjs'
 import { executeTool } from './tools.mjs'
 import { McpPool, parseServerConfig, mergeServers } from './mcp.mjs'
 import { ensureDevamcpStore, resolveDevamcpServers } from './mcp-store.mjs'
+import { resolveStudioServers } from './studio-mcp.mjs'
 
 function packageVersion() {
   try {
@@ -114,19 +115,30 @@ function makeExecute({ run, getPool, onToolSuccess }) {
 }
 
 /**
- * 连接本轮可用的 MCP：**插件自带**（deva-agent/mcp-servers.json，独立管理）
- * + 宿主注入的 run.mcpServers（只读、不入库；同名时宿主优先）。
+ * 连接本轮的 Studio 勾选，按 Profile 读取；同名优先用宿主本轮注入，未获勾选不连接。
+ * 未在 Studio 登记的桌面服务保持兼容。
  * 连接跨轮复用；配置或凭证变了才重连。连接失败写进系统提示词，不中断对话。
  */
 async function runWithMcp({ run, input, system, workspaceDir, facts, identity, log, runTurn, mcp, onToolSuccess, checkpoint, model }) {
   const problems = []
-  // 插件自带的 MCP：独立存储、独立管理；首次启用时把旧版 Studio 选择备份并迁进来。
-  await ensureDevamcpStore(run.config, { state: run.state, identity: run.identity, host: run.host, log })
+  await ensureDevamcpStore(run.config)
   const own = resolveDevamcpServers({ config: run.config, log })
-  problems.push(...own.problems)
   const injected = injectedServers(run.mcpServers)
-  problems.push(...injected.problems)
-  const servers = mergeServers(own.servers, injected.servers)
+  let servers = mergeServers(own.servers, injected.servers)
+  problems.push(...own.problems, ...injected.problems)
+  if (typeof run.host?.request === 'function') {
+    try {
+      const catalog = await resolveStudioServers(run)
+      problems.push(...catalog.problems)
+      const remaining = servers.filter(server => !catalog.names.has(server.name))
+      const fresh = injected.servers.filter(server => catalog.selected.has(server.name))
+      servers = mergeServers(remaining, mergeServers(catalog.servers, fresh))
+    } catch {
+      // Do not connect a potentially stale copied config when Studio ownership cannot be checked.
+      servers = []
+      problems.push('无法读取 Studio MCP 清单；本轮不使用 MCP，请检查 Studio Profile 和 MCP 权限')
+    }
+  }
   // 记忆的角色层按本轮身份分区：把 id/名称一路带给工具层（runTurn 的默认实现就是 runAgentTurn）。
   const identityScope = { identityId: identity?.id ?? null, identityName: identity?.name ?? null }
   if (!servers.length && !problems.length) {
@@ -224,16 +236,16 @@ export function createAgentDefinition({ log = console, runTurn = runAgentTurn, i
               log.info?.('deva: 会话内命中身份命令，本地回话（不调用模型）')
               return { content: [{ type: 'text', text: consumed.reply }], finishReason: 'stop' }
             }
-            const custom = fixed ? null : await readCustomModel(run)
+            // 固定身份的 Agent 不读身份存储，避免「小码酱 Agent」被设置页改成别的身份
+            const resolved = fixed ? { id: fixed.id, source: 'agent' } : await resolveIdentityId(run.state, run.identity, run.config)
+            // 身份正文只从 ~/.deva 的身份文件读；文件损坏时这里直接报错，不回退到宿主旧值或内置正文。
+            const identity = await loadIdentityRecord(run.config, resolved.id)
+            const custom = fixed ? null : await readCustomModel(run, resolved.id)
             // global 模式没有宿主代理可用：只能走模型页的直连配置，没有就停下说明，不回退。
             if (run.mode === 'global' && !custom) throw new Error(GLOBAL_NEEDS_MODEL)
             const model = custom
               ? createCustomModel(run, { ...custom, reasoningEffort: resolveRunEffort(run, custom.reasoningEffort) })
               : undefined
-            // 固定身份的 Agent 不读身份存储，避免「小码酱 Agent」被设置页改成别的身份
-            const resolved = fixed ? { id: fixed.id, source: 'agent' } : await resolveIdentityId(run.state, run.identity, run.config)
-            // 身份正文只从 ~/.deva 的身份文件读；文件损坏时这里直接报错，不回退到宿主旧值或内置正文。
-            const identity = await loadIdentityRecord(run.config, resolved.id)
             log.info?.(`deva: 本轮身份=${identity.id}（${identity.name}，来源 ${resolved.source}，文件 ${identity.path}）`)
             const facts = await factsCache.get(workspaceDir)
             const instructions = (input.instructions || []).map(item => item.text).filter(Boolean).join('\n\n')

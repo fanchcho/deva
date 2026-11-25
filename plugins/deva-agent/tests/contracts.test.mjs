@@ -104,7 +104,7 @@ function setup() {
     lifecycle: { add(dispose) { disposers.push(dispose); return dispose }, acquire: async () => () => {} },
   }
   const dispose = apply(ctx)
-  const call = (name, input, identity = { userId: 1, profile: 'default' }) => rpcs.get(name)(input, { identity, state, host, config: { sharedDevaHome: home } })
+  const call = (name, input, identity = { userId: 1, profile: 'default' }) => rpcs.get(name)(input, { identity, state, host, config: { sharedDevaHome: home, sharedDevaUserId: 1 } })
   return { rpcs, commands, agents, disposers, call, dispose, requests, studio, home }
 }
 
@@ -112,24 +112,26 @@ test('project harness passes: versions, i18n, contracts, docs and SDK files', as
   await checkProject(new URL('../', import.meta.url).pathname)
 })
 
-test('registered model settings RPC opens and saves with no Desktop active model', async t => {
+test('registered model settings RPC round-trips the Desktop schema without exposing a key', async t => {
   const { call, home, dispose } = setup()
   t.after(async () => { await dispose(); await rm(home, { recursive: true, force: true }) })
   const path = join(home, 'config.json')
-  const empty = { baseUrl: '', modelName: '', hasApiKey: false, legacyNeedsSetup: false }
   const input = { baseUrl: 'https://example.test/v1', modelName: 'manual' }
-  assert.deepEqual(await call('get-model-selection', null), empty)
+  assert.equal((await call('get-model-selection', null)).modelRef, '')
   for (const fixture of [{}, { models: {} }, ...[null, '', 17].map(activeModelId => ({ models: { activeModelId } }))]) {
     await writeFile(path, JSON.stringify(fixture))
-    assert.deepEqual(await call('get-model-selection', null), empty)
-    assert.deepEqual(await call('save-model-selection', input), { ...empty, ...input })
-    assert.deepEqual(await call('get-model-selection', null), { ...empty, ...input })
-    assert.deepEqual(await call('save-model-selection', { baseUrl: '', modelName: '' }), empty)
+    assert.equal((await call('get-model-selection', null)).modelRef, '')
+    const saved = await call('save-model-selection', input)
+    assert.equal(saved.modelName, input.modelName)
+    assert.equal(JSON.parse(await readFile(path, 'utf8')).models.activeModelId, saved.modelRef)
+    assert.deepEqual(await call('get-model-selection', null), saved)
+    assert.equal((await call('save-model-selection', { baseUrl: '', modelName: '' })).modelRef, '')
+    assert.equal(JSON.parse(await readFile(path, 'utf8')).models.activeModelId, null)
   }
   await assert.rejects(call('save-model-selection', { ...input, providerId: 'alpha', modelId: 'a1' }), /unknown property providerId/)
 })
 
-test('the Deva settings action opens the declared identity view and retains all native side tabs', async () => {
+test('Deva uses the native settings views without registering a main navigation shortcut', async () => {
   const manifest = await readJson('plugin.json')
   assert.equal(manifest.id, 'deva')
   assert.equal(manifest.apiVersion, 1)
@@ -137,16 +139,21 @@ test('the Deva settings action opens the declared identity view and retains all 
   assert.equal(manifest.client, 'client.mjs')
   assert.deepEqual(manifest.permissions, ['agents', 'ui', 'commands', 'browser.cdp', 'api.read', 'api.write', 'compression'])
   assert.deepEqual(manifest.views.map(view => [view.id, view.slot, view.icon]), [
-    ['identity', 'agent-settings', 'bot'],
+    ['identity', 'agent-settings', 'book'],
     ['mcp', 'agent-settings', 'mcp'],
-    ['model', 'agent-settings', 'bot'],
+    ['model', 'agent-settings', 'settings'],
   ])
   assert.equal(manifest.configSchema.properties.mcpServers, undefined, 'MCP 配置仍只有 Studio 一份')
   assert.equal(manifest.configSchema.properties.approvalEnabled.default, false)
   assert.equal(manifest.configSchema.properties.compressionEnabled.default, false)
   assert.equal(manifest.icon, 'icon.png')
-  assert.deepEqual(manifest.navigation, { main: [{ viewId: 'identity', title: 'Deva', icon: 'bot' }] })
-  for (const locale of Object.values(manifest.i18n)) assert.deepEqual(locale.navigation.main, { identity: 'Deva' })
+  assert.equal(manifest.navigation, undefined)
+  const translations = Object.values(manifest.i18n)
+  assert.equal(translations.length, 12)
+  for (const locale of translations) {
+    assert.equal(locale.navigation, undefined)
+    assert.deepEqual(Object.keys(locale.views).sort(), ['identity', 'mcp', 'model'])
+  }
   const pkg = await readJson('package.json')
   assert.equal(manifest.version, pkg.version)
 })
@@ -164,7 +171,7 @@ test('contracts declare the identity, model and Studio MCP RPCs, the identity co
   const contract = assertContracts(await readJson('contracts/plugin.json'))
   assert.deepEqual(Object.keys(contract.rpc).sort(), [
     'clear-session-identity', 'create-mcp-server', 'create-persona', 'delete-mcp-server', 'get-identities', 'get-mcp-server', 'get-mcp-servers',
-    'get-model-selection', 'get-persona-editor', 'get-session-identity', 'save-mcp-selection', 'save-model-selection', 'save-selection', 'save-session-identity',
+    'get-model-selection', 'get-persona-editor', 'get-session-identity', 'save-mcp-selection', 'save-model-selection', 'save-persona-model', 'save-selection', 'save-session-identity',
     'set-mcp-server-enabled', 'test-mcp-server', 'update-mcp-server', 'update-persona',
   ])
   assert.deepEqual(Object.keys(contract.commands), ['identity'])
@@ -179,7 +186,7 @@ test('apply registers the Agent, all RPCs and the identity command, and disposes
   const { rpcs, commands, agents, disposers, dispose } = setup()
   assert.deepEqual([...rpcs.keys()].sort(), [
     'clear-session-identity', 'create-mcp-server', 'create-persona', 'delete-mcp-server', 'get-identities', 'get-mcp-server', 'get-mcp-servers',
-    'get-model-selection', 'get-persona-editor', 'get-session-identity', 'save-mcp-selection', 'save-model-selection', 'save-selection', 'save-session-identity',
+    'get-model-selection', 'get-persona-editor', 'get-session-identity', 'save-mcp-selection', 'save-model-selection', 'save-persona-model', 'save-selection', 'save-session-identity',
     'set-mcp-server-enabled', 'test-mcp-server', 'update-mcp-server', 'update-persona',
   ])
   assert.deepEqual([...commands.keys()], ['identity'])
@@ -268,30 +275,35 @@ test('会话身份 RPC：读默认/写覆盖/清除，sessions.json 落盘', asy
   await assert.rejects(call('save-session-identity', { identity: 'ghost' }, sessionIdentity), /未知身份/)
 })
 
-test('插件自带 MCP 列表只读自己的存储，不触碰 Studio MCP', async () => {
+test('Studio MCP catalog includes managed defaults and measured tool counts, never connection configs', async () => {
+  const { call, requests, studio } = setup()
+  studio.servers[1].config.env.TOKEN = 'fixture-secret'
+  const view = await call('get-mcp-servers', null)
+  assert.deepEqual(view.servers.map(server => [server.name, server.transport, server.managed, server.enabled, server.toolCount]), [
+    ['files', 'stdio', false, true, 1], ['ekko-studio-api', 'stdio', true, true, 1], ['off', 'http', false, false, 0],
+  ])
+  assert.deepEqual(view.selected, ['files', 'ekko-studio-api'])
+  assert.equal(JSON.stringify(view).includes('fixture-secret'), false)
+  assert.deepEqual(requests.map(([path]) => path), [
+    '/api/ekko/mcp/servers', '/api/ekko/mcp/servers/files/test', '/api/ekko/mcp/servers/ekko-studio-api/test',
+  ])
+})
+
+test('MCP checkbox storage is separate from the Studio enabled states and persists an empty selection', async () => {
   const { call, requests } = setup()
-  const before = await call('get-mcp-servers', null)
-  assert.deepEqual(before.servers, [])
-  assert.deepEqual(before.selected, [])
-  await call('create-mcp-server', { name: 'files', config: { type: 'stdio', command: 'files-mcp', args: [], env: { TOKEN: 'x' } } })
-  const snapshot = await call('get-mcp-servers', null)
-  assert.deepEqual(snapshot.servers.map(server => [server.name, server.transport, server.managed, server.enabled]), [['files', 'stdio', false, true]])
-  for (const server of snapshot.servers) assert.deepEqual(Object.keys(server).sort(), ['enabled', 'managed', 'name', 'transport'])
-  assert.deepEqual(requests.filter(([path]) => path.startsWith('/api/ekko/mcp')), [], '不再访问 Studio 的 MCP 清单')
-})
-
-test('save-mcp-selection 只改插件存储的启停位，逐项校验存在', async () => {
-  const { call } = setup()
-  await call('create-mcp-server', { name: 'a', config: { type: 'stdio', command: 'x' } })
-  await call('create-mcp-server', { name: 'b', config: { type: 'stdio', command: 'y' } })
-  assert.deepEqual((await call('save-mcp-selection', { servers: ['a'] })).selected, ['a'])
-  assert.deepEqual((await call('get-mcp-servers', null)).servers.map(server => [server.name, server.enabled]), [['a', true], ['b', false]])
+  assert.deepEqual((await call('save-mcp-selection', { servers: ['files'] })).selected, ['files'])
+  const readback = await call('get-mcp-servers', null)
+  assert.deepEqual(readback.selected, ['files'])
+  assert.deepEqual(readback.servers.map(server => [server.name, server.enabled]), [['files', true], ['ekko-studio-api', true], ['off', false]])
   assert.deepEqual((await call('save-mcp-selection', { servers: [] })).selected, [])
-  await assert.rejects(call('save-mcp-selection', { servers: ['ghost'] }), /未知 MCP 服务/)
-  await assert.rejects(call('save-mcp-selection', { servers: 'a' }), /expected array|servers 必须是/)
+  assert.deepEqual((await call('get-mcp-servers', null)).selected, [])
+  assert.equal(requests.some(([, options]) => options.method === 'PATCH'), false)
+  await assert.rejects(call('save-mcp-selection', { servers: ['ghost'] }), /清单已变更/)
+  await assert.rejects(call('save-mcp-selection', { servers: ['off'] }), /清单已变更/)
+  await assert.rejects(call('save-mcp-selection', { servers: 'a' }), /expected array/)
 })
 
-test('MCP CRUD RPC 写插件存储，不下发连接配置', async () => {
+test('MCP CRUD RPC 委托 Studio，详情密钥只回掩码', async () => {
   const { call } = setup()
   const created = await call('create-mcp-server', {
     name: 'private.tools',
@@ -307,23 +319,23 @@ test('MCP CRUD RPC 写插件存储，不下发连接配置', async () => {
   assert.equal(off.server.enabled, false)
   const removed = await call('delete-mcp-server', { name: 'private.tools' })
   assert.deepEqual(removed, { ok: true, name: 'private.tools' })
-  assert.deepEqual((await call('get-mcp-servers', null)).servers, [])
+  assert.equal((await call('get-mcp-servers', null)).servers.some(server => server.name === 'private.tools'), false)
 })
 
 test('get-mcp-server 接受省略 type 的 stdio 配置', async () => {
   const { call } = setup()
-  await call('create-mcp-server', { name: 'files', config: { command: 'files-mcp', args: [], env: {} } })
-  const detail = await call('get-mcp-server', { name: 'files' })
+  await call('create-mcp-server', { name: 'fixture-files', config: { command: 'files-mcp', args: [], env: {} } })
+  const detail = await call('get-mcp-server', { name: 'fixture-files' })
   assert.equal(detail.server.transport, 'stdio')
   assert.equal(detail.config.command, 'files-mcp')
 })
 
 test('MCP RPC 错误如实抛出，不假装成功', async () => {
   const { call } = setup()
-  await call('create-mcp-server', { name: 'files', config: { type: 'stdio', command: 'x' } })
+  await call('create-mcp-server', { name: 'fixture-files', config: { type: 'stdio', command: 'x' } })
   await assert.rejects(call('create-mcp-server', { name: 'files', config: { type: 'stdio', command: 'x' } }), /already exists/)
   await assert.rejects(call('create-mcp-server', { name: '_bad', config: { type: 'stdio', command: 'x' } }), /服务名/)
-  await assert.rejects(call('update-mcp-server', { name: 'ghost', config: { type: 'stdio', command: 'x' } }), /not found/)
+  await assert.rejects(call('update-mcp-server', { name: 'ghost', config: { type: 'stdio', command: 'x' } }), /不存在/)
   await assert.rejects(call('get-mcp-server', { name: 'ghost' }), /不存在/)
   await assert.rejects(call('delete-mcp-server', { name: 'ghost' }), /not found/)
   await assert.rejects(call('set-mcp-server-enabled', { name: 'files', enabled: 'yes' }), /expected boolean/)
@@ -332,15 +344,15 @@ test('MCP RPC 错误如实抛出，不假装成功', async () => {
 
 test('MCP 密钥：读掩码、掩码保留、新值替换、null 清除', async () => {
   const { call } = setup()
-  await call('create-mcp-server', { name: 'files', config: { command: 'files-mcp', env: { TOKEN: 'never-echo-this', KEEP: 'also-secret' } } })
-  const detail = await call('get-mcp-server', { name: 'files' })
+  await call('create-mcp-server', { name: 'fixture-files', config: { command: 'files-mcp', env: { TOKEN: 'never-echo-this', KEEP: 'also-secret' } } })
+  const detail = await call('get-mcp-server', { name: 'fixture-files' })
   assert.ok(!JSON.stringify(detail).includes('never-echo-this'))
-  await call('update-mcp-server', { name: 'files', config: detail.config })
-  await call('update-mcp-server', { name: 'files', config: { command: 'files-mcp', env: { TOKEN: 'replacement' } } })
-  const after = await call('get-mcp-server', { name: 'files' })
+  await call('update-mcp-server', { name: 'fixture-files', config: detail.config })
+  await call('update-mcp-server', { name: 'fixture-files', config: { command: 'files-mcp', env: { TOKEN: 'replacement' } } })
+  const after = await call('get-mcp-server', { name: 'fixture-files' })
   assert.deepEqual(after.config.env, { TOKEN: '__EKKO_SECRET_UNCHANGED__', KEEP: '__EKKO_SECRET_UNCHANGED__' })
-  await call('update-mcp-server', { name: 'files', config: { command: 'files-mcp', env: { TOKEN: null } } })
-  const cleared = await call('get-mcp-server', { name: 'files' })
+  await call('update-mcp-server', { name: 'fixture-files', config: { command: 'files-mcp', env: { TOKEN: null } } })
+  const cleared = await call('get-mcp-server', { name: 'fixture-files' })
   assert.deepEqual(cleared.config.env, { KEEP: '__EKKO_SECRET_UNCHANGED__' })
   assert.ok(!JSON.stringify(cleared).includes('also-secret'))
 })

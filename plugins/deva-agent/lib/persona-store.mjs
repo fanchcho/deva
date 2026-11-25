@@ -19,7 +19,7 @@ import { join } from 'node:path'
 import {
   DevaIdentityError, ensurePrivateDirectory, readStrictText, resolveDevaRoot, statOrNull, writeAtomic,
 } from './deva-fs.mjs'
-import { composePersonaFile, editPersonaFile, isPersonaId, parseFrontmatter } from './persona-file.mjs'
+import { composePersonaFile, editPersonaFile, fmScalar, isPersonaId, parseFrontmatter } from './persona-file.mjs'
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 
@@ -191,6 +191,18 @@ function readPersonaForEdit(config, id) {
   const file = readStrictText(path)
   if (!file) throw new DevaIdentityError('DEVA_PERSONA_NOT_FOUND', '身份不存在；请刷新列表')
   return { path, raw: file.raw, revision: stamp(file.raw) }
+}
+
+/** Update only the model scalar; preserve all other frontmatter and body bytes. */
+export function writePersonaModel(config, id, modelRef) {
+  const { path, raw } = readPersonaForEdit(config, id)
+  const newline = raw.match(/\r?\n/)?.[0] ?? '\n'
+  const lines = raw.split(/\r?\n/)
+  const end = lines[0]?.replace(/^﻿/, '').trim() === '---' ? lines.findIndex((line, i) => i > 0 && line.trim() === '---') : -1
+  if (end < 0) throw new Error('身份文件缺少有效的 frontmatter；没有覆盖')
+  const header = lines.slice(1, end).filter(line => !/^model\s*:/.test(line))
+  if (modelRef) header.push(`model: ${fmScalar(modelRef)}`)
+  writeAtomic(path, [lines[0], ...header, ...lines.slice(end)].join(newline), { expectedRaw: raw })
 }
 
 export function readStudioPersona(config, id) {

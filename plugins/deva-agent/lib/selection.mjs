@@ -2,8 +2,8 @@
  * 身份选择：会话级覆盖 > `~/.deva` 身份文件里的默认选择。
  *
  * 三个作用域：
- *  · 文件（唯一真源）——`<root>/deva-agent/identity.json` 的 `selected`，即设置页保存的默认身份；
- *    身份目录（id/name/description/persona）也全部来自这个文件，见 lib/deva-home.mjs；
+ *  · 文件（唯一真源）——`<root>/config.json → personas.selected`，即设置页保存的默认身份；
+ *    身份目录（id/name/description/persona）全部来自 `<root>/personas/*.md`，见 lib/deva-home.mjs；
  *  · session —— 会话窗口里用 `/deva:identity <id>` 或 `@deva:<id>` 临时切，只影响这个会话，
  *    仍然放在宿主会话存储里（它不是持久身份记录，也不应该改掉所有人的默认值）；
  *  · 宿主 `state.profile.namespace(userId).identity` —— 0.8.3 及更早的旧记录，只在文件第一次创建时
@@ -67,7 +67,7 @@ export async function writeIdentityId(_state, _identity, id, config = {}) {
 }
 
 /**
- * 读会话级覆盖：宿主会话存储优先，其次 `~/.deva/deva-agent/sessions.json`。
+ * 读会话级覆盖：宿主会话存储优先，其次 `~/.deva/config.json → personas.sessionSelected`。
  * 没有会话上下文或没有覆盖返回 null（不是错误）。
  */
 export async function readSessionIdentityId(state, identity = null, config = {}) {
@@ -90,7 +90,7 @@ export async function readSessionIdentityId(state, identity = null, config = {})
 
 /**
  * 写会话级覆盖；id 为 null 表示清除覆盖。
- * 同时写宿主会话存储（若当前是真实会话）与 `~/.deva/deva-agent/sessions.json`（可读可手改）。
+ * 同时写宿主会话存储（若当前是真实会话）与 `~/.deva/config.json → personas.sessionSelected`（可读可手改）。
  * @param {{config?: object, sessionId?: string}} options
  */
 export async function writeSessionIdentityId(state, id, allowedIds = null, options = {}) {
