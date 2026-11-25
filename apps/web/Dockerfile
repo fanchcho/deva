@@ -31,16 +31,29 @@ COPY apps/relay/package.json apps/relay/package.json
 COPY apps/relay-node/package.json apps/relay-node/package.json
 COPY apps/web/package.json apps/web/package.json
 
-RUN pnpm install --frozen-lockfile
+ARG PNPM_CHILD_CONCURRENCY=1
+ARG PNPM_NETWORK_CONCURRENCY=4
+ARG BUILD_NODE_HEAP_MB=768
+ENV NODE_OPTIONS=--max-old-space-size=${BUILD_NODE_HEAP_MB}
+RUN pnpm install --frozen-lockfile \
+      --child-concurrency=${PNPM_CHILD_CONCURRENCY} \
+      --network-concurrency=${PNPM_NETWORK_CONCURRENCY} \
+      --store-dir=/pnpm-store \
+ && rm -rf /pnpm-store /root/.cache
 
 # 源码放在 install 之后：改任意源文件只会让下面的构建层失效。
-COPY . .
-RUN pnpm build:web
+COPY apps/desktop apps/desktop
+COPY apps/web apps/web
+ARG DEVA_COMMIT=""
+ARG DEVA_REF=""
+RUN pnpm --filter @deva/desktop exec electron-vite build --config ../web/electron.renderer.config.mjs \
+ && pnpm --filter @deva/web build
 
-# pnpm 的 node_modules 全是指向 .pnpm 的软链，运行阶段不能只搬 @lydell 目录，
-# 这里先解引用成真实文件，镜像里只带 node-pty 本体。
+# 当前 hoisted 安装也可能包含软链；解引用原生 node-pty 及对应平台包，
+# runtime 不复制整套 node_modules。
 RUN mkdir -p /runtime/node_modules/@lydell \
- && cp -rL /src/node_modules/@lydell/. /runtime/node_modules/@lydell/
+ && cp -rL /src/node_modules/@lydell/. /runtime/node_modules/@lydell/ \
+ && mv /src/apps/web/dist/runtime /runtime/app
 
 
 FROM node:20-bookworm-slim AS runtime
@@ -77,9 +90,9 @@ WORKDIR /app
 COPY --from=builder /src/apps/desktop/out/renderer /src/apps/desktop/out/renderer
 COPY --from=builder /runtime/node_modules/@lydell /src/node_modules/@lydell
 COPY --from=builder /src/apps/web/dist /app/dist
-COPY --from=builder /src/apps/web/server.mjs /app/server.mjs
+COPY --from=builder /runtime/app/ /app/
 COPY --from=builder /src/apps/web/package.json /app/package.json
-COPY --from=builder /src/apps/web/src /app/src
+
 COPY --from=builder /src/apps/web/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \

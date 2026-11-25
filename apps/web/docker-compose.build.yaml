@@ -19,6 +19,12 @@ services:
       # 构建上下文是仓库根：renderer / preload / 主进程都来自同一份源码。
       context: ../..
       dockerfile: apps/web/Dockerfile
+      args:
+        PNPM_CHILD_CONCURRENCY: ${PNPM_CHILD_CONCURRENCY:-1}
+        PNPM_NETWORK_CONCURRENCY: ${PNPM_NETWORK_CONCURRENCY:-4}
+        BUILD_NODE_HEAP_MB: ${BUILD_NODE_HEAP_MB:-768}
+        DEVA_COMMIT: ${DEVA_COMMIT:-}
+        DEVA_REF: ${DEVA_REF:-}
     # 本地构建产物用独立 tag，避免覆盖 registry 的 latest 语义：
     # 服务器上「这个镜像是不是我本地编的」一眼能分辨。
     image: ${DEVA_WEB_LOCAL_IMAGE:-deva-web:local}

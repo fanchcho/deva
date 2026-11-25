@@ -60,27 +60,72 @@ docker compose logs deva-web | grep -A2 初始管理员
 
 compose 里同时起了 `watchtower`：它轮询 `ghcr.io/sqfcyily/deva` 的 digest，
 变了就 pull + 重建 `deva-web`。**watchtower 看不到源码文件**，只认镜像 digest，
-所以「改源码 → 自动更新」的前提是 CI 已经把新镜像推上去（见 `.github/workflows/image.yml`）。
+所以「改源码 → 自动更新」的前提是 CI 已经把新镜像推上去（当前 checkout 缺少镜像发布 workflow，需部署仓库提供）。
 
 要在服务器上用当前源码自己构建（不经过 registry）：
 
 ```bash
-scripts/redeploy.sh          # 等价于叠加 docker-compose.build.yaml 后 build + up -d
+docker compose -f docker-compose.yml -f docker-compose.build.yaml up -d --build
 ```
 
-镜像构建（CI 或 redeploy）会：
+镜像分 builder / runtime 两阶段。Docker 仅构建共用的 renderer 与 Web 后端，
+跳过 Electron main/preload 和手机端；运行镜像包含生产 bundle、编译后的网关/worker、
+原生 node-pty、Chromium、字体和终端/Git 工具，不复制整个源码或开发依赖目录。
+React 等部分声明在 devDependencies 的浏览器运行代码仍会进入 bundle，这是必需内容。
+安装仍使用冻结的 workspace 依赖：Web 没有自己的依赖声明，依赖 desktop 工具链和
+relay-node 的 esbuild，且使用 hoisted linker；单独 filter Web 无法构建，暂不拆依赖图。
+安装缓存清理于同一层，最终阶段不包含 pnpm store、Electron 二进制或构建工具链。
 
-1. 以**仓库根为构建上下文**，直接使用当前 checkout 的源码，不再 `git clone`；
-2. `pnpm install --frozen-lockfile && pnpm build` 构建桌面 renderer；
-3. `pnpm --filter @deva/web build` 把 preload 打成浏览器 shim、主进程打成 `dist/backend.cjs`；
-4. 运行阶段只带 renderer、dist、node-pty 和 Chromium。
+`.dockerignore` 排除 node_modules、out、dist、.git、.tmp、缓存和本地数据。
+排除 Git 后，本地覆盖构建需显式传递版本元数据（CI 同样传入 build args）：
 
-仓库根的 `.dockerignore` 会排除 `node_modules`、`out`、`dist`、`core`、`.tmp`，
-避免把本地产物和 core dump 塞进构建上下文；`.git` 保留，用于把 commit 写进
-`dist/build-info.json`。
+```bash
+export DEVA_COMMIT=$(git rev-parse HEAD)
+export DEVA_REF=$(git symbolic-ref --short -q HEAD || true)
+# 当前目录 apps/web；只构建，不启动
+docker compose -f docker-compose.yml -f docker-compose.build.yaml build
+```
 
-指定其他版本：改 `DEVA_WEB_IMAGE`，或用 `scripts/redeploy.sh` 在某个 checkout 上构建。
-完整的更新链路、回滚与故障排查见 [out/OPS.md](../../out/OPS.md)。
+当前 checkout 没有 `scripts/redeploy.sh`、`out/OPS.md` 或 `.github/workflows/image.yml`；
+上面的直接 Compose 命令是可用替代。远程拉取和 watchtower 配置保留，但 CI 发布需由部署仓库提供。
+
+### 小内存 Docker 配置
+
+将 `.env.example` 复制为本目录 `.env` 后修改参数。以下默认面向 2 GiB 主机上轻量单用户、
+少量 Chromium 页面；大页面、多用户或 MCP 子进程可能触及上限，必须按实际负载调整。
+运行限制不约束 Docker builder，建议小机器拉远程镜像，在独立构建机编译。
+
+| 变量 | 默认 | 作用 |
+|---|---|---|
+| `DEVA_WEB_MEM_LIMIT` | `1280m` | 整个 Web 容器 RAM 硬上限，给 2 GiB 主机留下约 768 MiB；其他服务仍占此余量 |
+| `DEVA_WEB_MEMSWAP_LIMIT` | `1280m` | RAM + swap 总额；等于 RAM 上限即禁用容器 swap，必须不小于 RAM 上限 |
+| `DEVA_WEB_NODE_HEAP_MB` | `256` | 注入 `NODE_OPTIONS=--max-old-space-size=256`，每个 Node 进程 old-space 的 MiB 上限，worker 继承；不含 native/Buffer/Chromium |
+| `DEVA_WEB_SHM_SIZE` | `256m` | /dev/shm 容量上限，按需占用并计入容器内存；过小可能使 Chromium 崩溃，大页面可改 512m |
+| `PNPM_CHILD_CONCURRENCY` | `1` | 构建 ARG：安装生命周期脚本并发 |
+| `PNPM_NETWORK_CONCURRENCY` | `4` | 构建 ARG：下载并发 |
+| `BUILD_NODE_HEAP_MB` | `768` | 构建 ARG：安装/编译 Node old-space 上限；不是 builder RSS 总上限 |
+| `DEVA_COMMIT` | 空 | 构建 ARG：当前 commit，空则本地 build.mjs 尝试 Git；Docker 无 .git 时为空 |
+| `DEVA_REF` | 空 | 构建 ARG：分支/ref，Docker 无 .git 时更新检查回退 main；deva_web 部署请传 deva_web |
+| `WATCHTOWER_POLL_INTERVAL` | `900` | 秒；保留 15 分钟自动检查与更新，不延长更新延迟 |
+
+不添加 `deploy.resources.limits`，避免与非 Swarm 的 `mem_limit` 重复配置；若以后添加，
+两者内存值必须一致。watchtower 保留 cleanup=true（节省磁盘而非直接降低 RSS）、
+scope=deva 与 enable 白名单；不加过紧的 watcher 内存限制，以免更新过程被 OOM 中断。
+`shm_size` 从 1 GiB 降到 256 MiB 不意味着空闲 RSS 立即减少 768 MiB。
+
+服务器应用配置后，用以下只读命令确认实际值（本次改造不执行部署）：
+
+```bash
+docker compose config
+docker stats --no-stream deva-web deva-watchtower
+docker inspect deva-web --format 'memory={{.HostConfig.Memory}} swap_total={{.HostConfig.MemorySwap}} shm={{.HostConfig.ShmSize}} oom={{.State.OOMKilled}}'
+docker exec deva-web sh -c 'echo "$NODE_OPTIONS"; du -sh /src/node_modules; cat /sys/fs/cgroup/memory.current /sys/fs/cgroup/memory.peak'
+docker image inspect "$(docker inspect deva-web --format '{{.Image}}')" --format '{{.Size}}'
+docker history --no-trunc "$(docker inspect deva-web --format '{{.Image}}')"
+```
+
+cgroup v2 的 memory.peak 需内核支持；在实际登录、打开 Chromium 页面后重复采样。
+不要改 Compose project name；仍是 `web`，数据卷仍是 `web_deva-data`。
 
 ### 有新提交时怎么知道
 
@@ -98,7 +143,10 @@ scripts/redeploy.sh          # 等价于叠加 docker-compose.build.yaml 后 bui
 ```bash
 # A. 主线：等 CI 把新镜像推到 ghcr，watchtower 在轮询间隔内自动 pull + 重启。
 # B. 备用：在服务器上用当前源码直接构建部署。
-scripts/redeploy.sh --pull
+git pull --ff-only
+export DEVA_COMMIT=$(git rev-parse HEAD)
+export DEVA_REF=$(git symbolic-ref --short -q HEAD || true)
+docker compose -f docker-compose.yml -f docker-compose.build.yaml up -d --build
 ```
 
 `deva-data` 卷不动，用户、会话、密钥都保留；工程目录是宿主 bind mount，不受影响。
@@ -334,8 +382,7 @@ sudo chown -R 1000:1000 ./data
 - **单实例**：一个 Node 网关进程；用户后端按需 fork、空闲 30 分钟回收。
 - **MCP**：stdio MCP 在用户后端进程里拉起，依赖容器内可用的命令；桌面专属的 MCP 需要自行补依赖。
 - **Docker 构建**：当前开发环境没有 Docker 守护进程，镜像未在本机 `docker build` 实跑；
-  Dockerfile 的每一步（COPY 源码 → pnpm install --frozen-lockfile → pnpm build →
-  pnpm --filter @deva/web build → 原生模块解引用拷贝 → 以同样绝对路径启动）都已在本地等价验证。
+  本次验证范围与证据见 `docs/docker-memory-report.md`，不能以本地 bundle 验证替代完整镜像构建。
 
 ---
 
@@ -390,4 +437,4 @@ Docker 构建上下文是仓库根，根目录 `.dockerignore` 负责排除依�
 
 Web 构建复用本仓库 `.npmrc` 的 hoisted 工具链：TypeScript 来自 desktop、esbuild 来自 relay-node 的既有锁定依赖。此分支 lockfile 没有 Web 独立依赖记录，因此不另行声明或解析一套工具版本；Web 不能脱离 workspace 单独安装。冻结安装可能补写空的 Web importer，不涉及依赖版本变化。
 
-产物包括 `apps/desktop/out/renderer` 与 `apps/web/dist`（shim.js、backend.cjs、pty-host.js、manifest.json、build-info.json、web/）。冒烟脚本只监听 localhost，使用仓库 `.tmp` 内的隔离数据目录，验证登录后首页及实际引用的 JS/CSS，再终止测试进程；不连接现有部署。Dockerfile 与本地均调用 `pnpm build:web`。
+产物包括 `apps/desktop/out/renderer` 与 `apps/web/dist`（shim.js、backend.cjs、pty-host.js、manifest.json、build-info.json、web/）。冒烟脚本只监听 localhost，使用仓库 `.tmp` 内的隔离数据目录，验证登录后首页及实际引用的 JS/CSS，再终止测试进程；不连接现有部署。本地完整构建调用 `pnpm build:web`；Docker 使用 renderer 专用配置再构建 Web。

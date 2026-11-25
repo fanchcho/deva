@@ -126,7 +126,7 @@ function gitInfo() {
       return ''
     }
   }
-  const commit = read(['rev-parse', 'HEAD'])
+  const commit = process.env.DEVA_COMMIT || read(['rev-parse', 'HEAD'])
   let ref = process.env.DEVA_REF || read(['rev-parse', '--abbrev-ref', 'HEAD'])
   if (ref === 'HEAD') ref = '' // detached HEAD：交给 DEVA_UPDATE_REF / 默认值
   return { commit, ref }
@@ -147,3 +147,19 @@ fs.writeFileSync(
 console.log(
   `[build] shim.js + backend.cjs + pty-host.js ok, renderer=${rendererDir}, deva=${version}, commit=${git.commit.slice(0, 7) || '-'}`
 )
+
+// Docker 网关产物：保留 fork worker 的相对路径，不携带后端源码或开发资源。
+await build({
+  entryPoints: [path.join(here, 'server.mjs')],
+  outfile: path.join(outDir, 'runtime', 'server.mjs'),
+  bundle: true,
+  external: ['./src/server/backend-pool.mjs'],
+  platform: 'node', format: 'esm', target: 'node20', sourcemap: false
+})
+await build({
+  entryPoints: ['backend-pool.mjs', 'worker-host.mjs'].map((name) => path.join(here, 'src', 'server', name)),
+  outdir: path.join(outDir, 'runtime', 'src', 'server'),
+  outExtension: { '.js': '.mjs' },
+  bundle: false,
+  platform: 'node', format: 'esm', target: 'node20', sourcemap: false
+})

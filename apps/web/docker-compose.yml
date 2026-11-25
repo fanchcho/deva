@@ -19,9 +19,14 @@ services:
     container_name: deva-web
     restart: unless-stopped
     init: true
+    # 非 Swarm Compose v2 直接设置 cgroup；memswap 是 RAM + swap 总额。
+    mem_limit: ${DEVA_WEB_MEM_LIMIT:-1280m}
+    memswap_limit: ${DEVA_WEB_MEMSWAP_LIMIT:-1280m}
     ports:
       - "${DEVA_WEB_PORT:-7080}:7080"
     environment:
+      # 每个 Node 进程的 old-space 上限，子进程继承；并非容器总内存。
+      NODE_OPTIONS: --max-old-space-size=${DEVA_WEB_NODE_HEAP_MB:-256}
       # 留空则首次启动随机生成并打印到容器日志
       DEVA_WEB_ADMIN_USER: ${DEVA_WEB_ADMIN_USER:-admin}
       DEVA_WEB_ADMIN_PASSWORD: ${DEVA_WEB_ADMIN_PASSWORD:-}
@@ -47,8 +52,8 @@ services:
       - deva-data:/data
       # 工程目录：宿主真实目录直接挂进来，同时作为默认工作区
       - ${DEVA_PROJECTS_DIR:-./projects}:/projects
-    # Chromium 渲染大页面需要更大的 /dev/shm
-    shm_size: "1gb"
+    # 按需使用而非预分配；过小会让 Chromium 渲染崩溃，大页面可调至 512m。
+    shm_size: ${DEVA_WEB_SHM_SIZE:-256m}
     security_opt:
       - no-new-privileges:true
     labels:

@@ -1,6 +1,6 @@
 # 构建上下文必须是仓库根（apps/web/docker-compose.yml 里 context: ../..），
 # 这里把依赖、产物和 core dump 排除，否则上下文能到几百 MB。
-# 保留 .git：build.mjs 要读 HEAD 写进 build-info.json，供运行期更新检查比对。
+# Git 元数据通过 DEVA_COMMIT / DEVA_REF 构建参数传入。
 node_modules
 **/node_modules
 out
@@ -11,3 +11,15 @@ dist
 core
 *.log
 .DS_Store
+
+.git
+**/.git
+**/.tmp
+**/.cache
+**/.pnpm-store
+.evidence
+**/.env
+**/.env.*
+!**/.env.example
+apps/web/projects
+apps/web/.data
