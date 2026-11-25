@@ -34,6 +34,7 @@ node scripts/install-deva-agent.mjs --ref deva-agent-v0.8.15 --dry-run
 ```bash
 OUT="$PWD/.tmp/deva-agent-package"
 mkdir -p "$OUT/unpacked" "$OUT/runtime"
+printf '*\n' > "$OUT/.gitignore"
 export TMPDIR="$OUT/runtime" npm_config_cache="$OUT/npm-cache"
 (
   set -e

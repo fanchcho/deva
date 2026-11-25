@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -90,6 +90,7 @@ function build(target, env) {
   const tmpRoot = join(repo, '.tmp')
   mkdirSync(tmpRoot, { recursive: true })
   const run = mkdtempSync(join(tmpRoot, 'install-deva-agent-'))
+  writeFileSync(join(run, '.gitignore'), '*\n')
   const sourceArchive = join(run, 'source.tar')
   const runtime = join(run, 'runtime')
   const unpacked = join(run, 'unpacked')
@@ -129,7 +130,8 @@ function studioClient(value, secrets) {
         method,
         redirect: 'error',
         signal: AbortSignal.timeout(120_000),
-        headers: { accept: 'application/json', ...(body && { 'content-type': 'application/json' }), ...(token && { authorization: `Bearer ${token}` }) },
+        // The synchronous pack step can outlast a Studio keep-alive connection.
+        headers: { accept: 'application/json', connection: 'close', ...(body && { 'content-type': 'application/json' }), ...(token && { authorization: `Bearer ${token}` }) },
         body: body && JSON.stringify(body)
       })
     } catch (error) {
