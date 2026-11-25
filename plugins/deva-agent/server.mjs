@@ -40,9 +40,9 @@ export function apply(ctx) {
   const activationUserId = ctx.identity?.userId
   ctx.log.info(`deva: 激活通道 ctx.host.request=${typeof ctx.host?.request === 'function'}`)
   registerCompression(ctx)
-  registerRpc(ctx, contract, 'get-model-selection', (_input, run) => readModelSelection(run))
-  registerRpc(ctx, contract, 'save-model-selection', (input, run) => saveModelSelection(run, input))
-  registerRpc(ctx, contract, 'save-persona-model', (input, run) => savePersonaModel(run, input))
+  registerRpc(ctx, contract, 'get-model-selection', (_input, run) => readModelSelection({ ...run, desktopActivationUserId: activationUserId }))
+  registerRpc(ctx, contract, 'save-model-selection', (input, run) => saveModelSelection({ ...run, desktopActivationUserId: activationUserId }, input))
+  registerRpc(ctx, contract, 'save-persona-model', (input, run) => savePersonaModel({ ...run, desktopActivationUserId: activationUserId }, input))
   // ~/.deva/personas 只存内容；默认与会话选择保留在 config.json。
   registerRpc(ctx, contract, 'get-identities', async (_input, run) => {
     const snapshot = await readIdentitySnapshot(run.state, run.identity, run.config, { includeEmpty: true })

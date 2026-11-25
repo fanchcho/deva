@@ -61,11 +61,11 @@ test('non-public and HTTP bases require exact administrator approval; old user c
   const turn = async () => (await createCustomModel(run, await readCustomModel(run))(input)).text
   for (const baseUrl of [a, 'http://api.example.com/v1', 'https://10.0.0.8/v1', 'https://[::1]/v1']) {
     const view = await saveModelSelection(run, { baseUrl, modelName: 'm', allowNonPublic: true })
-    assert.deepEqual(core(view), follow)
-    assert.equal(view.error.code, 'confirmation-required')
-    assert.match(view.error.message, /Studio 管理员/)
+    assert.equal(view.baseUrl, baseUrl)
+    assert.equal(view.needsNetworkApproval, true)
+    await assert.rejects(turn(), /Studio 管理员批准/)
   }
-  await assert.rejects(readFile(configFile), { code: 'ENOENT' })
+  assert.ok(JSON.parse(await readFile(configFile, 'utf8')).models.activeModelId)
   assert.equal((await saveModelSelection(run, { baseUrl: 'not a url', modelName: 'm' })).error.code, 'base-url-invalid')
   assert.equal((await saveModelSelection(run, { baseUrl: `${a}?k=v`, modelName: 'm' })).error.field, 'baseUrl')
   run.config.modelTrustedBases = [a]
@@ -73,8 +73,10 @@ test('non-public and HTTP bases require exact administrator approval; old user c
   assert.equal(saved.allowNonPublic, true)
   assert.equal(await turn(), '/a/v1/chat/completions')
   const denied = await saveModelSelection(run, { baseUrl: b, modelName: 'm' })
-  assert.equal(denied.error.code, 'confirmation-required')
-  assert.equal(denied.baseUrl, a)
+  assert.equal(denied.needsNetworkApproval, true)
+  assert.equal(denied.baseUrl, b)
+  await assert.rejects(turn(), /Studio 管理员批准/)
+  await saveModelSelection(run, { baseUrl: a, modelName: 'm' })
   await run.state.profile.namespace('1').set('modelNetworkConsent', { baseUrl: a })
   run.config.modelTrustedBases = []
   // 直连被拦时给出「哪个地址、为什么、到哪里批」，而不是只说“尚未确认放行”。

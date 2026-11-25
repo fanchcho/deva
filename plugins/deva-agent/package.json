@@ -1,6 +1,6 @@
 {
   "name": "studio-plugin-deva",
-  "version": "0.8.20",
+  "version": "0.8.21",
   "type": "module",
   "private": true,
   "scripts": {

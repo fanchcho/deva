@@ -5,7 +5,7 @@ import { customModelEndpoint, ModelInputError, normalizeBaseUrl } from './custom
 import { desktopConfigLocation, desktopModelState, writeDesktopDefaults, writeDesktopModel } from './desktop-models.mjs'
 import { getPersona, listPersonas, writePersonaModel } from './persona-store.mjs'
 import { resolveDevaRoot } from './deva-fs.mjs'
-import { sharedDevaPath } from './shared-deva-model.mjs'
+import { sharedDevaPath, sharedDevaWritePath, desktopWriteDenial } from './shared-deva-model.mjs'
 import { validateStored, validateStoredModel } from './storage-contracts.mjs'
 
 export const REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -179,7 +179,8 @@ export async function readModelSelection(run) {
   const base = {
     ...empty,
     ...desktopRouteView(desktop),
-    desktopWriteRequired: !sharedDevaPath(run),
+    desktopWriteRequired: !sharedDevaWritePath(run),
+    ...(!sharedDevaWritePath(run) ? { desktopWriteMessage: desktopWriteDenial(run) } : {}),
     hasApiKey: Boolean(await readCredential(run, desktop.active)),
     sharedConfigPath: join(root, 'config.json'),
     desktopConfigPath: location.path,
@@ -209,7 +210,6 @@ function checkedRoute(run, { baseUrl, modelName, apiKey, reasoningEffort }) {
   if (!name || /\p{Cc}/u.test(name)) throw new ModelInputError('modelName', 'model-name-invalid', '请填写有效的模型名')
   if (apiKey && !/^[A-Za-z0-9._~+/-]+=*$/.test(apiKey)) throw new ModelInputError('apiKey', 'api-key-invalid', 'API Key 必须是有效的 Bearer Token 格式')
   if (apiKey && (base.includes(apiKey) || name.includes(apiKey))) throw new ModelInputError('apiKey', 'api-key-misplaced', '请仅在 API Key 字段填写密钥')
-  resolveCustomEndpoint(run, base)
   return { baseUrl: base, modelName: name }
 }
 
@@ -218,7 +218,7 @@ async function removeLegacyId(store) {
 }
 
 export async function saveModelSelection(run, input) {
-  if (!sharedDevaPath(run)) throw new Error('请让管理员配置 sharedDevaUserId 并指定同一个桌面 Deva 配置目录')
+  if (!sharedDevaWritePath(run)) throw new Error(desktopWriteDenial(run))
   const options = validateStoredModel('modelSettingsInput', input)
   const store = modelStore(run)
   const desktop = await migrateLegacy(run, store)
@@ -258,7 +258,7 @@ export async function saveModelSelection(run, input) {
 }
 
 export async function savePersonaModel(run, { personaId, modelRef }) {
-  if (!sharedDevaPath(run)) throw new Error('仅管理员指定的 Deva 桌面账号可以修改身份绑定')
+  if (!sharedDevaWritePath(run)) throw new Error(desktopWriteDenial(run))
   if (modelRef && !desktopModelState(run.config).choices.some(route => route.ref === modelRef)) {
     throw new Error('请选择桌面已启用的对话模型')
   }

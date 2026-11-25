@@ -625,8 +625,14 @@ test('model view separates "desktop has no model" from "reference is broken"', a
 })
 
  test('read-only model mirror displays route while disabling writes', async () => {
-  const root = await mountPage(fakeContext('zh', async () => ({ baseUrl: 'http://127.0.0.1:7863/v1', modelName: 'cn:m', modelRef: 'custom:cn:m', providerName: 'cpa', desktopWriteRequired: true, hasApiKey: false, legacyNeedsSetup: false }), { view: 'model' }))
+  const root = await mountPage(fakeContext('zh', async () => ({ baseUrl: 'http://127.0.0.1:7863/v1', modelName: 'cn:m', modelRef: 'custom:cn:m', providerName: 'cpa', desktopWriteRequired: true, desktopWriteMessage: '只读模式 userId=2 sharedDevaUserId=1；修改后重新打开模型页', hasApiKey: false, legacyNeedsSetup: false }), { view: 'model' }))
   assert.equal(findAll(root, node => node.tag === 'select')[0].value, 'custom:cn:m')
   assert.equal(findAll(root, node => node.tag === 'button')[0].disabled, true)
   assert.match(findAll(root, node => node.textContent).map(node => node.textContent).join(' '), /只读模式/)
+})
+
+test('authorized desktop model remains saveable while network approval is pending', async () => {
+  const root = await mountPage(fakeContext('zh', async () => ({ baseUrl: 'http://127.0.0.1:7863/v1', modelName: 'cn:m', modelRef: 'custom:cn:m', providerName: 'cpa', desktopWriteRequired: false, needsNetworkApproval: true, hasApiKey: false, legacyNeedsSetup: false }), { view: 'model' }))
+  assert.equal(findAll(root, node => node.tag === 'button')[0].disabled, false)
+  assert.match(findAll(root, node => node.textContent).map(node => node.textContent).join(' '), /modelTrustedBases/)
 })

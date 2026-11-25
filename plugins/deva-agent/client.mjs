@@ -1210,9 +1210,7 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
       // 读出真实生效项时，状态行给出「provider / 模型」，让用户一眼对上桌面的选择。
       status.textContent = label(modelCopy.activeNow, { name: [settings.providerName, settings.modelName].filter(Boolean).join(' / ') || ref })
     }
-    if (settings.desktopWriteRequired) status.textContent += ctx.locale?.startsWith('zh')
-      ? ' 只读模式；保存需管理员将 sharedDevaUserId 设为当前 Studio 账号 ID。'
-      : ' Read-only; saving requires the administrator to set sharedDevaUserId to your Studio account ID.'
+    if (settings.desktopWriteRequired) status.textContent += ` ${settings.desktopWriteMessage || 'Read-only: host did not return authorization details; reload the plugin.'}`
     ownership.hidden = settings.desktopOwnership !== 'unverifiable'
     ownership.textContent = ownership.hidden ? '' : modelCopy.unverifiableOwnership
     bindings.innerHTML = ''

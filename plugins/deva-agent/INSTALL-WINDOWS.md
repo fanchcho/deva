@@ -1,3 +1,5 @@
+> 0.8.21 模型保存和当前安装入口见 [模型页修复与安装](INSTALL-STUDIO-MODEL.md)。默认从仓库目录安装；下文旧版本资产仅作历史部署参考。
+
 # Windows 上使用 Deva：Electron 桌面端与 Ekko Studio 插件
 
 核验日期：2026-11-25。**Deva 桌面端、Ekko Studio Windows 宿主、Deva Agent 插件是三个不同产物。**

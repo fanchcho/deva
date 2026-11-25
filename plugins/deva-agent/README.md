@@ -45,7 +45,7 @@ Studio 选中 Agent「Deva」并选模型
 
 ### 桌面模型
 
-0.8.20 起，已登录且有插件调用权限的账号可以只读镜像桌面模型（provider、Base URL、模型名、强度），无需 sharedDevaUserId 或 modelTrustedBases。页面读取不迁移旧路由。写入及运行桌面模型仍校验 sharedDevaUserId；写入和直连本机/内网/HTTP 地址仍需 modelTrustedBases 精确批准。密钥按账号/Profile 隔离，仅返回 hasApiKey。自定义复合 ID 按第一个冒号解析；未选、失效引用和读取异常分别处理。详见 [复验与 Windows 自检](INSTALL-STUDIO-MODEL.md)。
+0.8.20 起，已登录且有插件调用权限的账号可以只读镜像桌面模型（provider、Base URL、模型名、强度），无需 sharedDevaUserId 或 modelTrustedBases。页面读取不迁移旧路由。0.8.21 写入优先校验 sharedDevaUserId；未设置时，宿主激活账号可保存其进程 profile 下无链接越界的 .deva/config.json。运行桌面模型仍校验 sharedDevaUserId；只有实际直连本机/内网/HTTP 地址需要 modelTrustedBases 精确批准，保存不需要。密钥按账号/Profile 隔离，仅返回 hasApiKey。自定义复合 ID 按第一个冒号解析；未选、失效引用和读取异常分别处理。详见 [复验与 Windows 自检](INSTALL-STUDIO-MODEL.md)。
 
 两端需指向同一文件系统、同一 OS 用户的目录（`sharedDevaHome` → Studio 进程的 `DEVA_HOME` → `~/.deva`）。请先完整退出 **Deva 桌面应用**，在 Studio 保存后再打开：桌面主进程缓存配置，已打开的窗口不会自动采纳外部修改。桌面保存后，Studio 模型页重新进入或下轮对话读到新值。API Key 必须在两端各自保存，Studio 只回显「已设置」。
 

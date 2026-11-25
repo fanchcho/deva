@@ -7,15 +7,15 @@ import { fileURLToPath } from 'node:url'
 const repo = fileURLToPath(new URL('../', import.meta.url))
 const plugin = 'plugins/deva-agent'
 const registryPath = '/api/studio/plugins'
-const defaults = { ref: 'HEAD', studio: process.env.STUDIO_URL, 'token-env': 'STUDIO_API_TOKEN' }
+const defaults = { studio: process.env.STUDIO_URL, 'token-env': 'STUDIO_API_TOKEN' }
 const help = `用法：node scripts/install-deva-agent.mjs [--ref REF | --package 绝对解包目录]
        [--studio URL] [--token-env VAR | --username USER --password-env VAR]
        [--dry-run | --check | --rollback]
-默认从本地 Git HEAD 打包并安装；--ref 可用已 fetch 的分支、tag 或提交。
+默认从仓库 plugins/deva-agent 目录直接安装，不依赖 .tmp；--ref 显式选择 Git 提交构建。
 --dry-run 仅构建和读注册表，不变更插件；--check 只比对目标版本与启用状态。
 --rollback 恢复 Studio 保留的上一版，须用 --ref 或 --package 指定预期旧版本。
 --package 跳过构建，使用已解包的成品。
-环境变量默认：STUDIO_URL、STUDIO_API_TOKEN。成品保留在仓库 .tmp/。`
+环境变量默认：STUDIO_URL、STUDIO_API_TOKEN。仅 --ref 构建的中间产物保留在仓库 .tmp/。`
 
 function parseArgs(args) {
   const options = { ...defaults }
@@ -75,6 +75,7 @@ function readManifest(raw, directory) {
 }
 
 function targetFor(options, env) {
+  if (!options.package && !options.ref) options = { ...options, package: join(repo, plugin) }
   if (options.package) {
     const source = resolve(options.package)
     return { source, version: readManifest(readFileSync(join(source, 'plugin.json')), source).version }

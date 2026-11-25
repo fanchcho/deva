@@ -311,3 +311,7 @@ MCP/Skill 清单必须包含 servers/skills 数组，支持文件清单必须包
 技能清单每轮重新向 Studio 读取，原生页面启停/删除下一轮立即生效；只向提示词注入启用且有效技能的 name 与 description，不缓存正文或复制技能。MCP 每轮取最新配置，同名注入优先；缺失环境变量（含 HTTP headers）完整列出变量名，HTTP 401/403/404/405 保留可诊断类别，任意 stderr/连接配置不进入日志。
 
 运行日志仅记录 surface、宿主通道是否存在及注入服务名，不记录模型代理凭据、MCP env/headers 或技能正文。页面 RPC 的成功不能证明 Desktop 页面已挂载；需独立 Desktop 授权验收。
+
+## 0.8.21 模型写入
+
+modelSettingsView.desktopWriteMessage 是可选拒绝提示，含当前调用账号、配置所有者、宿主激活账号和重试步骤；与 desktopWriteRequired 同时用于前端禁用说明。未配置 sharedDevaUserId 时仅宿主激活账号可写本机 profile/.deva 的普通配置文件；实际网络请求授权不变。保存模型不检查 modelTrustedBases，直连时仍检查。

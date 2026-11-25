@@ -76,6 +76,7 @@
           "type": "string",
           "description": "仅授权账号可见；Studio 进程解析的共享 config.json 绝对路径。"
         },
+        "desktopWriteMessage": { "type": "string", "description": "写入拒绝原因、当前调用和激活账号、配置所有者及重试步骤；无密钥。" },
         "desktopWriteRequired": { "type": "boolean", "description": "只读镜像正常；当前账号未获 sharedDevaUserId 写入授权。" },
         "desktopAccessRequired": {
           "type": "boolean",
