@@ -5,7 +5,7 @@ import { customModelEndpoint, ModelInputError, normalizeBaseUrl } from './custom
 import { desktopConfigLocation, desktopModelState, writeDesktopDefaults, writeDesktopModel } from './desktop-models.mjs'
 import { getPersona, listPersonas, writePersonaModel } from './persona-store.mjs'
 import { resolveDevaRoot } from './deva-fs.mjs'
-import { sharedDevaPath, sharedDevaWritePath, desktopWriteDenial } from './shared-deva-model.mjs'
+import { sharedDevaWritePath, desktopWriteDenial } from './shared-deva-model.mjs'
 import { validateStored, validateStoredModel } from './storage-contracts.mjs'
 
 export const REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -107,10 +107,15 @@ function displayBaseUrl(value) {
 }
 
 export async function readCustomModel(run, personaId) {
-  if (!sharedDevaPath(run)) return null
+  if (!sharedDevaWritePath(run)) {
+    if (run.mode === 'global') throw new Error(desktopWriteDenial(run))
+    return null
+  }
   const desktop = await migrateLegacy(run, modelStore(run))
   const selected = personaId ?? desktop.snapshot.value.personas?.selected
   const ref = selected && getPersona(run.config, selected)?.model
+  if (ref && !desktop.resolve(ref)) throw new Error(`身份模型引用失效：${ref}；请在 Deva → 模型 → 身份模型绑定重新选择`)
+  if (!ref && unresolvedActiveRef(desktop)) throw new Error(`桌面默认模型引用失效：${desktop.models.activeModelId}；请在 Deva → 模型重新选择`)
   const route = (ref && desktop.resolve(ref)) || desktop.active
   if (!route) return null
   if (route.adapter !== 'openai' || !route.baseUrl) {
@@ -270,9 +275,13 @@ export const CONFIGURED_MODEL_ID = 'deva-direct'
 
 export async function listConfiguredModels(run) {
   const source = 'deva-model-settings'
-  const model = await readCustomModel(run)
+  // The catalog is a read-only projection, not a network or credential operation.
+  const desktop = desktopModelState(run.config)
+  const selected = desktop.snapshot.value.personas?.selected
+  const ref = selected && getPersona(run.config, selected)?.model
+  const model = ref ? desktop.resolve(ref) : desktop.active
   if (!model) {
-    return { status: 'empty', source, scope: 'configured', models: [], message: '尚未选择桌面默认模型，或 Studio 未获管理员授权访问桌面配置' }
+    return { status: 'empty', source, scope: 'configured', models: [], message: ref || desktop.models.activeModelId ? `模型引用失效：${ref || desktop.models.activeModelId}；请在 Deva → 模型重新选择` : '桌面未选择模型；请在 Deva → 模型选择并保存' }
   }
   return {
     status: 'ready', source, scope: 'configured',

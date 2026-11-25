@@ -193,7 +193,7 @@ export function createAgentDefinition({ log = console, runTurn = runAgentTurn, i
       global: {
         async listModels(ctx) {
           if (!plugin) throw new Error('Deva 模型目录需要插件上下文')
-          return listConfiguredModels({ identity: ctx.identity, state: plugin.state, config: plugin.config })
+          return listConfiguredModels({ identity: ctx.identity, state: plugin.state, config: plugin.config, desktopActivationUserId: plugin.identity?.userId })
         },
       },
     },
@@ -223,6 +223,7 @@ export function createAgentDefinition({ log = console, runTurn = runAgentTurn, i
         return {
           async run(input, run) {
             if (disposed) throw new Error('本会话已释放')
+            run = { ...run, desktopActivationUserId: plugin?.identity?.userId }
             if (run.mode !== 'global' && (!run.model?.baseUrl || !run.model?.token)) throw new Error(INSTRUCTION)
             const workspaceDir = run.paths.workspaceDir
             // Studio 原生页面也会修改技能；每轮重新读取，不能沿用上一轮的启停状态。

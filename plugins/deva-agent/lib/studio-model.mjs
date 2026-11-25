@@ -50,7 +50,9 @@ export function createCustomModel(run, { baseUrl, modelName, apiKey, reasoningEf
     const reasoning = apiKey ? protectDelta(onReasoning, apiKey) : null
     const result = await callModel({
       ...options, apiMode: 'chat_completions', model: { model: modelName, ...(reasoningEffort ? { reasoningEffort } : {}) }, baseUrl, token: apiKey,
-      chatRequest: request => requestCustomModel(endpoint, request).catch(error => { throw effortRejected(error, reasoningEffort) }),
+      chatRequest: request => requestCustomModel(endpoint, request).catch(error => { throw /HTTP (401|403)；/.test(error.message)
+        ? new Error(`${error.message}；Studio 侧 API Key ${apiKey ? '已设置但上游拒绝' : '未设置'}，请在 Deva → 模型保存该提供方的有效 Key；桌面密钥不会自动复制`)
+        : effortRejected(error, reasoningEffort) }),
       onDelta: text?.emit ?? onDelta,
       onReasoning: reasoning?.emit ?? onReasoning,
     })

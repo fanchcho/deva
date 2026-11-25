@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, symlinkSync, rmSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { sharedDevaWritePath } from '../lib/shared-deva-model.mjs'
-import { readModelSelection, saveModelSelection } from '../lib/model-selection.mjs'
+import { readModelSelection, saveModelSelection, readCustomModel, listConfiguredModels } from '../lib/model-selection.mjs'
 
 test('local activation account can save without POSIX uid; other accounts, roots and links cannot', async () => {
   const home = mkdtempSync(join(tmpdir(), 'local-model-'))
@@ -24,6 +24,10 @@ test('local activation account can save without POSIX uid; other accounts, roots
     const input = { baseUrl: provider.apiHost, modelName: 'cn:deepseek-v4.1-flash', reasoningEffort: 'high' }
     const view = await saveModelSelection(run, input)
     assert.equal(view.needsNetworkApproval, true)
+    assert.equal((await listConfiguredModels(run)).models.length, 1)
+    assert.equal((await readCustomModel(run)).modelName, 'cn:deepseek-v4.1-flash')
+    await assert.rejects(readCustomModel({ ...run, mode: 'global', identity: { userId: 2 } }), /sharedDevaUserId=2/)
+
     const saved = JSON.parse(readFileSync(file))
     assert.equal(saved.models.activeEffort, 'high')
     assert.deepEqual(saved.models.providers, config.models.providers)

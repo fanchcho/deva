@@ -155,7 +155,7 @@ test('agent definition exposes scoped and global modes and rejects runs it canno
     // global 模式没有直连配置：停下并说明去哪里配置，不回退。
     await assert.rejects(session.run({ input: [{ type: 'text', text: 'hi' }], history: [], instructions: [], options: {} }, {
       ...fakeRun(dir).run, mode: 'global', model: {},
-    }), /Agent 自带模型.*Deva → 设置 → 模型/)
+    }), /sharedDevaUserId=1/)
     await assert.rejects(session.run({ input: [], history: [], instructions: [], options: {} }, {
       mode: 'scoped', model: {}, paths: { runtimeDir: dir, workspaceDir: dir }, signal: new AbortController().signal,
       output: { emit: async () => {} }, attachments: {}, log: { info() {} },
