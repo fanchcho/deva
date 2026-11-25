@@ -377,3 +377,17 @@ Docker 构建上下文是仓库根，根目录 `.dockerignore` 负责排除依�
 | 内置浏览器报错 | 确认 `CHROME_PATH` 指向存在的 Chromium；容器内需要 `--no-sandbox`（已默认） |
 | 上传大文件失败 | 网关默认 64MB 上限，见 `readBody` |
 | 想重置某个用户 | `/admin` 里删除用户会连数据一起删；只改密码用「重置」 |
+
+## 与上游手机端的边界
+
+上游 `apps/desktop/src/mobile` 是配对设备访问桌面会话的手机端，经 WebSocket 网关连接；本目录是独立的多用户 Node 服务，经 HTTP/SSE 适配桌面 preload。两者认证、协议和部署职责不同。Web 桌面业务只使用上游 renderer/preload/main，不维护第二份业务源码。
+
+`favicon.svg` 唯一源为 `apps/desktop/src/mobile/public/favicon.svg`。`node build.mjs` 将它与本地 `src/web` 的独有资源输出到 `dist/web`；服务从该目录读取，Docker 已复制整个 `dist`，运行时无需上游源码。修改资源后需重新构建。
+
+## Web 构建验证
+
+在仓库根运行 `pnpm install --frozen-lockfile`、`pnpm typecheck`、`pnpm --filter @deva/web typecheck`、`pnpm build:web` 和 `node apps/web/test/build-smoke.mjs`。使用根 packageManager 指定的 pnpm 10.8.0。
+
+Web 构建复用本仓库 `.npmrc` 的 hoisted 工具链：TypeScript 来自 desktop、esbuild 来自 relay-node 的既有锁定依赖。此分支 lockfile 没有 Web 独立依赖记录，因此不另行声明或解析一套工具版本；Web 不能脱离 workspace 单独安装。冻结安装可能补写空的 Web importer，不涉及依赖版本变化。
+
+产物包括 `apps/desktop/out/renderer` 与 `apps/web/dist`（shim.js、backend.cjs、pty-host.js、manifest.json、build-info.json、web/）。冒烟脚本只监听 localhost，使用仓库 `.tmp` 内的隔离数据目录，验证登录后首页及实际引用的 JS/CSS，再终止测试进程；不连接现有部署。Dockerfile 与本地均调用 `pnpm build:web`。

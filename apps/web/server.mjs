@@ -421,10 +421,10 @@ function shellScript(username, role) {
 })` 
 }
 
-// 静态资源（renderer 产物 + src/web 自有文件）：ETag/304 + 流式读取，见 src/server/static.mjs。
+// 静态资源（renderer 产物 + dist/web 构建资源）：ETag/304 + 流式读取，见 src/server/static.mjs。
 const serveStatic = createStaticHandler({
   rendererDir: manifest.rendererDir,
-  assetsDir: path.join(here, 'src', 'web'),
+  assetsDir: path.join(here, 'dist', 'web'),
   injectIndex
 })
 
@@ -1038,7 +1038,7 @@ process.on('SIGTERM', () => shutdown('SIGTERM'))
 process.on('SIGINT', () => shutdown('SIGINT'))
 
 server.listen(PORT, HOST, () => {
-  console.log(`[deva-web] http://${HOST}:${PORT}`)
+  console.log(`[deva-web] http://${HOST}:${server.address().port}`)
   console.log(`[deva-web] data=${DATA_ROOT} renderer=${manifest.rendererDir}`)
   console.log('[deva-web] 登录页 /login，管理页 /admin；每用户独立后端进程')
   if (UPDATE_MINUTES < 0) {

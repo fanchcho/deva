@@ -30,6 +30,15 @@ for (const p of [rendererDir, preloadEntry]) {
 const outDir = path.join(here, 'dist')
 fs.mkdirSync(outDir, { recursive: true })
 
+// Web 自有资源与上游共享图标统一输出到 dist，运行期不依赖上游源码目录。
+const assetsDir = path.join(outDir, 'web')
+fs.mkdirSync(assetsDir, { recursive: true })
+fs.cpSync(path.join(here, 'src', 'web'), assetsDir, { recursive: true })
+fs.copyFileSync(
+  path.join(desktopDir, 'src', 'mobile', 'public', 'favicon.svg'),
+  path.join(assetsDir, 'favicon.svg')
+)
+
 // 1) 浏览器侧 preload shim
 await build({
   entryPoints: [preloadEntry],

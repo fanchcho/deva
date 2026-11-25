@@ -1,6 +1,6 @@
 {
   "name": "@deva/web",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "private": true,
   "type": "module",
   "description": "Deva 纯 Web 运行层：复用 renderer 与 preload API，后端由 Node 服务承担",
@@ -8,9 +8,5 @@
     "build": "node build.mjs",
     "start": "node server.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.backend.json"
-  },
-  "devDependencies": {
-    "esbuild": "^0.21.5",
-    "typescript": "^5.9.3"
   }
 }

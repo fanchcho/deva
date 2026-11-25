@@ -8,7 +8,7 @@
 # 构建必须在仓库根执行（context 是仓库根，Dockerfile 在 apps/web）：
 #   docker build -f apps/web/Dockerfile -t deva-web .
 # 或直接：
-#   cd apps/web && docker compose up -d --build
+#   cd apps/web && docker compose -f docker-compose.yml -f docker-compose.build.yaml up -d --build
 
 FROM node:20-bookworm-slim AS builder
 
@@ -35,8 +35,7 @@ RUN pnpm install --frozen-lockfile
 
 # 源码放在 install 之后：改任意源文件只会让下面的构建层失效。
 COPY . .
-RUN pnpm build
-RUN pnpm --filter @deva/web build
+RUN pnpm build:web
 
 # pnpm 的 node_modules 全是指向 .pnpm 的软链，运行阶段不能只搬 @lydell 目录，
 # 这里先解引用成真实文件，镜像里只带 node-pty 本体。
