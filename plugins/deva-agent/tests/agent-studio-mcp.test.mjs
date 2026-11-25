@@ -99,7 +99,7 @@ test('插件自带 MCP 连不上时写进 MCP 状态段，不中断对话', asyn
       output: { emit: async () => {} },
       attachments: { resolve: async () => ({}), read: async () => new Uint8Array() },
       mcpServers: {},
-      host: { async request() { return { skills: [] } } },
+      host: { async request(path) { return path === '/api/ekko/mcp/servers' ? { ok: true, servers: [] } : { skills: [] } } },
     }
     await session.run({ input: [{ type: 'text', text: '你好' }], history: [], instructions: [], options: {} }, run)
     assert.equal(calls.length, 1)
@@ -111,7 +111,7 @@ test('插件自带 MCP 连不上时写进 MCP 状态段，不中断对话', asyn
   }
 })
 
-test('没有自带 MCP 时不访问 Studio MCP 清单、也不产生 MCP 状态噪声', async () => {
+test('Studio 和桌面 MCP 均为空时不产生 MCP 状态噪声', async () => {
   const { dir, cleanup } = await workspace()
   try {
     const { calls, runTurn } = fakeRunTurn()
@@ -129,10 +129,10 @@ test('没有自带 MCP 时不访问 Studio MCP 清单、也不产生 MCP 状态�
       output: { emit: async () => {} },
       attachments: { resolve: async () => ({}), read: async () => new Uint8Array() },
       mcpServers: {},
-      host: { async request(path) { requests.push(path); return path === '/api/ekko/skills' ? { skills: [] } : { servers: [] } } },
+      host: { async request(path) { requests.push(path); return path === '/api/ekko/skills' ? { skills: [] } : { ok: true, servers: [] } } },
     }
     await session.run({ input: [{ type: 'text', text: '你好' }], history: [], instructions: [], options: {} }, run)
-    assert.deepEqual(requests.filter(path => path.startsWith('/api/ekko/mcp')), [])
+    assert.deepEqual(requests.filter(path => path.startsWith('/api/ekko/mcp')), ['/api/ekko/mcp/servers'])
     assert.doesNotMatch(calls[0], /## MCP 连接状态/)
     await session.dispose?.()
   } finally {
@@ -171,7 +171,7 @@ test('插件自带 MCP 连接跨轮复用；配置变更后重建连接', async 
       output: { emit: async () => {} },
       attachments: { resolve: async () => ({}), read: async () => new Uint8Array() },
       mcpServers: {},
-      host: { async request() { return { skills: [] } } },
+      host: { async request(path) { return path === '/api/ekko/mcp/servers' ? { ok: true, servers: [] } : { skills: [] } } },
     })
     const input = text => ({ input: [{ type: 'text', text }], history: [], instructions: [], options: {} })
 

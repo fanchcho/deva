@@ -112,7 +112,7 @@
       }
     }
   },
-  "version": "0.8.17",
+  "version": "0.8.18",
   "apiVersion": 1,
   "author": {
     "name": "Deva"
@@ -165,12 +165,12 @@
   "issues": "https://github.com/sqfcyily/deva/issues",
   "configSchema": {
     "type": "object",
-    "description": "可选桌面模型共享、附件预算/授权根、审批与压缩策略；不存密钥。",
+    "description": "桌面模型共享授权、附件预算/授权根、审批与压缩策略；不存密钥。",
     "properties": {
       "sharedDevaUserId": {
         "type": "integer",
         "minimum": 1,
-        "description": "管理员显式授权共享 OS 用户的 Deva 模型配置的单个 Studio 账号 ID。不填则保持用户 + Profile 私有配置。"
+        "description": "管理员显式授权共享 OS 用户的 Deva 模型配置的单个 Studio 账号 ID。不填则禁用 Studio 中共享的模型设置，不再另存私有路由。"
       },
       "sharedDevaHome": {
         "type": "string",
@@ -178,7 +178,7 @@
       },
       "modelTrustedBases": {
         "type": "array",
-        "description": "可选：管理员为所有账号预先允许 Deva 直连的完整 Base URL（HTTP、本机或内网）；仅授权列出的规范地址，不允许通配。用户也可在模型页对自己填写的那一个地址勾选确认，无需改这里。",
+        "description": "可选：管理员为所有账号预先允许 Deva 直连的完整 Base URL（HTTP、本机或内网）；仅授权列出的规范地址，不允许通配。模型页不能自行放行本机、内网或 HTTP 地址。",
         "items": { "type": "string" },
         "default": []
       },

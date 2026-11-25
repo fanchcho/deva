@@ -28,8 +28,8 @@ function effortRejected(error, reasoningEffort) {
 }
 
 /** Uses only the selected endpoint and its own key, never the scoped lease or Studio Model API. */
-export function createCustomModel(run, { baseUrl, modelName, apiKey, confirmedBase, reasoningEffort = '' }) {
-  const endpoint = resolveCustomEndpoint(run, baseUrl, confirmedBase)
+export function createCustomModel(run, { baseUrl, modelName, apiKey, reasoningEffort = '' }) {
+  const endpoint = resolveCustomEndpoint(run, baseUrl)
   return async ({ onDelta = noop, onReasoning = noop, ...options }) => {
     const text = apiKey ? protectDelta(onDelta, apiKey) : null
     const reasoning = apiKey ? protectDelta(onReasoning, apiKey) : null

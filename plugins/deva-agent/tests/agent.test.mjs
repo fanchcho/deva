@@ -341,7 +341,7 @@ test('the memory index is re-read only after a successful memory write or delete
   } finally { await cleanup() }
 })
 
-for (const shared of [false, true]) test(`Deva uses scoped by default, sends direct HTTP for X and Y, and never falls back (${shared ? 'shared file' : 'private state'})`, async t => {
+test('Deva follows the Desktop config on later turns and never falls back after a direct error', async t => {
   const { dir, cleanup } = await workspace()
   const key = randomBytes(32).toString('hex')
   const seen = []
@@ -367,7 +367,7 @@ for (const shared of [false, true]) test(`Deva uses scoped by default, sends dir
     const base = `http://127.0.0.1:${proxy.address().port}`
     const x = `${base}/x/v1`, y = `${base}/y/compatible`
     const sharedDevaHome = join(dir, '.deva')
-    run.config = { modelTrustedBases: [x, y], ...(shared ? { sharedDevaUserId: 1, sharedDevaHome } : {}) }
+    run.config = { modelTrustedBases: [x, y], sharedDevaUserId: 1, sharedDevaHome }
     run.model = { ...run.model, baseUrl: base, model: 'session-model' }
     run.host = { models: { async respond() { assert.fail('host gateway must not be used') } } }
     const def = createAgentDefinition({ log: { info() {}, warn() {} } })
@@ -380,19 +380,14 @@ for (const shared of [false, true]) test(`Deva uses scoped by default, sends dir
       assert.equal(savedX.modelName, 'x')
       assert.equal(savedX.hasApiKey, true)
       assert.equal((await turn()).content[0].text, 'x')
-      if (shared) {
-        const file = join(sharedDevaHome, 'config.json')
-        const cfg = JSON.parse(await readFile(file, 'utf8'))
-        const [provider] = cfg.models.providers
-        provider.apiHost = y
-        provider.models = [{ id: 'y', name: 'y', enabled: true }, ...provider.models]
-        cfg.models.activeModelId = `${provider.id}:y`
-        await writeFile(`${file}.tmp`, JSON.stringify(cfg), { mode: 0o600 })
-        await rename(`${file}.tmp`, file)
-      } else {
-        const savedY = await saveModelSelection(run, { baseUrl: y, modelName: 'y' })
-        assert.deepEqual({ baseUrl: savedY.baseUrl, modelName: savedY.modelName, hasApiKey: savedY.hasApiKey }, { baseUrl: y, modelName: 'y', hasApiKey: false })
-      }
+      const file = join(sharedDevaHome, 'config.json')
+      const cfg = JSON.parse(await readFile(file, 'utf8'))
+      const [provider] = cfg.models.providers
+      provider.apiHost = y
+      provider.models = [{ id: 'y', name: 'y', enabled: true }, ...provider.models]
+      cfg.models.activeModelId = `${provider.id}:y`
+      await writeFile(`${file}.tmp`, JSON.stringify(cfg), { mode: 0o600 })
+      await rename(`${file}.tmp`, file)
       assert.equal((await turn()).content[0].text, 'y')
       await saveModelSelection(run, { baseUrl: y, modelName: 'denied', apiKey: key })
       await assert.rejects(turn(), error => error.message.includes('HTTP 401') && !error.message.includes(key))
@@ -429,12 +424,13 @@ test('global mode runs on the configured direct model with the chosen effort and
     // global 模式下宿主不注入代理地址与令牌。
     const globalRun = model => ({ ...run, mode: 'global', model, host: { models: { async respond() { assert.fail('host gateway must not be used') } } } })
     const baseUrl = `http://127.0.0.1:${upstream.address().port}/v1`
-    const def = createAgentDefinition({ log: { info() {}, warn() {} }, plugin: { state: run.state, config: {} } })
+    run.config = { sharedDevaUserId: 1, sharedDevaHome: join(dir, '.deva'), modelTrustedBases: [baseUrl] }
+    const def = createAgentDefinition({ log: { info() {}, warn() {} }, plugin: { state: run.state, config: run.config } })
     const management = { identity: { userId: 1, profile: 'default', agentId: 'plugin:deva/deva' } }
     assert.equal((await def.modes.global.listModels(management)).status, 'empty')
     await saveModelSelection(run, { baseUrl, modelName: 'mine', allowNonPublic: true, reasoningEffort: 'medium' })
     const catalog = await def.modes.global.listModels(management)
-    assert.deepEqual(catalog.models.map(model => [model.id, model.name, model.isDefault, model.reasoningEfforts.join()]), [['deva-direct', 'mine', true, 'minimal,low,medium,high,xhigh']])
+    assert.deepEqual(catalog.models.map(model => [model.id, model.name, model.isDefault, model.reasoningEfforts.join()]), [['deva-direct', 'mine', true, 'low,medium,high,xhigh,max']])
     // 改模型名后目录 id 不变，已记住该 id 的会话不会被宿主判为「模型已不可用」。
     await saveModelSelection(run, { baseUrl, modelName: 'renamed', allowNonPublic: true })
     assert.deepEqual((await def.modes.global.listModels(management)).models.map(model => [model.id, model.name]), [['deva-direct', 'renamed']])

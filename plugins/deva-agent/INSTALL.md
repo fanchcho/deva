@@ -4,6 +4,9 @@
 
 执行记录（2026-11-25）：本机 Studio 0.8.30 已热装 **Deva 0.8.17**，并用 `GET /api/studio/plugins` 读回 active / enabled（版本与 revision 见本轮报告）。发布件跟随 [deva-agent-v0.8.17](https://github.com/fanchcho/deva/tree/deva-agent-v0.8.17)。插件 ID `deva`，Agent ID `plugin:deva/deva`。Windows 请看 [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md)。
 
+> **0.8.18（标签 `deva-agent-v0.8.18`）**：模型页改读写桌面 Deva 的模型与身份绑定；需要管理员设置 `sharedDevaUserId`，非公网地址需批准 `modelTrustedBases`。MCP 页改用 Studio 原生服务表，勾选只控制本 Agent。三页顶栏仍由 Studio 宿主渲染，插件不能改，0.8.18 未改页头。桌面端只在启动时读配置，保存前请先退出桌面端；API Key 两端各自设置。下文步骤按 0.8.17 写成并验证，安装 0.8.18 时把其中的 tag 换成 `deva-agent-v0.8.18`。
+
+
 ## 1. Studio 实际支持哪些入口
 
 | 入口 | 前置条件和格式 | 本轮结果 |

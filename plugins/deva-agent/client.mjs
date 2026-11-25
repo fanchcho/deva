@@ -22,7 +22,7 @@ const labels = {
     "saved": "已保存：{name}",
     "none": "未读取到身份目录",
     "mcpTitle": "MCP 服务器",
-    "mcpHint": "这些是 Deva 插件自带（独立存储）的 MCP 服务，增删改只影响本插件；Studio 自己的 MCP 列表在 Studio 的「MCP」页，两边互不影响。启用后下一轮连接。",
+    "mcpHint": "这里显示 Studio「MCP」页的服务（含内置服务）。卡片启停影响 Studio；勾选保存只控制当前 Profile 的 Deva。工具数由 Studio 对已启用服务探测；“+”表示还有服务未能完成探测。",
     "search": "搜索服务器...",
     "add": "+ 添加服务器",
     "reload": "刷新",
@@ -81,7 +81,7 @@ const labels = {
     "saved": "Saved: {name}",
     "none": "No identities available",
     "mcpTitle": "MCP servers",
-    "mcpHint": "These MCP servers belong to the Deva plugin (stored separately). Changes here never touch Studio’s own MCP list (Studio → MCP). Enabled servers are connected next turn.",
+    "mcpHint": "These are the services from Studio → MCP, including built-ins. Enable/disable changes Studio; saved checkboxes apply only to Deva in this profile. Studio probes enabled services for tools.",
     "search": "Search servers...",
     "add": "+ Add Server",
     "reload": "Refresh",
@@ -140,7 +140,7 @@ const labels = {
     "saved": "已儲存：{name}",
     "none": "未讀取到身分目錄",
     "mcpTitle": "MCP 伺服器",
-    "mcpHint": "這些是 Deva 外掛內建（獨立儲存）的 MCP 服務，增刪改只影響本外掛；Studio 自己的 MCP 清單在 Studio 的「MCP」頁，兩邊互不影響。啟用後下一輪連線。",
+    "mcpHint": "這裡顯示 Studio「MCP」頁的服務（含內建服務）。卡片啟停影響 Studio；儲存勾選只控制目前 Profile 的 Deva。Studio 會探測已啟用服務的工具。",
     "search": "搜尋伺服器...",
     "add": "+ 新增伺服器",
     "reload": "重新整理",
@@ -199,7 +199,7 @@ const labels = {
     "saved": "保存しました：{name}",
     "none": "アイデンティティが見つかりません",
     "mcpTitle": "MCP サーバー",
-    "mcpHint": "これらは Deva プラグイン内蔵（独立保存）の MCP サーバーです。ここでの変更は Studio 自身の MCP リスト（Studio → MCP）に影響しません。有効化すると次ターンで接続します。",
+    "mcpHint": "Studio の MCP サービス（組み込みを含む）です。有効化は Studio に、選択の保存はこのプロファイルの Deva のみに適用されます。ツールは Studio が検出します。",
     "search": "サーバーを検索...",
     "add": "+ サーバーを追加",
     "reload": "更新",
@@ -258,7 +258,7 @@ const labels = {
     "saved": "저장됨: {name}",
     "none": "아이덴티티를 불러오지 못했습니다",
     "mcpTitle": "MCP 서버",
-    "mcpHint": "이 MCP 서버는 Deva 플러그인 내장(별도 저장)입니다. 여기서의 변경은 Studio 자체 MCP 목록(Studio → MCP)에 영향을 주지 않습니다. 활성화하면 다음 턴에 연결됩니다.",
+    "mcpHint": "Studio MCP의 서비스(기본 서비스 포함)를 표시합니다. 활성화 변경은 Studio에, 선택 저장은 이 프로필의 Deva에만 적용됩니다. 도구는 Studio가 확인합니다.",
     "search": "서버 검색...",
     "add": "+ 서버 추가",
     "reload": "새로고침",
@@ -317,7 +317,7 @@ const labels = {
     "saved": "Enregistré : {name}",
     "none": "Aucune identité disponible",
     "mcpTitle": "Serveurs MCP",
-    "mcpHint": "Ces serveurs MCP appartiennent au plugin Deva (stockage séparé). Les modifications ici ne touchent pas la liste MCP de Studio (Studio → MCP). Les serveurs activés sont connectés au tour suivant.",
+    "mcpHint": "Ces services viennent de Studio → MCP, y compris les services intégrés. L’activation affecte Studio ; les cases enregistrées ne concernent que Deva dans ce profil. Studio détecte les outils.",
     "search": "Rechercher un serveur...",
     "add": "+ Ajouter un serveur",
     "reload": "Actualiser",
@@ -376,7 +376,7 @@ const labels = {
     "saved": "Guardado: {name}",
     "none": "No se encontraron identidades",
     "mcpTitle": "Servidores MCP",
-    "mcpHint": "Estos servidores MCP pertenecen al plugin Deva (almacenamiento aparte). Los cambios aquí no afectan a la lista MCP de Studio (Studio → MCP). Los servidores activados se conectan en el siguiente turno.",
+    "mcpHint": "Servicios de Studio → MCP, incluidos los integrados. La activación afecta a Studio; la selección guardada solo afecta a Deva en este perfil. Studio comprueba las herramientas.",
     "search": "Buscar servidores...",
     "add": "+ Añadir servidor",
     "reload": "Actualizar",
@@ -435,7 +435,7 @@ const labels = {
     "saved": "Gespeichert: {name}",
     "none": "Keine Identitäten gefunden",
     "mcpTitle": "MCP-Server",
-    "mcpHint": "Diese MCP-Server gehören zum Deva-Plugin (separater Speicher). Änderungen hier betreffen nicht die MCP-Liste von Studio (Studio → MCP). Aktivierte Server werden im nächsten Turn verbunden.",
+    "mcpHint": "Dienste aus Studio → MCP einschließlich integrierter Dienste. Aktivieren und Deaktivieren betrifft Studio; die gespeicherte Auswahl gilt nur für Deva in diesem Profil. Studio ermittelt die Werkzeuge.",
     "search": "Server suchen...",
     "add": "+ Server hinzufügen",
     "reload": "Aktualisieren",
@@ -494,7 +494,7 @@ const labels = {
     "saved": "Salvo: {name}",
     "none": "Nenhuma identidade encontrada",
     "mcpTitle": "Servidores MCP",
-    "mcpHint": "Estes servidores MCP pertencem ao plugin Deva (armazenamento separado). Alterações aqui não afetam a lista MCP do Studio (Studio → MCP). Servidores ativados conectam no próximo turno.",
+    "mcpHint": "Serviços do Studio → MCP, inclusive os integrados. A ativação afeta o Studio; a seleção salva vale apenas para o Deva neste perfil. O Studio detecta as ferramentas.",
     "search": "Pesquisar servidores...",
     "add": "+ Adicionar servidor",
     "reload": "Atualizar",
@@ -553,7 +553,7 @@ const labels = {
     "saved": "Сохранено: {name}",
     "none": "Идентичности не найдены",
     "mcpTitle": "MCP-серверы",
-    "mcpHint": "Эти MCP-серверы принадлежат плагину Deva (отдельное хранилище). Изменения здесь не затрагивают список MCP Studio (Studio → MCP). Включённые серверы подключаются в следующем ходе.",
+    "mcpHint": "Службы из Studio → MCP, включая встроенные. Включение влияет на Studio; сохранённый выбор действует только для Deva в этом профиле. Инструменты проверяет Studio.",
     "search": "Поиск серверов...",
     "add": "+ Добавить сервер",
     "reload": "Обновить",
@@ -612,7 +612,7 @@ const labels = {
     "saved": "تم الحفظ: {name}",
     "none": "لم يتم العثور على هويات",
     "mcpTitle": "خوادم MCP",
-    "mcpHint": "خوادم MCP هذه تابعة لإضافة Deva (تخزين منفصل). التغييرات هنا لا تؤثر على قائمة MCP الخاصة بـ Studio (Studio → MCP). يتم الاتصال بالخوادم الممكّنة في الدور التالي.",
+    "mcpHint": "هذه خدمات Studio → MCP بما فيها المدمجة. يؤثر التفعيل في Studio، أما الاختيار المحفوظ فيخص Deva في هذا الملف الشخصي فقط. يتحقق Studio من الأدوات.",
     "search": "بحث في الخوادم...",
     "add": "+ إضافة خادم",
     "reload": "تحديث",
@@ -671,7 +671,7 @@ const labels = {
     "saved": "Kaydedildi: {name}",
     "none": "Kimlik bulunamadı",
     "mcpTitle": "MCP sunucuları",
-    "mcpHint": "Bu MCP sunucuları Deva eklentisine aittir (ayrı depolama). Buradaki değişiklikler Studio’nun kendi MCP listesini (Studio → MCP) etkilemez. Etkinleştirilen sunucular sonraki turda bağlanır.",
+    "mcpHint": "Yerleşik hizmetler dâhil Studio → MCP hizmetleri. Etkinleştirme Studio’yu, kaydedilen seçim yalnızca bu profildeki Deva’yı etkiler. Araçları Studio denetler.",
     "search": "Sunucu ara...",
     "add": "+ Sunucu ekle",
     "reload": "Yenile",
@@ -725,38 +725,38 @@ const labels = {
   }
 }
 
-const sharedModelLabels = {
-  en: ["Address and model are shared with Desktop. Quit Desktop before saving here, then reopen it. Set API keys separately in each app.", "Review the previous Studio settings and save once to finish the migration."],
-  zh: ["地址和模型与桌面端共用。请先退出桌面端，保存后再打开。API Key 要在两端分别设置。", "请核对原 Studio 设置并保存一次，完成迁移。"],
-  "zh-tw": ["位址和模型與桌面端共用。請先退出桌面端，儲存後再開啟。API Key 須在兩端分別設定。", "請核對原 Studio 設定並儲存一次，完成遷移。"],
-  ja: ["URL とモデルはデスクトップ版と共有します。保存前にデスクトップ版を終了し、保存後に再起動してください。API キーは個別に設定します。", "以前の Studio 設定を確認して一度保存すると移行が完了します。"],
-  ko: ["주소와 모델은 데스크톱 앱과 공유합니다. 여기서 저장하기 전에 데스크톱 앱을 종료하고 저장 후 다시 여세요. API 키는 각 앱에서 따로 설정합니다.", "이전 Studio 설정을 확인하고 한 번 저장해 마이그레이션을 완료하세요."],
-  fr: ["L’URL et le modèle sont partagés avec l’application de bureau. Fermez-la avant d’enregistrer ici, puis relancez-la. Configurez la clé API dans chaque application.", "Vérifiez les anciens réglages de Studio et enregistrez une fois pour terminer la migration."],
-  es: ["La URL y el modelo se comparten con la aplicación de escritorio. Ciérrala antes de guardar aquí y vuelve a abrirla. Configura la clave API por separado en cada aplicación.", "Revisa los ajustes anteriores de Studio y guarda una vez para completar la migración."],
-  de: ["URL und Modell werden mit der Desktop-App geteilt. Beende sie vor dem Speichern und öffne sie danach erneut. API-Schlüssel werden getrennt eingerichtet.", "Prüfe die bisherigen Studio-Einstellungen und speichere einmal, um die Migration abzuschließen."],
-  pt: ["O endereço e o modelo são compartilhados com o aplicativo de desktop. Feche-o antes de salvar aqui e reabra-o depois. Configure a chave de API separadamente em cada aplicativo.", "Confira as configurações anteriores do Studio e salve uma vez para concluir a migração."],
-  ru: ["Адрес и модель общие с настольным приложением. Закройте его перед сохранением и откройте снова после. Ключ API настраивается отдельно в каждом приложении.", "Проверьте прежние настройки Studio и сохраните их один раз для завершения переноса."],
-  ar: ["عنوان URL والنموذج مشتركان مع تطبيق سطح المكتب. أغلقه قبل الحفظ ثم أعد فتحه. اضبط مفتاح API بشكل منفصل في كل تطبيق.", "راجع إعدادات Studio السابقة واحفظ مرة واحدة لإكمال الترحيل."],
-  tr: ["Adres ve model masaüstü uygulamasıyla paylaşılır. Burada kaydetmeden önce masaüstü uygulamasını kapatıp ardından yeniden açın. API anahtarını her uygulamada ayrı ayarlayın.", "Taşımayı tamamlamak için önceki Studio ayarlarını kontrol edip bir kez kaydedin."],
+const desktopModelLabels = {
+  en: ["Address and model are shared with Desktop. Quit Desktop before saving here, then reopen it. Set API keys separately in each app.", "Desktop default", "New Chat Completions provider", "Persona model bindings", "Follow Desktop default", "No Desktop default selected", "Ask the Studio administrator to authorize access to the Desktop model settings.", "Local, private-network, and HTTP addresses require Studio administrator approval."],
+  zh: ["地址和模型与桌面端共用。请先退出桌面端，保存后再打开。API Key 要在两端分别设置。", "桌面默认模型", "新增 Chat Completions 提供方", "身份模型绑定", "跟随桌面默认", "桌面端未选择默认模型", "请联系 Studio 管理员授权访问桌面模型配置。", "本机、内网及 HTTP 地址需 Studio 管理员批准。"],
+  "zh-tw": ["位址和模型與桌面端共用。請先退出桌面端，儲存後再開啟。API Key 須在兩端分別設定。", "桌面預設模型", "新增 Chat Completions 供應商", "身分模型綁定", "跟隨桌面預設", "桌面端未選擇預設模型", "請聯絡 Studio 管理員授權存取桌面模型設定。", "本機、內網及 HTTP 位址須由 Studio 管理員核准。"],
+  ja: ["URL とモデルはデスクトップ版と共有します。保存前にデスクトップ版を終了し、保存後に再起動してください。API キーは個別に設定します。", "デスクトップの既定モデル", "Chat Completions プロバイダーを追加", "アイデンティティ別モデル", "デスクトップの既定値に従う", "既定モデル未選択", "Studio 管理者にデスクトップ設定へのアクセスを依頼してください。", "ローカル、内部ネットワーク、HTTP には Studio 管理者の承認が必要です。"],
+  ko: ["주소와 모델은 데스크톱 앱과 공유합니다. 여기서 저장하기 전에 데스크톱 앱을 종료하고 저장 후 다시 여세요. API 키는 각 앱에서 따로 설정합니다.", "데스크톱 기본 모델", "Chat Completions 공급자 추가", "ID별 모델", "데스크톱 기본값 사용", "기본 모델이 선택되지 않음", "Studio 관리자에게 데스크톱 설정 접근 권한을 요청하세요.", "로컬, 내부망 및 HTTP 주소는 Studio 관리자의 승인이 필요합니다."],
+  fr: ["L’URL et le modèle sont partagés avec l’application de bureau. Fermez-la avant d’enregistrer ici, puis relancez-la. Configurez la clé API dans chaque application.", "Modèle de bureau par défaut", "Ajouter un fournisseur Chat Completions", "Modèles par identité", "Suivre le choix du bureau", "Aucun modèle de bureau sélectionné", "Demandez à l’administrateur Studio l’accès aux réglages de bureau.", "Les adresses locales, privées et HTTP nécessitent l’approbation de l’administrateur Studio."],
+  es: ["La URL y el modelo se comparten con la aplicación de escritorio. Ciérrala antes de guardar aquí y vuelve a abrirla. Configura la clave API por separado en cada aplicación.", "Modelo de escritorio predeterminado", "Añadir proveedor Chat Completions", "Modelos por identidad", "Seguir el valor de escritorio", "No se ha seleccionado un modelo de escritorio", "Solicita al administrador de Studio acceso a los ajustes de escritorio.", "Las direcciones locales, privadas y HTTP requieren la aprobación del administrador de Studio."],
+  de: ["URL und Modell werden mit der Desktop-App geteilt. Beende sie vor dem Speichern und öffne sie danach erneut. API-Schlüssel werden getrennt eingerichtet.", "Desktop-Standardmodell", "Chat Completions Anbieter hinzufügen", "Modelle pro Identität", "Desktop-Standard verwenden", "Kein Desktop-Modell ausgewählt", "Bitte den Studio-Administrator um Zugriff auf die Desktop-Einstellungen.", "Lokale, private und HTTP-Adressen müssen vom Studio-Administrator genehmigt werden."],
+  pt: ["O endereço e o modelo são compartilhados com o aplicativo de desktop. Feche-o antes de salvar aqui e reabra-o depois. Configure a chave de API separadamente em cada aplicativo.", "Modelo padrão do desktop", "Adicionar provedor Chat Completions", "Modelos por identidade", "Usar padrão do desktop", "Nenhum modelo do desktop selecionado", "Peça ao administrador do Studio acesso às configurações do desktop.", "Endereços locais, privados e HTTP exigem aprovação do administrador do Studio."],
+  ru: ["Адрес и модель общие с настольным приложением. Закройте его перед сохранением и откройте снова после. Ключ API настраивается отдельно в каждом приложении.", "Модель по умолчанию", "Добавить поставщика Chat Completions", "Модели идентичностей", "Использовать модель по умолчанию", "Модель по умолчанию не выбрана", "Запросите у администратора Studio доступ к настройкам приложения.", "Локальные, внутренние и HTTP-адреса требуют одобрения администратора Studio."],
+  ar: ["عنوان URL والنموذج مشتركان مع تطبيق سطح المكتب. أغلقه قبل الحفظ ثم أعد فتحه. اضبط مفتاح API بشكل منفصل في كل تطبيق.", "نموذج سطح المكتب الافتراضي", "إضافة موفر Chat Completions", "نماذج الهويات", "استخدام الإعداد الافتراضي", "لم يُحدّد نموذج افتراضي", "اطلب من مسؤول Studio السماح بالوصول إلى إعدادات سطح المكتب.", "تتطلب عناوين الشبكة المحلية والخاصة وHTTP موافقة مسؤول Studio."],
+  tr: ["Adres ve model masaüstü uygulamasıyla paylaşılır. Burada kaydetmeden önce masaüstü uygulamasını kapatıp ardından yeniden açın. API anahtarını her uygulamada ayrı ayarlayın.", "Masaüstü varsayılan modeli", "Chat Completions sağlayıcısı ekle", "Kimliğe göre modeller", "Masaüstü varsayılanını kullan", "Masaüstü modeli seçilmedi", "Studio yöneticisinden masaüstü ayarlarına erişim isteyin.", "Yerel, özel ağ ve HTTP adresleri Studio yöneticisinin onayını gerektirir."],
 }
 
 /** 与 lib/model-selection.mjs 的 REASONING_EFFORTS 一致（前端不能引 node 模块）。 */
-const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh']
+const REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 
-// [标题, API 地址, 模型名, 密钥, 已设置, 清除密钥, 说明, 旧版提示, 跟随会话, 确认本机/内网/HTTP, 需确认的提示, 模型强度, 强度默认项]
+// [地址, 模型名, 密钥, 已设置, 清除密钥, 旧目录提示, 强度, 强度默认项]
 const modelLabels = {
-  en: ["Model", "Base URL", "Model name", "API Key", "Set — leave blank to keep for this address", "Clear saved key", "Leave the address empty to follow the current session. With an address, Deva sends conversation data directly to that Chat Completions API from the next turn. The session selector stays unchanged.", "The previous Studio catalog selection is inactive. Enter a Base URL and model name to use a custom API.", "Follow the current session selection", "I confirm Deva may connect directly to this local, private-network or HTTP address", "This is a local, private-network or HTTP address. Tick the confirmation below and save again, or use a public HTTPS address.", "Reasoning effort", "Default (not sent)"],
-  zh: ["模型", "API 地址（Base URL）", "模型名", "API Key", "已设置；地址不变时留空可保留", "清除已保存的密钥", "地址留空时跟随当前会话。填写后，下一轮起 Deva 会将对话数据直发到该 Chat Completions API；会话选模栏不变。", "旧版 Studio 目录模型已停用。如需自定义 API，请重新填写地址和模型名。", "跟随会话当前选择", "我确认允许 Deva 直连此本机/内网/HTTP 地址", "这是本机、内网或 HTTP 地址。请勾选下方确认后再保存，或改用公网 HTTPS 地址。", "模型强度", "默认（不发送）"],
-  "zh-tw": ["模型", "API 位址（Base URL）", "模型名稱", "API Key", "已設定；位址不變時留空可保留", "清除已儲存的金鑰", "位址留空時跟隨目前的工作階段。填寫後，Deva 從下一輪起將對話資料直接傳送至該 Chat Completions API；工作階段選模不變。", "舊版 Studio 目錄設定已停用。若要使用自訂 API，請重新填寫位址與模型名稱。", "跟隨目前的工作階段選擇", "我確認允許 Deva 直連此本機/內網/HTTP 位址", "這是本機、內網或 HTTP 位址。請勾選下方確認後再儲存，或改用公網 HTTPS 位址。", "模型強度", "預設（不傳送）"],
-  ja: ["モデル", "API ベース URL", "モデル名", "API キー", "設定済み。同じ URL なら空欄で保持", "保存したキーを削除", "URL が空ならセッションの選択に従います。指定した場合は、次のターンから対話データを Chat Completions API に直接送信します。セッションの選択は変わりません。", "以前の Studio カタログの設定は無効です。カスタム API の URL とモデル名を入力してください。", "現在のセッションの選択に従う", "このローカル／内部ネットワーク／HTTP の URL への Deva の直接接続を許可します", "ローカル、内部ネットワークまたは HTTP の URL です。下の確認にチェックを入れて保存し直すか、公開 HTTPS の URL を使用してください。", "推論強度", "既定（送信しない）"],
-  ko: ["모델", "API 기본 URL", "모델 이름", "API 키", "설정됨. 주소가 같으면 비워 두어 유지", "저장된 키 삭제", "주소를 비우면 현재 세션 선택을 따릅니다. 입력하면 다음 턴부터 대화 데이터를 해당 Chat Completions API에 직접 전송합니다. 세션 선택은 바뀌지 않습니다.", "이전 Studio 모델 목록 선택은 비활성화되었습니다. 사용자 지정 API 주소와 모델 이름을 입력하세요.", "현재 세션 선택 따르기", "이 로컬/내부망/HTTP 주소에 Deva가 직접 연결하는 것을 허용합니다", "로컬, 내부망 또는 HTTP 주소입니다. 아래 확인란을 선택한 뒤 다시 저장하거나 공용 HTTPS 주소를 사용하세요.", "추론 강도", "기본값(전송 안 함)"],
-  fr: ["Modèle", "URL de base de l’API", "Nom du modèle", "Clé API", "Configurée — laisser vide pour conserver la clé de cette adresse", "Effacer la clé enregistrée", "Laissez l’adresse vide pour suivre le choix de la session. Sinon, Deva envoie les données de conversation directement à cette API Chat Completions dès le prochain tour, sans modifier le choix de session.", "L’ancien choix du catalogue Studio est inactif. Renseignez l’URL de base et le nom du modèle.", "Suivre le choix actuel de la session", "Je confirme que Deva peut se connecter directement à cette adresse locale, privée ou HTTP", "Cette adresse est locale, privée ou en HTTP. Cochez la confirmation ci-dessous puis enregistrez de nouveau, ou utilisez une adresse HTTPS publique.", "Effort de raisonnement", "Par défaut (non envoyé)"],
-  es: ["Modelo", "URL base de la API", "Nombre del modelo", "Clave API", "Configurada: déjala vacía para conservarla en esta dirección", "Borrar la clave guardada", "Deja la dirección vacía para seguir la selección de la sesión. Si la indicas, Deva enviará los datos de la conversación a esa API de Chat Completions a partir del próximo turno, sin cambiar la selección de la sesión.", "La selección anterior del catálogo de Studio está inactiva. Introduce la URL base y el nombre del modelo.", "Seguir la selección actual de la sesión", "Confirmo que Deva puede conectarse directamente a esta dirección local, de red privada o HTTP", "Esta dirección es local, de red privada o HTTP. Marca la confirmación de abajo y guarda de nuevo, o usa una dirección HTTPS pública.", "Esfuerzo de razonamiento", "Predeterminado (no se envía)"],
-  de: ["Modell", "API-Basis-URL", "Modellname", "API-Schlüssel", "Gesetzt – bei gleicher Adresse leer lassen, um ihn zu behalten", "Gespeicherten Schlüssel löschen", "Ohne Adresse gilt die Sitzungsauswahl. Andernfalls sendet Deva Gesprächsdaten ab der nächsten Runde direkt an diese Chat Completions API. Die Sitzungsauswahl bleibt unverändert.", "Die alte Studio-Katalogauswahl ist inaktiv. Gib Basis-URL und Modellnamen für die eigene API ein.", "Aktueller Sitzungsauswahl folgen", "Ich bestätige, dass Deva diese lokale, private oder HTTP-Adresse direkt aufrufen darf", "Dies ist eine lokale, private oder HTTP-Adresse. Aktiviere die Bestätigung unten und speichere erneut, oder verwende eine öffentliche HTTPS-Adresse.", "Reasoning-Aufwand", "Standard (nicht gesendet)"],
-  pt: ["Modelo", "URL base da API", "Nome do modelo", "Chave de API", "Configurada: deixe vazia para mantê-la neste endereço", "Apagar a chave salva", "Deixe o endereço em branco para seguir a seleção da sessão. Caso contrário, no próximo turno Deva enviará os dados da conversa diretamente à API Chat Completions sem alterar a seleção da sessão.", "A seleção antiga do catálogo Studio está inativa. Informe a URL base e o nome do modelo.", "Seguir a seleção atual da sessão", "Confirmo que Deva pode se conectar diretamente a este endereço local, de rede privada ou HTTP", "Este endereço é local, de rede privada ou HTTP. Marque a confirmação abaixo e salve novamente, ou use um endereço HTTPS público.", "Esforço de raciocínio", "Padrão (não enviado)"],
-  ru: ["Модель", "Базовый URL API", "Имя модели", "Ключ API", "Задан — для того же адреса оставьте поле пустым", "Удалить сохранённый ключ", "Без адреса используется выбор сеанса. Иначе со следующего хода Deva отправляет данные диалога напрямую в этот Chat Completions API. Выбор сеанса не меняется.", "Прежний выбор из каталога Studio отключён. Укажите базовый URL и имя модели для своего API.", "Следовать текущему выбору сеанса", "Подтверждаю, что Deva может напрямую подключаться к этому локальному, внутреннему или HTTP-адресу", "Это локальный, внутренний или HTTP-адрес. Отметьте подтверждение ниже и сохраните снова либо укажите публичный HTTPS-адрес.", "Уровень рассуждений", "По умолчанию (не отправляется)"],
-  ar: ["النموذج", "عنوان API الأساسي", "اسم النموذج", "مفتاح API", "تم تعيينه؛ اترك الحقل فارغًا للاحتفاظ به لهذا العنوان", "مسح المفتاح المحفوظ", "اترك العنوان فارغًا لاتباع اختيار الجلسة. عند تعيينه، يرسل Deva بيانات المحادثة مباشرةً إلى واجهة Chat Completions بدءًا من الدور التالي، دون تغيير اختيار الجلسة.", "اختيار كتالوج Studio السابق غير نشط. أدخل العنوان الأساسي واسم النموذج لاستخدام API مخصص.", "اتباع اختيار الجلسة الحالي", "أؤكد السماح لـ Deva بالاتصال المباشر بهذا العنوان المحلي أو الداخلي أو عنوان HTTP", "هذا عنوان محلي أو داخلي أو HTTP. حدّد خانة التأكيد أدناه ثم احفظ مجددًا، أو استخدم عنوان HTTPS عامًا.", "مستوى الاستدلال", "الافتراضي (لا يُرسَل)"],
-  tr: ["Model", "API temel URL’si", "Model adı", "API anahtarı", "Ayarlı — aynı adres için korumak üzere boş bırakın", "Kayıtlı anahtarı sil", "Adres boşsa oturum seçimi izlenir. Bir adres girildiğinde Deva, sonraki turdan itibaren konuşma verilerini doğrudan bu Chat Completions API’ye gönderir; oturum seçimi değişmez.", "Önceki Studio katalog seçimi etkin değil. Özel API için temel URL ve model adını girin.", "Geçerli oturum seçimini izle", "Deva’nın bu yerel, özel ağ veya HTTP adresine doğrudan bağlanmasına izin verdiğimi onaylıyorum", "Bu adres yerel, özel ağ veya HTTP adresidir. Aşağıdaki onayı işaretleyip yeniden kaydedin ya da genel bir HTTPS adresi kullanın.", "Akıl yürütme düzeyi", "Varsayılan (gönderilmez)"],
+  en: ["Base URL", "Model name", "API Key", "Set — leave blank to keep for this address", "Clear saved key", "The previous Studio catalog selection is inactive. Enter a Base URL and model name to use a custom API.", "Reasoning effort", "Default (not sent)"],
+  zh: ["API 地址（Base URL）", "模型名", "API Key", "已设置；地址不变时留空可保留", "清除已保存的密钥", "旧版 Studio 目录模型已停用。如需自定义 API，请重新填写地址和模型名。", "模型强度", "默认（不发送）"],
+  "zh-tw": ["API 位址（Base URL）", "模型名稱", "API Key", "已設定；位址不變時留空可保留", "清除已儲存的金鑰", "舊版 Studio 目錄設定已停用。若要使用自訂 API，請重新填寫位址與模型名稱。", "模型強度", "預設（不傳送）"],
+  ja: ["API ベース URL", "モデル名", "API キー", "設定済み。同じ URL なら空欄で保持", "保存したキーを削除", "以前の Studio カタログの設定は無効です。カスタム API の URL とモデル名を入力してください。", "推論強度", "既定（送信しない）"],
+  ko: ["API 기본 URL", "모델 이름", "API 키", "설정됨. 주소가 같으면 비워 두어 유지", "저장된 키 삭제", "이전 Studio 모델 목록 선택은 비활성화되었습니다. 사용자 지정 API 주소와 모델 이름을 입력하세요.", "추론 강도", "기본값(전송 안 함)"],
+  fr: ["URL de base de l’API", "Nom du modèle", "Clé API", "Configurée — laisser vide pour conserver la clé de cette adresse", "Effacer la clé enregistrée", "L’ancien choix du catalogue Studio est inactif. Renseignez l’URL de base et le nom du modèle.", "Effort de raisonnement", "Par défaut (non envoyé)"],
+  es: ["URL base de la API", "Nombre del modelo", "Clave API", "Configurada: déjala vacía para conservarla en esta dirección", "Borrar la clave guardada", "La selección anterior del catálogo de Studio está inactiva. Introduce la URL base y el nombre del modelo.", "Esfuerzo de razonamiento", "Predeterminado (no se envía)"],
+  de: ["API-Basis-URL", "Modellname", "API-Schlüssel", "Gesetzt – bei gleicher Adresse leer lassen, um ihn zu behalten", "Gespeicherten Schlüssel löschen", "Die alte Studio-Katalogauswahl ist inaktiv. Gib Basis-URL und Modellnamen für die eigene API ein.", "Reasoning-Aufwand", "Standard (nicht gesendet)"],
+  pt: ["URL base da API", "Nome do modelo", "Chave de API", "Configurada: deixe vazia para mantê-la neste endereço", "Apagar a chave salva", "A seleção antiga do catálogo Studio está inativa. Informe a URL base e o nome do modelo.", "Esforço de raciocínio", "Padrão (não enviado)"],
+  ru: ["Базовый URL API", "Имя модели", "Ключ API", "Задан — для того же адреса оставьте поле пустым", "Удалить сохранённый ключ", "Прежний выбор из каталога Studio отключён. Укажите базовый URL и имя модели для своего API.", "Уровень рассуждений", "По умолчанию (не отправляется)"],
+  ar: ["عنوان API الأساسي", "اسم النموذج", "مفتاح API", "تم تعيينه؛ اترك الحقل فارغًا للاحتفاظ به لهذا العنوان", "مسح المفتاح المحفوظ", "اختيار كتالوج Studio السابق غير نشط. أدخل العنوان الأساسي واسم النموذج لاستخدام API مخصص.", "مستوى الاستدلال", "الافتراضي (لا يُرسَل)"],
+  tr: ["API temel URL’si", "Model adı", "API anahtarı", "Ayarlı — aynı adres için korumak üzere boş bırakın", "Kayıtlı anahtarı sil", "Önceki Studio katalog seçimi etkin değil. Özel API için temel URL ve model adını girin.", "Akıl yürütme düzeyi", "Varsayılan (gönderilmez)"],
 }
 
 function pickLocale(locale) {
@@ -930,20 +930,24 @@ export async function mount(root, ctx) {
 
   // 路由变化会重新挂载，按 view 只渲染对应页面。
   if (ctx.view === 'mcp') await mountMcp(container, ctx, text)
-  else if (ctx.view === 'model') await mountModel(container, ctx, text, modelLabels[locale], sharedModelLabels[locale])
+  else if (ctx.view === 'model') await mountModel(container, ctx, text, modelLabels[locale], desktopModelLabels[locale])
   else await mountIdentity(container, ctx, text, identityLabels[locale])
 }
 
-async function mountModel(container, ctx, text, [_title, addressLabel, nameLabel, keyLabel, configured, clearLabel, hint, legacy, follow, allowLabel, confirmNeeded, effortLabel, effortDefault], [sharedHint, migration]) {
+async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLabel, configured, clearLabel, legacy, effortLabel, effortDefault],
+  [sharedHint, desktopLabel, newProvider, bindingsLabel, follow, notSelected, accessRequired, confirmNeeded]) {
   const header = el('div', 'deva-header')
   const heading = el('div')
-  heading.append(el('p', '', hint))
+  heading.append(el('p', '', sharedHint), el('p', '', confirmNeeded))
   header.append(heading)
   const card = el('div', 'deva-card')
   const body = el('div', 'deva-card-body deva-model-form')
   const shared = el('p')
   shared.hidden = true
-  body.append(shared)
+  const choose = el('select', 'deva-select')
+  const choiceRow = el('label', '', desktopLabel)
+  choiceRow.append(choose)
+  body.append(shared, choiceRow)
   const problems = []
   const field = (label, type, maxLength) => {
     const input = el('input', type === 'checkbox' ? 'deva-check' : 'deva-select')
@@ -977,23 +981,28 @@ async function mountModel(container, ctx, text, [_title, addressLabel, nameLabel
   body.append(effortRow, effortProblem)
   problems.push([effort, effortProblem])
   const clear = field(clearLabel, 'checkbox')
-  const allow = field(allowLabel, 'checkbox')
-  // 确认只对勾选时的那个地址有效：地址一改就取消勾选，避免把确认带到新地址。
-  address.oninput = () => { allow.checked = false }
-  const fields = { baseUrl: address, modelName: name, apiKey: key, allowNonPublic: allow, reasoningEffort: effort }
+  const fields = { baseUrl: address, modelName: name, apiKey: key, reasoningEffort: effort }
+  const bindings = el('div', 'deva-card-body deva-model-form')
+  let current
+  const option = (select, value, title) => {
+    const item = el('option', '', title)
+    item.value = value
+    select.append(item)
+  }
+  const custom = '__deva_new_provider__'
   const save = button(text.save, 'deva-btn primary')
   const status = el('div', 'deva-status')
   body.append(save)
-  card.append(body, status)
+  card.append(body, status, bindings)
   container.append(header, card)
 
   const setBusy = busy => {
-    address.disabled = name.disabled = key.disabled = effort.disabled = clear.disabled = allow.disabled = save.disabled = busy
+    choose.disabled = address.disabled = name.disabled = key.disabled = effort.disabled = clear.disabled = save.disabled = busy || current?.desktopAccessRequired === true
   }
   /** 字段级错误：标在出错的输入项下方；传 null 清空。 */
   const setProblem = error => {
     for (const [input, problem] of problems) {
-      const hit = Boolean(error) && fields[error.field] === input
+      const hit = Boolean(error) && fields[error.field === 'allowNonPublic' ? 'baseUrl' : error.field] === input
       problem.hidden = !hit
       problem.textContent = hit ? (error.code === 'confirmation-required' ? confirmNeeded : error.message) : ''
       input.ariaInvalid = hit ? 'true' : 'false'
@@ -1007,18 +1016,52 @@ async function mountModel(container, ctx, text, [_title, addressLabel, nameLabel
     status.textContent = errorText(error)
   }
   const show = settings => {
-    address.value = settings.baseUrl
-    name.value = settings.modelName
-    key.value = ''
-    key.placeholder = settings.hasApiKey ? configured : ''
-    clear.checked = false
-    allow.checked = settings.allowNonPublic === true
+    current = settings
+    const models = settings.desktopModels || []
+    const fill = model => {
+      address.value = model?.baseUrl || ''
+      name.value = model?.modelName || ''
+      key.value = ''
+      key.placeholder = model?.ref === settings.modelRef && settings.hasApiKey ? configured : ''
+      clear.checked = false
+    }
+    choose.innerHTML = ''
+    option(choose, '', notSelected)
+    for (const model of models) option(choose, model.ref, `${model.ref} (${model.adapter})`)
+    const ref = settings.modelRef || ''
+    if (ref && !models.some(model => model.ref === ref)) option(choose, ref, ref)
+    option(choose, custom, newProvider)
+    choose.value = ref
+    fill({ ...settings, ref })
+    choose.onchange = () => fill(choose.value && choose.value === ref ? { ...settings, ref } : models.find(model => model.ref === choose.value))
     effort.value = settings.reasoningEffort || ''
     setProblem(null)
     status.className = 'deva-status'
     shared.hidden = !settings.sharedConfigPath
-    shared.textContent = settings.sharedConfigPath ? `${sharedHint} (${settings.sharedConfigPath})` : ''
-    status.textContent = settings.sharedNeedsSetup ? migration : settings.legacyNeedsSetup ? legacy : settings.baseUrl ? '' : follow
+    shared.textContent = settings.sharedConfigPath || ''
+    status.textContent = settings.desktopAccessRequired ? accessRequired : settings.needsNetworkApproval ? confirmNeeded : !ref ? (settings.legacyNeedsSetup ? legacy : notSelected) : ''
+    bindings.innerHTML = ''
+    if (settings.personaModels?.length) bindings.append(el('h3', '', bindingsLabel))
+    for (const persona of settings.personaModels || []) {
+      const row = el('label', '', persona.name)
+      const model = el('select', 'deva-select')
+      option(model, '', follow)
+      for (const item of models) option(model, item.ref, item.ref)
+      if (persona.model && !models.some(item => item.ref === persona.model)) option(model, persona.model, persona.model)
+      model.value = persona.model
+      model.onchange = async () => {
+        model.disabled = true
+        try {
+          const updated = await ctx.rpc.call('save-persona-model', { personaId: persona.id, modelRef: model.value })
+          if (!ctx.signal?.aborted) show(updated)
+        } catch (error) {
+          model.value = persona.model
+          if (!ctx.signal?.aborted) setError(error)
+        } finally { model.disabled = false }
+      }
+      row.append(model)
+      bindings.append(row)
+    }
   }
   status.textContent = text.loading
   setBusy(true)
@@ -1035,9 +1078,11 @@ async function mountModel(container, ctx, text, [_title, addressLabel, nameLabel
     if (save.disabled || ctx.signal?.aborted) return
     setBusy(true)
     const baseUrl = address.value.trim()
-    const input = baseUrl
-      ? { baseUrl, modelName: name.value, ...(clear.checked ? { apiKey: '' } : key.value ? { apiKey: key.value } : {}), ...(allow.checked ? { allowNonPublic: true } : {}), reasoningEffort: effort.value }
-      : { baseUrl: '', modelName: '' }
+    const input = {
+      baseUrl, modelName: !choose.value && !baseUrl ? '' : name.value, modelRef: choose.value === custom ? '' : choose.value,
+      ...(clear.checked ? { apiKey: '' } : key.value ? { apiKey: key.value } : {}),
+      reasoningEffort: effort.value,
+    }
     key.value = ''
     try {
       const settings = await ctx.rpc.call('save-model-selection', input)
@@ -1049,7 +1094,7 @@ async function mountModel(container, ctx, text, [_title, addressLabel, nameLabel
         return
       }
       show(settings)
-      const message = format(text.saved, { name: settings.modelName || follow })
+      const message = format(text.saved, { name: settings.modelName || notSelected })
       status.textContent = message
       ctx.ui.notify(message, 'success')
     } catch (error) {
@@ -1282,7 +1327,7 @@ async function mountMcp(container, ctx, text) {
   const summary = el('div', 'deva-summary')
   const card = (label, kind = '') => {
     const box = el('div', `deva-summary-card ${kind}`.trim())
-    box.append(el('span', 'deva-summary-label', label), el('strong', '', '0'))
+    box.append(el('span', 'deva-summary-label', label), el('strong', '', '—'))
     summary.append(box)
     return box.children[1]
   }
@@ -1309,6 +1354,8 @@ async function mountMcp(container, ctx, text) {
 
   /** @type {Array<{name: string, transport: string, managed: boolean, enabled: boolean}>} */
   let servers = []
+  let loaded = false
+  saveSelection.disabled = true
   /** 勾选状态只在这里维护；点「保存勾选」才写回后端。 */
   const checked = new Set()
   /** 测试过的服务工具清单：name → tools[]。 */
@@ -1332,13 +1379,13 @@ async function mountMcp(container, ctx, text) {
   }
 
   function refreshSummary() {
-    totalValue.textContent = String(servers.length)
-    enabledValue.textContent = String(servers.filter(server => server.enabled !== false).length)
-    managedValue.textContent = String(servers.filter(server => server.enabled === false).length)
-    let toolCount = 0
-    for (const list of tools.values()) toolCount += list.length
-    toolsValue.textContent = String(toolCount)
-    selectionInfo.textContent = format(text.selectionCount, { count: checked.size })
+    totalValue.textContent = loaded ? String(servers.length) : '—'
+    enabledValue.textContent = loaded ? String(servers.filter(server => server.enabled).length) : '—'
+    managedValue.textContent = loaded ? String(servers.filter(server => !server.enabled).length) : '—'
+    const toolCount = servers.reduce((count, server) => count + (tools.get(server.name)?.length ?? server.toolCount ?? 0), 0)
+    const partial = servers.some(server => server.toolCountUnavailable && !tools.has(server.name))
+    toolsValue.textContent = !loaded ? '—' : partial ? `${toolCount}+` : String(toolCount)
+    selectionInfo.textContent = loaded ? format(text.selectionCount, { count: checked.size }) : ''
   }
 
   function visibleServers() {
@@ -1352,6 +1399,7 @@ async function mountMcp(container, ctx, text) {
   function render() {
     grid.innerHTML = ''
     refreshSummary()
+    if (!loaded) return
     if (!servers.length) {
       grid.append(el('div', 'deva-empty', text.mcpNone))
       return
@@ -1366,7 +1414,7 @@ async function mountMcp(container, ctx, text) {
 
   function renderCard(server) {
     const disabled = server.enabled === false
-    const failure = errors.get(server.name)
+    const failure = errors.get(server.name) || (server.toolCountUnavailable && !tools.has(server.name) ? text.disconnectedStatus : '')
     const state = disabled ? 'off' : failure ? 'bad' : 'ok'
     const item = el('div', `deva-card${disabled ? ' off' : ''}${failure ? ' bad' : ''}`)
 
@@ -1389,7 +1437,7 @@ async function mountMcp(container, ctx, text) {
       body.append(row)
     }
     const known = tools.get(server.name)
-    const count = Array.isArray(known) ? known.length : null
+    const count = known?.length ?? server.toolCount ?? null
     const info = el('div', 'deva-info')
     info.append(
       el('span', 'deva-info-label', text.toolList),
@@ -1407,7 +1455,7 @@ async function mountMcp(container, ctx, text) {
         list.append(el('span', 'deva-tool more', format(text.moreTools, { count: known.length - 20 })))
       }
       body.append(list)
-    } else {
+    } else if (count === null || count === 0) {
       const empty = el('div', 'deva-tools-empty')
       empty.append(el('span', 'deva-muted', count === null ? text.untested : format(text.toolCount, { count: 0 })))
       body.append(empty)
@@ -1424,13 +1472,16 @@ async function mountMcp(container, ctx, text) {
     test.onclick = () => runTest(server.name, test)
     toggle.onclick = () => toggleServer(server.name, !server.enabled, toggle)
     remove.onclick = () => removeServer(server.name, remove)
-    actions.append(edit, test, toggle, remove)
+    if (!server.managed) actions.append(edit)
+    actions.append(test, toggle)
+    if (!server.managed) actions.append(remove)
 
     // Deva 独有：挑本 Agent 用哪些服务。Studio 卡片这个位置是启停开关，这里放勾选，保持一致的分区。
     const use = el('label', 'deva-use')
     const box = el('input', 'deva-check')
     box.type = 'checkbox'
     box.checked = checked.has(server.name)
+    box.disabled = disabled
     box.setAttribute?.('aria-label', `${text.useForAgent}: ${server.name}`)
     box.onchange = () => {
       if (box.checked) checked.add(server.name)
@@ -1446,17 +1497,19 @@ async function mountMcp(container, ctx, text) {
 
   async function load({ note } = {}) {
     reload.disabled = true
-    addButton.disabled = true
+    addButton.disabled = saveSelection.disabled = true
     setAlert('')
     setStatus(text.loading)
     try {
       const snapshot = await ctx.rpc.call('get-mcp-servers')
-      servers = Array.isArray(snapshot?.servers) ? snapshot.servers : []
-      const selected = Array.isArray(snapshot?.selected) ? snapshot.selected : []
+      if (!Array.isArray(snapshot?.servers) || !Array.isArray(snapshot?.selected)) throw new Error('Studio MCP: invalid catalog response')
+      servers = snapshot.servers
+      const selected = snapshot.selected
+      loaded = true
       const available = new Set(servers.map(server => server.name))
       checked.clear()
-      for (const name of selected) checked.add(name)
-      for (const name of [...tools.keys()]) if (!available.has(name)) tools.delete(name)
+      for (const name of selected) if (available.has(name)) checked.add(name)
+      tools.clear()
       for (const name of [...errors.keys()]) if (!available.has(name)) errors.delete(name)
       render()
       // 已选但 Studio 里没有的服务：如实提示，运行时也会在提示词里点名，不静默丢弃。
@@ -1467,6 +1520,7 @@ async function mountMcp(container, ctx, text) {
       if (!selected.length && servers.length) notes.push(text.mcpEmpty)
       setStatus(notes.join('；'))
     } catch (error) {
+      loaded = false
       servers = []
       grid.innerHTML = ''
       refreshSummary()
@@ -1474,7 +1528,7 @@ async function mountMcp(container, ctx, text) {
       setStatus('')
     } finally {
       reload.disabled = false
-      addButton.disabled = false
+      addButton.disabled = saveSelection.disabled = !loaded
     }
   }
 
@@ -1486,7 +1540,7 @@ async function mountMcp(container, ctx, text) {
       await run()
     } finally {
       busy = false
-      target.disabled = false
+      target.disabled = target === saveSelection && !loaded
     }
   }
 
@@ -1640,8 +1694,8 @@ async function mountMcp(container, ctx, text) {
         const result = await ctx.rpc.call('save-mcp-selection', { servers: [...checked] })
         const count = Array.isArray(result?.selected) ? result.selected.length : checked.size
         const message = format(text.savedSelection, { count })
-        setStatus(message)
-        ctx.ui.notify(message, 'success')
+        await load({ note: message })
+        if (loaded) ctx.ui.notify(message, 'success')
       } catch (error) {
         setStatus(errorText(error), 'error')
         ctx.ui.notify(errorText(error), 'error')

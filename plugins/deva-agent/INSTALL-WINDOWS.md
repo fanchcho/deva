@@ -124,7 +124,7 @@ try {
 
 ### 3. 设置、升级和卸载
 
-- **模型**：Deva 设置中选 Studio 会话模型，或填独立自定义 Base URL、模型名和 Key；本机/内网/HTTP 地址须先经管理员批准。**Windows 不要启用共享模型 `sharedDevaUserId`**：`lib/shared-deva-model.mjs:26–32` 没有 `process.getuid()` 时直接拒绝。仅设置 `sharedDevaHome` 来选择身份目录是另一功能。
+- **模型**：下文安装步骤按 0.8.17 写成。0.8.18 取消私有模型配置；桌面共享要求 Studio 能校验 POSIX 文件归属，本轮未启用或验收 Windows 共享模型。不要把旧「私有直连」操作当成 0.8.18 的配置方式。
 - **身份**：从 Deva 身份页添加，或迁入审阅过的 Markdown；宿主运行用户决定 home；别照搬 Linux 工作区绝对路径。**MCP**：按目标机重填 stdio 程序和参数，优先原生 exe（或 `node.exe` 加已安装脚本），也可配置 Streamable HTTP；不要假定 `npx.cmd` 可被无 shell 的 spawn 直接执行。秘密通过目标环境和适当的凭据方案配置，不复制整份 MCP 文件。
 - 保留旧版可信成品。升级用插件详情的「升级」，指定预制新目录并再次确认信任；「重载」不取新版本。检查版本、active/enabled 以及 registry revision。回滚用插件中心「回滚」或重新安装可信旧目录。卸载在插件中心操作，不手改注册表，不假定删掉 Profile 数据。宿主自身卸载分开：桌面安装版走 Windows 设置，Web CLI 先 `ekko-studio-web.cmd stop` 再 `npm.cmd uninstall -g ekko-studio`。不混用生产数据目录试验。
 

@@ -82,33 +82,22 @@ test('选中不存在的模型会补一条 enabled；改 Base URL 在无桌面�
   } finally { await rm(dir, { recursive: true, force: true }) }
 })
 
-test('旧桌面选择保持可用；新页面仅返回接口字段，手填不改其它 provider 默认', async () => {
+test('插件读写桌面 activeModelId，能拾取下一次桌面更改；未授权不返回或写入', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'deva-desktop-rpc-'))
   try {
     await fixture(dir)
-    const run = runFor(configFor(dir))
-    const store = run.state.profile.namespace('1')
-    const empty = { baseUrl: '', modelName: '', hasApiKey: false, legacyNeedsSetup: false }
-    assert.deepEqual(await readModelSelection(run), empty)
-    assert.equal(await readCustomModel(run), null, '新账号不自动采用桌面默认')
-
-    await store.set('modelMode', { mode: 'desktop' })
-    const before = await readModelSelection(run)
-    assert.deepEqual(before, { ...empty, baseUrl: 'https://alpha.example/v1', modelName: 'a1' })
-    selectDesktopModel(run.config, { providerId: 'beta', modelId: 'b1' })
+    const config = { ...configFor(dir), sharedDevaUserId: 1 }
+    const run = runFor(config)
+    assert.equal((await readModelSelection(run)).modelRef, 'alpha:a1')
+    selectDesktopModel(config, { providerId: 'beta', modelId: 'b1' })
     assert.equal((await readCustomModel(run)).modelName, 'b1')
-
-    const input = { baseUrl: 'https://manual.example/v1', modelName: 'manual' }
-    assert.deepEqual(await saveModelSelection(run, input), { ...empty, ...input })
-    assert.equal((await readCustomModel(run)).modelName, 'manual')
-    const cfg = JSON.parse(await readFile(configFile(dir), 'utf8'))
-    assert.equal(cfg.models.activeModelId, 'beta:b1')
-    assert.equal(cfg.models.providers.find(p => p.id === 'deva-studio-shared').apiHost, input.baseUrl)
-    assert.equal(cfg.theme, 'dark')
-
-    const snapshot = await readFile(configFile(dir), 'utf8')
-    assert.deepEqual(await saveModelSelection(run, { baseUrl: '', modelName: '' }), empty)
-    assert.equal(await readFile(configFile(dir), 'utf8'), snapshot, '空地址不覆盖桌面配置')
-    assert.equal(await readCustomModel(run), null)
+    const saved = await saveModelSelection(run, { modelRef: 'alpha:a2', baseUrl: 'https://alpha.example/v1', modelName: 'a2' })
+    assert.equal(saved.modelRef, 'alpha:a2')
+    assert.equal(JSON.parse(await readFile(configFile(dir), 'utf8')).models.activeModelId, 'alpha:a2')
+    const outsider = runFor(config, 2)
+    assert.equal((await readModelSelection(outsider)).desktopAccessRequired, true)
+    await assert.rejects(saveModelSelection(outsider, { baseUrl: '', modelName: '' }), /管理员/)
+    assert.equal((await saveModelSelection(run, { baseUrl: '', modelName: '' })).modelRef, '')
+    assert.equal(JSON.parse(await readFile(configFile(dir), 'utf8')).models.activeModelId, null)
   } finally { await rm(dir, { recursive: true, force: true }) }
 })
