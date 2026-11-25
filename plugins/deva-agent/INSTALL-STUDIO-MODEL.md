@@ -150,3 +150,19 @@ OpenAI 官方 `/models` 的标准响应只提供基本模型信息，不保证�
 回滚：读取实时 registry revision，经官方 `PATCH /api/studio/plugins/deva` 发送 `{"revision":当前值,"action":"rollback"}` 回到 previousVersion，或重装备份 0.8.23 包。不要回滚用户 config/凭据；长度是可选模型字段，旧插件忽略它们。回滚后获取列表入口消失，手填继续可用。
 
 本轮验证边界：真实 Chromium 加载原始 client.mjs 和样式；桥接夹具替换宿主 RPC 传输、账号/存储、通知和外部模型服务，读取/保存/获取逻辑均调用真实服务端函数。它不是 Studio/Windows 真机。真实 Studio 热装和 RPC 单独记录在交付报告；Windows 的实际布局、代理返回字段、角色和连通性必须在该设备验收。
+
+## 0.8.25：新增提供方的显式保存与重开验收
+
+本轮独立复测：0.8.24 的新增路径在隔离 Chromium/真实服务端函数中能新增 provider.models、设置 activeModelId 并重开读回，不能把用户设备的失败武断归为“仅回填没有落盘”。目标机保存 RPC/路径/写权限未取得，实际失败原因仍待该设备核对。
+
+确认的缺陷：旧 client.mjs 保存请求发出前清空 Key；请求被拒后模型名尚在但凭据草稿已丢，重试可能存成无 Key 模型。本轮改为成功读回后才清空，失败保留草稿。发现列表旁新增「保存所选模型并设为默认」，与底部保存走同一逻辑；保存后独立 get-model-selection 核验引用、模型名、默认下拉及凭据状态，不一致明确报错，不显示成功。不会把 Key 写入日志或 config.json。
+
+桌面端对照（只读）：ModelSettings.tsx:244 通过 provider.listModels 获取清单，:308 confirmAdd 批量添加所选或手动单个 ID；store/models.tsx:258/265 的 addModel/addModels 写启用模型，:316 新增 custom provider，:204 每次状态变更经 config.set 写整个 models 段。preload/index.ts:685 → main/services/config.ts:95/65，顶层浅合并后 writeFileAtomic 写 config.json。设置默认是 store/models.tsx:225 的独立 setActiveModel(pid,mid)。Key 经 secrets:set，用 safeStorage 加密到 secrets.json，不在 provider 明文保存。
+
+插件本轮保持单选保存，不新增批量启停编辑器；与 Desktop 共用 provider/models/activeModelId 结构，保存同时设默认。Desktop ModelDef 只有 contextWindow/maxOutput，没有独立 maxInput；插件 maxInput 是额外记录字段，桌面不展示它。Desktop 的 maxOutput 有运行语义，插件对话不因记录长度而改变负载。
+
+**双端同时编辑边界**：Desktop main/services/config.ts:39 缓存读取，:65 setConfig 从内存副本整份写回；renderer/store/models.tsx:204 还会整块替换 models。桌面进程在插件修改后写配置，存在覆盖插件新值的路径。插件无权刷新另一个 Electron 进程内存，本轮不改宿主/桌面；使用插件编辑时先退出独立 Deva 桌面应用，保留 Studio 运行。仅立即读回不能保证未来不被另一进程覆盖。
+
+Windows 自检：安装 0.8.25，关闭重开 Studio 的 Deva 模型页；下拉选新增 → 填 URL/Key → 获取 → 点模型 → 点击列表旁保存所选模型。重开后默认下拉应选中该模型，hasApiKey=true。核对页面显示的 config 路径；PowerShell 读取该路径的 models.providers 和 activeModelId，前后比较。保存失败请保留页面错误与 save-model-selection 的 HTTP 状态/错误体（不要导出含 Key 的请求体），以及 get-model-selection 的 desktopWriteRequired、desktopWriteMessage、desktopConfigPath。正确所有者字段是 sharedDevaUserId，不是 sharedDevUserId。网络批准仍只约束获取/直连；本地保存仍需写权限，批准网络不授予文件写权限。
+
+若提示保存后读回不一致，退出独立桌面端并重试；若重开仍丢失，应检查哪一进程在重写该 config。目标 Windows/cpa/角色/面板本轮未实测。回滚通过官方安装 API 重装备份 0.8.24（或 previousVersion 确为 0.8.24 时 rollback），不回滚 config 或凭据。

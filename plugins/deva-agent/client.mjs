@@ -1084,7 +1084,7 @@ export async function mount(root, ctx) {
 }
 
 // The discovery panel stays inside the existing form; manual model entry remains available.
-function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syncPreview, setBusy }) {
+function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syncPreview, setBusy, saveSelected }) {
   const zh = pickLocale(ctx.locale).startsWith('zh')
   const copy = (cn, en) => zh ? cn : en
   body.append(el('h3', 'deva-section-title', copy('从供应商获取模型', 'Discover provider models')))
@@ -1100,6 +1100,10 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
   const detail = el('p', 'deva-value-preview')
   search.hidden = choices.hidden = detail.hidden = true
   body.append(fetchModels, message, search, choices, detail)
+  const commitSelection = button(copy('保存所选模型并设为默认', 'Save selected model as default'), 'deva-btn primary deva-model-discover')
+  commitSelection.hidden = true
+  commitSelection.onclick = () => saveSelected()
+  body.append(commitSelection)
   const missing = copy('未提供，可手动填写', 'Not provided; enter manually')
   const limits = Object.fromEntries([
     ['contextWindow', copy('上下文长度（tokens）', 'Context window (tokens)')],
@@ -1120,6 +1124,7 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
     const ready = address.value.trim() && (key.value || (storedKey && address.value.trim().replace(/\/+$/, '') === storedBase))
     fetchModels.disabled = busy || !ready
     search.disabled = choices.disabled = busy
+    commitSelection.disabled = busy
     for (const input of Object.values(limits)) input.disabled = busy
   }
   const fillLimits = model => {
@@ -1150,6 +1155,7 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
     fillLimits(model)
     dirty = true
     detail.hidden = false
+    commitSelection.hidden = false
     detail.textContent = model.id + '\n' + Object.entries(limits).map(([id, input]) => `${input.ariaLabel}: ${model[id] ?? copy('未提供', 'Not provided')}`).join('\n')
     syncPreview()
   }
@@ -1174,11 +1180,11 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
   }
   address.oninput = () => { fillLimits(); dirty = true; invalidate(); syncPreview() }
   key.oninput = invalidate
-  name.oninput = () => { fillLimits(); dirty = true; detail.hidden = true; syncPreview() }
+  name.oninput = () => { fillLimits(); dirty = true; detail.hidden = true; commitSelection.hidden = true; syncPreview() }
   return {
     fields: limits,
     input: () => dirty ? Object.fromEntries(Object.entries(limits).map(([id, input]) => [id, input.value ? Number(input.value) : 0])) : {},
-    reset(model, hasApiKey) { storedKey = hasApiKey; storedBase = model?.baseUrl || ''; dirty = false; fillLimits(model); invalidate() },
+    reset(model, hasApiKey) { storedKey = hasApiKey; storedBase = model?.baseUrl || ''; dirty = false; commitSelection.hidden = true; fillLimits(model); invalidate() },
     setBusy(value) { busy = value; refresh() },
   }
 }
@@ -1226,7 +1232,7 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
   body.append(el('h3', 'deva-section-title', keyLabel))
   const key = field(keyLabel, 'password', 4096)
   key.autocomplete = 'new-password'
-  const discovery = mountModelDiscovery(body, ctx, { address, key, name, choose, field, syncPreview: () => syncPreview(), setBusy: value => setBusy(value) })
+  const discovery = mountModelDiscovery(body, ctx, { address, key, name, choose, field, syncPreview: () => syncPreview(), setBusy: value => setBusy(value), saveSelected: () => save.onclick() })
   // 档位值就是下发给上游的 reasoning_effort，原样显示；空值表示不发送。
   const effort = el('select', 'deva-select')
   for (const value of ['', ...REASONING_EFFORTS]) {
@@ -1404,7 +1410,6 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
       reasoningEffort: effort.value,
       ...discovery.input(),
     }
-    key.value = ''
     try {
       const settings = await ctx.rpc.call('save-model-selection', input)
       if (ctx.signal?.aborted) return
@@ -1414,7 +1419,14 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
         ctx.ui.notify(status.textContent, 'error')
         return
       }
-      show(settings)
+      const verified = await ctx.rpc.call('get-model-selection')
+      if (ctx.signal?.aborted) return
+      if (verified.modelRef !== settings.modelRef || verified.modelName !== input.modelName.trim() ||
+          (input.apiKey && !verified.hasApiKey) ||
+          (settings.modelRef && !verified.desktopModels?.some(model => model.ref === settings.modelRef))) {
+        throw new Error('保存后读回不一致，尚未确认持久化；请退出正在运行的桌面端后重试。当前选择和 Key 草稿已保留。 / Saved model could not be verified; close Desktop and retry.')
+      }
+      show(verified)
       const message = format(text.saved, { name: settings.modelName || notSelected })
       status.textContent = message
       ctx.ui.notify(message, 'success')

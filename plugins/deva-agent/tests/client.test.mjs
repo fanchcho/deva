@@ -50,6 +50,31 @@ function fakeContext(locale, rpc, { view = 'mcp', navigate, identity } = {}) {
   }
 }
 
+test('new provider failed save retains selected model and key; inconsistent readback never reports success', async () => {
+  let fail = true
+  const root = await mountPage(fakeContext('zh', async name => {
+    if (name === 'save-model-selection') {
+      if (fail) throw new Error('sharedDevaUserId mismatch')
+      return { modelRef: 'new:selected', modelName: 'selected' }
+    }
+    return { baseUrl: '', modelName: '', modelRef: '', hasApiKey: false, desktopModels: [] }
+  }, { view: 'model' }))
+  const choose = findAll(root, n => n.tag === 'select')[0]
+  choose.value = '__deva_new_provider__'; choose.onchange()
+  const address = findAll(root, n => n.type === 'url')[0]
+  const model = findAll(root, n => n.type === 'text')[0]
+  const key = findAll(root, n => n.type === 'password')[0]
+  address.value = 'https://example.com/v1'; model.value = 'selected'; key.value = 'fixture-only'
+  const save = findAll(root, n => n.tag === 'button' && n.textContent === '保存')[0]
+  await save.onclick()
+  assert.equal(key.value, 'fixture-only')
+  assert.equal(model.value, 'selected')
+  fail = false
+  await save.onclick()
+  assert.equal(key.value, 'fixture-only')
+  assert.ok(findAll(root, n => n.textContent.includes('尚未确认持久化')).length)
+})
+
 test('model discovery selects explicit limits, retains manual input, and shows empty/failure/loading states', async () => {
   const saved = [], calls = []
   let response = { models: [{ id: 'with-length', contextWindow: 128000, maxOutput: 4096 }, { id: 'unknown-length' }] }
@@ -227,11 +252,12 @@ test('the identity editor and original path hints are wired in every Studio loca
 
 test('model view reads custom settings, keeps the key field empty and saves via RPC', async () => {
   const calls = []
+  let persisted = { baseUrl: 'https://old.example/v1', modelName: 'old', modelRef: 'provider:old', hasApiKey: true, legacyNeedsSetup: false }
   const ctx = fakeContext('zh', async (name, input) => {
-    if (name === 'get-model-selection') return { baseUrl: 'https://old.example/v1', modelName: 'old', modelRef: 'provider:old', hasApiKey: true, legacyNeedsSetup: false }
+    if (name === 'get-model-selection') return persisted
     if (name !== 'save-model-selection') throw new Error(`unexpected rpc ${name}`)
     calls.push([name, input.baseUrl, input.modelName, input.apiKey === '' ? 'clear' : 'keep'])
-    return { baseUrl: input.baseUrl, modelName: input.modelName, hasApiKey: false, legacyNeedsSetup: false }
+    return persisted = { baseUrl: input.baseUrl, modelName: input.modelName, hasApiKey: false, legacyNeedsSetup: false }
   }, { view: 'model' })
   const root = await mountPage(ctx)
   const selects = findAll(root, node => node.tag === 'select' && node.size !== 5)
@@ -306,7 +332,7 @@ test('model view selects an existing Desktop ref and updates the persona binding
   choice.onchange()
   const [save] = findAll(root, node => node.tag === 'button' && !node.className?.includes('deva-model-discover'))
   await save.onclick()
-  assert.deepEqual(calls.at(-1), ['save-model-selection', { modelRef: 'beta:b', baseUrl: 'https://beta.example/v1', modelName: 'b', reasoningEffort: '' }])
+  assert.deepEqual(calls.findLast(([name]) => name === 'save-model-selection'), ['save-model-selection', { modelRef: 'beta:b', baseUrl: 'https://beta.example/v1', modelName: 'b', reasoningEffort: '' }])
   binding = findAll(root, node => node.tag === 'select' && node.size !== 5)[2]
   binding.value = ''
   await binding.onchange()
@@ -317,11 +343,12 @@ test('model view loads, saves and reports the reasoning effort in each locale', 
   for (const locale of ['en', 'zh', 'zh-TW', 'ja', 'ko', 'fr', 'es', 'de', 'pt', 'ru', 'ar', 'tr']) {
     const calls = []
     const base = { baseUrl: 'https://api.example.com/v1', modelName: 'm', hasApiKey: false, legacyNeedsSetup: false }
+    let persisted = { ...base, reasoningEffort: 'high' }
     const ctx = fakeContext(locale, async (name, input) => {
-      if (name === 'get-model-selection') return { ...base, reasoningEffort: 'high' }
+      if (name === 'get-model-selection') return persisted
       calls.push(input.reasoningEffort)
       if (input.reasoningEffort === 'low') return { ...base, reasoningEffort: 'high', error: { field: 'reasoningEffort', code: 'reasoning-effort-invalid', message: '模型强度不受支持' } }
-      return { ...base, ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}) }
+      return persisted = { ...base, ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}) }
     }, { view: 'model' })
     const root = await mountPage(ctx)
     const [, effort] = findAll(root, node => node.tag === 'select' && node.size !== 5)
