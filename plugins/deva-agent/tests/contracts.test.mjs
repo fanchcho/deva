@@ -129,7 +129,7 @@ test('registered model settings RPC opens and saves with no Desktop active model
   await assert.rejects(call('save-model-selection', { ...input, providerId: 'alpha', modelId: 'a1' }), /unknown property providerId/)
 })
 
-test('the Deva settings action opens the declared identity view and retains all native side tabs', async () => {
+test('Deva uses the native settings views without registering a main navigation shortcut', async () => {
   const manifest = await readJson('plugin.json')
   assert.equal(manifest.id, 'deva')
   assert.equal(manifest.apiVersion, 1)
@@ -137,16 +137,21 @@ test('the Deva settings action opens the declared identity view and retains all 
   assert.equal(manifest.client, 'client.mjs')
   assert.deepEqual(manifest.permissions, ['agents', 'ui', 'commands', 'browser.cdp', 'api.read', 'api.write', 'compression'])
   assert.deepEqual(manifest.views.map(view => [view.id, view.slot, view.icon]), [
-    ['identity', 'agent-settings', 'bot'],
+    ['identity', 'agent-settings', 'book'],
     ['mcp', 'agent-settings', 'mcp'],
-    ['model', 'agent-settings', 'bot'],
+    ['model', 'agent-settings', 'settings'],
   ])
   assert.equal(manifest.configSchema.properties.mcpServers, undefined, 'MCP 配置仍只有 Studio 一份')
   assert.equal(manifest.configSchema.properties.approvalEnabled.default, false)
   assert.equal(manifest.configSchema.properties.compressionEnabled.default, false)
   assert.equal(manifest.icon, 'icon.png')
-  assert.deepEqual(manifest.navigation, { main: [{ viewId: 'identity', title: 'Deva', icon: 'bot' }] })
-  for (const locale of Object.values(manifest.i18n)) assert.deepEqual(locale.navigation.main, { identity: 'Deva' })
+  assert.equal(manifest.navigation, undefined)
+  const translations = Object.values(manifest.i18n)
+  assert.equal(translations.length, 12)
+  for (const locale of translations) {
+    assert.equal(locale.navigation, undefined)
+    assert.deepEqual(Object.keys(locale.views).sort(), ['identity', 'mcp', 'model'])
+  }
   const pkg = await readJson('package.json')
   assert.equal(manifest.version, pkg.version)
 })

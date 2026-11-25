@@ -1,5 +1,5 @@
 /**
- * 身份选择（桌面同构版）：**persona 内容与默认选择都落桌面 `config.json`**。
+ * 身份选择（桌面同构版）：**persona 正文落 `personas/*.md`，默认选择落桌面 `config.json`**。
  *
  * 桌面端没有「当前选中 persona」字段（personas 是多条叠加），所以插件把选择写在
  * `config.json → personas.selected`（personas 段内的扩展键）。桌面 `getConfig()` 读得到整段；

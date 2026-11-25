@@ -1,120 +1,93 @@
-# 在另一台设备安装和更新 Deva Agent
+# Deva Agent 安装、更新和回滚：Ekko Studio 0.8.30
 
-**验证基线：Ekko Studio Web 0.8.30，Deva 0.8.15，插件 API v1。** 插件 ID 是 `deva`，会话里的 Agent ID 是 `plugin:deva/deva`。下面安装的是 Studio **服务端**插件，并非安装 Deva 桌面应用，也不是把当前设备的配置复制过去。
+**Studio 不支持把源码 bundle 或 `.tgz` 直接上传、导入为插件。** 本轮验证的官方安装入口是「插件中心」或管理 API：把**已解包的成品目录放到 Studio 服务端**，让 Studio 从其绝对路径复制和注册。Git bundle 能恢复源码，不是即装即用的离线安装包。
 
-## 1. 前置条件
+执行记录（2026-11-25）：本机 Studio 0.8.30 已热装 **Deva 0.8.17**，并用 `GET /api/studio/plugins` 读回 active / enabled（版本与 revision 见本轮报告）。发布件跟随 [deva-agent-v0.8.17](https://github.com/fanchcho/deva/tree/deva-agent-v0.8.17)。插件 ID `deva`，Agent ID `plugin:deva/deva`。Windows 请看 [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md)。
 
-- 目标设备上已有可用的 Studio；推荐先以 **0.8.30** 复现，其他版本须复测，不假定兼容。Studio 0.8.30 从 npm 自建要求 Node ≥23；插件构建要求 Node ≥20。建议使用已验证的 **Node 24 / npm 11**（本次 24.22.1 / 11.19.1），并具备 Bash、Git 和 tar。Windows 可用可访问 Studio 服务端目录的 WSL；Docker 要在容器内执行，或把成品解包到服务端能看到的共享挂载。
-- 可读取 GitHub 远端；私有 fork 需另行配置 Git 认证。构建只依赖仓库随附的 SDK，不需要模型 API Key。Studio 安装需要目标站点的超级管理员登录、服务端目录读取权限，并且信任该可执行插件。
-- 登录后应能找到 **插件中心 → 安装插件**，支持粘贴**服务端绝对目录**。本基线的安装 API 没有本机 `.tgz` 文件上传参数；不要把 tarball 路径、浏览器本机路径或 monorepo 根 URL 填进去。若只在另一台电脑打开网页，先把包传给服务端管理员解包。找不到安装入口时，先核对角色和 Studio 版本。
+## 1. Studio 实际支持哪些入口
 
-## 2. 获取和构建
+| 入口 | 前置条件和格式 | 本轮结果 |
+| --- | --- | --- |
+| 插件中心 → 安装插件 | Studio **超级管理员交互登录**。安装弹窗为 source 文本框 + 信任确认，不是文件选择器；浏览器所在机器的路径不等于 Studio 服务器的路径。 | 登录态点击**未实测**。源码 [StudioPluginsView.vue:218–220,426–434](https://github.com/EKKOLearnAI/ekko-studio/blob/v0.8.30/packages/client/src/views/StudioPluginsView.vue#L426-L434) 确认同一安装 API。 |
+| 服务端绝对目录（UI 或 API） | 主机进程可读的**成品根目录**，包含 `package.json`、`plugin.json`、已构建的 client/server 入口和所需文件；版本一致，入口必须在包内。宿主复制目录，不代跑 npm build/install。Docker 要把目录挂载到容器可见的绝对路径。 | Linux 隔离 Studio **已实测**，禁止测试进程外联时仍能安装和启用。绝对 `.tgz` 文件路径报 `400 PLUGIN_INVALID: Local plugin source must be a directory`；不存在目录本轮报 `500 ENOENT`。 |
+| npm registry 精确版本 | `package@1.2.3` 或 `@scope/package@1.2.3`，需要宿主能从配置仓库获取发布包及生产依赖。宿主用 `--ignore-scripts --omit=dev`，不能依靠生命周期脚本生产入口。 | 宿主联网安装路径由源码确认；外联阻断时用 `is-number@7.0.0` 做负对照（它不是 Studio 插件）：请求报 `422 PLUGIN_INSTALL`。不带版本被拒绝。Deva 0.8.17 的 `package.json` 是 `private: true`；本轮公共 npm 该包返回 404，**不要用 npm 源安装此插件**。 |
+| Git / 插件市场 | 普通公开 GitHub 仓库 URL 由宿主在线解析 **默认分支最新完整 SHA**；另支持 `github:owner/repo#完整40位SHA`、`git+https://gitlab.com/group/repo.git#完整40位SHA` 与 Gitee 同类固定源。市场走发布目录给的固定源与版本并需确认信任；不是任意 zip 上传。 | 普通 GitHub 源在外联阻断时实测 `422 PLUGIN_SOURCE_RESOLVE`。Deva 是 monorepo 子目录，发布 tag 根目录的 `plugin.json` 返回 404，插件子目录有清单；**不要把本仓库 URL、Git SSH 地址、GitHub tag URL 或子目录 URL 填作本插件安装源**。市场条目和已登录市场安装未实测。 |
+| CLI / 开发模式 | `ekko-studio plugins create/link/list/dev/unlink` 管开发项目；使用同一个 `HERMES_WEB_UI_HOME`，到插件中心确认信任并启用才是开发运行。无通用 `plugins install <tgz>` 命令。项目可被构建和监听，不是正式部署。 | 0.8.30 实测 help、link、list、unlink；link 只登记，未触发现用 Studio 的任何安装。开发启用及热更新 UI 未实测。 |
+| 随宿主内置插件 | 宿主自己的 `builtin:` 解析与校验是分发机制，不意味着用户可把文件塞到宿主目录自行注册。 | 源码确认，未用此路径部署 Deva。 |
 
-发布到远端后，在目标 Studio 服务端的可写工作目录运行。首次安装优先固定 tag，避免分支移动：
+依据：[Studio 安装手册](https://github.com/EKKOLearnAI/ekko-studio/blob/v0.8.30/docs/plugins.md)、[installer.ts:13–76](https://github.com/EKKOLearnAI/ekko-studio/blob/v0.8.30/packages/server/src/modules/studio/services/plugins/installer.ts#L13-L76)、[manager.ts:91–177](https://github.com/EKKOLearnAI/ekko-studio/blob/v0.8.30/packages/server/src/modules/studio/services/plugins/manager.ts#L91-L177)、[GitHub 解析源码](https://github.com/EKKOLearnAI/ekko-studio/blob/v0.8.30/packages/server/src/modules/studio/services/plugins/source.ts)。本轮保存了 [OpenAPI 端点详情](</home/agent/shared_workspace/deva/.tmp/deva-audit-restart.9K7A8k/openapi-studio-plugins.json>)、[安装 API 原始验收](</home/agent/shared_workspace/deva/.tmp/deva-audit-restart.9K7A8k/install-api-results.txt>)、[CLI 登记轨迹](</home/agent/shared_workspace/deva/.tmp/deva-audit-restart.9K7A8k/cli-link.txt>) 与 [远端来源验证](</home/agent/shared_workspace/deva/.tmp/deva-audit-restart.9K7A8k/public-source-probes.txt>)。
+
+## 2. 联网构建，再安装成品
+
+先准备 Git、Node ≥20（本轮 Node 24/npm 11）、npm、tar；Studio 宿主已安装启动且能登录，自己通过 npm 启动 Studio 0.8.30 则其 Node 要求 ≥23。下面是 Linux 可执行流程；远端 Studio 时要把成品传到服务器上解包。
 
 ```bash
-git clone --branch deva-agent-v0.8.15 https://github.com/sqfcyily/deva.git
+git clone --branch deva-agent-v0.8.17 --depth 1 https://github.com/fanchcho/deva.git
 cd deva
-node --version
-npm --version
+git rev-parse HEAD  # 应为 deva-agent-v0.8.17 指向的提交（发布页或 git ls-remote 可核对）
+node scripts/install-deva-agent.mjs --ref deva-agent-v0.8.17 --dry-run
 ```
 
-分支入口是 `feat/plugin-deva-agent`。安装所需目录：`plugins/deva-agent/` 含 `plugin.json`、`package.json`、`server.mjs`、`client.mjs`、`lib/`、`contracts/`、`sdk/`；仓库根 `scripts/` 提供安装器。不用安装 monorepo 或桌面端的依赖。
-
-**脚本构建（不安装）：**
-
-```bash
-node scripts/install-deva-agent.mjs --ref deva-agent-v0.8.15 --dry-run
-```
-
-脚本从指定 ref 导出已提交的插件源码，不会改变工作树。它执行依赖安装、`npm pack`、解包和清单/入口校验，并打印 `studio-plugin-deva-0.8.15.tgz` 与解包后 `package/` 的绝对路径，两者保留在仓库 `.tmp/` 下。另有 lockfile 的将来版本可用 `npm ci`；0.8.15 没有 npm lockfile，使用 `npm install`。包不进 Git。
-
-**手工构建（与脚本同样产物；首次手工构建）：**
+第一段从发布 tag 克隆；`--dry-run` 从本地 ref 导出插件子目录、装开发依赖并运行 npm pack；包的 prepack 有 harness 与测试。它打印 `studio-plugin-deva-0.8.17.tgz` 和解包 `package/` 的绝对路径，**此时还未注册插件**。需要转运时传 tgz（核对上传前后的 SHA-256），在服务器解包。例如在服务器可写工作目录：
 
 ```bash
 OUT="$PWD/.tmp/deva-agent-package"
-mkdir -p "$OUT/unpacked" "$OUT/runtime"
-printf '*\n' > "$OUT/.gitignore"
-export TMPDIR="$OUT/runtime" npm_config_cache="$OUT/npm-cache"
-(
-  set -e
-  cd plugins/deva-agent
-  npm install --ignore-scripts --no-audit --no-fund --no-package-lock
-  npm pack --foreground-scripts --pack-destination "$OUT"
-)
-tar -xzf "$OUT/studio-plugin-deva-0.8.15.tgz" -C "$OUT/unpacked"
-printf '%s\n' "$OUT/unpacked/package"
+mkdir -p "$OUT"
+tar -xzf "/收到的绝对路径/studio-plugin-deva-0.8.17.tgz" -C "$OUT"
+test -f "$OUT/package/plugin.json"
+printf '%s\n' "$OUT/package"
 ```
 
-## 3. 安装及验收
+**UI 安装**：目标 Studio → 插件中心 → 安装插件 → 填解包的目录 → 信任 → 安装 → 启用。更新已有同 ID 插件时在详情里选升级，不用当作首装再安装。UI 点击未实测；下列同一 API 已实测。
 
-**推荐：脚本走官方管理 API。** 在 Bash 中关闭 xtrace；不要把密码或 token 写进命令参数、仓库、日志或 shell 启动文件。为目标 Studio 用 HTTPS；脚本只允许 loopback 使用 HTTP。将示例地址/账号替换为自己的值：
+**用仓库脚本调官方 API**：在含 `scripts/install-deva-agent.mjs` 的仓库根执行，`OUT` 可以指向上述目录，若用 dry-run 成品则把 `SOURCE` 改为实际打印的 package 绝对路径。地址是目标 Studio 的 HTTPS origin（仅 loopback 可为 HTTP），密码在终端输入，不进入日志：
 
 ```bash
 set +x
-export STUDIO_URL='http://127.0.0.1:8648'
-read -rsp 'Studio 超级管理员密码: ' STUDIO_ADMIN_PASSWORD; printf '\n'
+export STUDIO_URL=http://127.0.0.1:8648
+SOURCE="$OUT/package"
+read -rsp '目标 Studio 超管密码: ' STUDIO_ADMIN_PASSWORD; printf '\n'
 export STUDIO_ADMIN_PASSWORD
-node scripts/install-deva-agent.mjs --username admin --password-env STUDIO_ADMIN_PASSWORD --ref deva-agent-v0.8.15
-node scripts/install-deva-agent.mjs --username admin --password-env STUDIO_ADMIN_PASSWORD --ref deva-agent-v0.8.15 --check
+node scripts/install-deva-agent.mjs --username admin --password-env STUDIO_ADMIN_PASSWORD --package "$SOURCE" &&
+node scripts/install-deva-agent.mjs --username admin --password-env STUDIO_ADMIN_PASSWORD --package "$SOURCE" --check
 unset STUDIO_ADMIN_PASSWORD
 ```
 
-脚本调用 `POST /api/auth/login` 并仅在进程内用返回的 token 作 Bearer 鉴权。如果已经有目标 Studio 超管登录的 Bearer，可改用 `read -rsp 'Studio token: ' STUDIO_API_TOKEN; export STUDIO_API_TOKEN` 后去掉 `--username/--password-env`，或传 `--token-env 你的环境变量名`。用完 `unset`。不是模型 API Key，也不能用 Agent 运行凭据。地址亦可用 `--studio URL` 指定。用 `--package "$OUT/unpacked/package"` 可直接安装已解包成品，跳过重新构建。
+已有目标 Studio 超管的 Bearer 时可用环境变量 `STUDIO_API_TOKEN`，省略 username/password 参数。脚本 `--package` 跳过 Git、npm、tar 构建，但 **仍通过 Studio HTTP API 安装，不会直接写 registry**（`scripts/install-deva-agent.mjs:77–90,120–160,169–213,226–247`）。
 
-| 官方 API | 安装器的行为 |
-| --- | --- |
-| `GET /api/studio/plugins` | 读取全局 registry `revision` 和 Deva 状态；不写回整份列表。 |
-| `POST /api/studio/plugins/install` | JSON：`source` 为解包后的服务端绝对目录，`revision` 为刚读取的值，`trusted:true`、`expectedVersion` 为包版本；更新时另带 `pluginId:"deva"`。 |
-| `PATCH /api/studio/plugins/deva` | 如未启用，以最新 revision 发 `enabled:true`；再次 GET 验收。 |
+管理 API 使用 `GET /api/studio/plugins` 取 registry revision；`POST /api/studio/plugins/install` JSON 传 `source`（绝对目录）、最新 `revision`、`trusted:true`、`expectedVersion`；覆盖已有插件带 `pluginId:"deva"`。新装默认 disabled，`PATCH /api/studio/plugins/deva` 传最新 revision 与 `enabled:true`，再 GET 验证 `version`、`active`、`enabled=true`。不可用普通 Agent 运行令牌替代超管。插件详情/管理 API 负责注册、启停与回滚，不要手工写 `state.json`。
 
-首次安装后必须看到 `Deva=0.8.15 status=active enabled=true`；真正的安装/启用会增加 **目标机** registry revision，数字不必与其他设备相同。同版本已启用时重复执行不重装、不改变 revision；不要用相同版本号发布不同运行代码。单独 `--check` 不安装、不启用；带地址的 `--dry-run` 读注册表但不变更插件。
+## 3. 纠正离线结论
 
-**也可以用 UI 首装：** 超管进 **插件中心 → 安装插件**，填上面打印的 `…/unpacked/package`，核对权限、勾选信任后安装，再在 Deva 卡片启用。更新建议用脚本，避免把更新误做成新装。随后从 **Agent 管理 → Deva → 设置** 打开身份、MCP、模型，或访问 `/studio/plugin-agent-settings/deva/identity`。新建会话选择 Deva，发一条不调用工具的短消息确认模型连通。独立 0.8.30 实例以官方 API 验证，未实点已登录 UI 或验证真实第二台设备。
+- **没有「空白电脑 + 单个 bundle/tgz + 无网」自动装好 Studio 和 Agent 的证据。** Git bundle 只装有 Git 对象。把 tgz 直接填到 Studio，实测失败；没有 Studio 服务、超管会话、服务端目录权限和构建/解包工具，不能从文件完成安装。客户端完全不能访问服务端时，管理 API 本身也不可用。
+- **有已运行 Studio 和预制包时，宿主无需访问公网即可本地目录安装。** 上一轮（0.8.15 发布时）复用与现场二进制 SHA-256 相同的 Studio 0.8.30，在独立 home/registry 上用 `LD_PRELOAD` 拦截被测进程及继承环境的子进程对外的 `connect/sendto/sendmsg`，负对照公网 TCP 返回 `ENETUNREACH`。已解包目录实测安装 0.8.15、启用到 revision 2、覆盖 0.8.17 至 3、回滚 0.8.15 至 4；旧 revision 被 409 拒绝。这不是机器级断网，也没验证外部模型或 MCP 可用。
+- **用于手头这一个发布 tag，源码构建在限定条件下可复现，不应说 bundle 文件损坏。** 完整 bundle 从干净目录克隆命中既定 SHA；本轮用新缓存、`npm_config_offline=true` 和同样的进程外联限制运行 `--dry-run`，确实产生包。其开发依赖是包内 `file:./sdk`，没有 npm 运行时依赖。换版本、缺 Git/Node/tar、需要其它依赖、目标机无可用 Studio 时不能套用。先在有完整工具的机器制备和核对 tgz，再拷贝 tgz 或已解包的 `package/` 到宿主，是更稳的交付法；不要搬现用 registry、账号库或整个配置目录。
+- 证据：[外联负对照](</home/agent/shared_workspace/deva/.tmp/deva-audit-restart.9K7A8k/network-negative-control.txt>)、[源码 dry-run](</home/agent/shared_workspace/deva/.tmp/deva-audit-restart.9K7A8k/offline-source-dry-run.txt>)、[同一限制下的真实 ref 安装](</home/agent/shared_workspace/deva/.tmp/deva-audit-restart.9K7A8k/offline-source-real-install.txt>)（覆盖至 revision 6，`--check` 读回 active/enabled）、[预制目录脚本安装](</home/agent/shared_workspace/deva/.tmp/deva-audit-restart.9K7A8k/installer-package-upgrade.txt>)。无法从当前证据倒推另一台设备当时具体失败在哪个命令。
 
-## 4. 首次配置及哪些数据不随包走
+## 4. 首次配置与验收
 
-| 配置 | 在目标设备重做 |
-| --- | --- |
-| **模型 API** | 不填直连地址可沿用 Studio 会话模型；直连在 **Deva → 模型** 填 OpenAI 兼容 Base URL（例如 `https://api.example.com/v1`）、模型名和可选 Key，插件请求 `{Base URL}/chat/completions`。每个账号/Profile 独立。**本机、内网或 HTTP 地址须先经目标 Studio 管理员批准**：管理员可在插件配置 `modelTrustedBases` 放行精确 URL；若批准后采用模型页的单地址确认，须勾选该地址的确认框并保存，换地址要重新确认。技术上插件支持按账号/Profile 记住确认，不是独立的工单审批系统。容器内 `localhost` 指容器，不指浏览器电脑。API Key 在目标实例重新录入，不复制旧 token；直连失败不自动回退。 |
-| **MCP** | 本次源机的 Deva MCP 和 Studio 原生 Ekko MCP 均报告同样 **5** 个服务已启用：`ekko-studio-api`、`ekko-studio-browser`、`ekko-studio-use`、`ekko-studio-plugins`、`hindsight`。在目标实例逐一配置、启用并测试；前四项可能由目标 Studio 托管，Hindsight 配目标端点及凭据。**Deva → MCP** 写入 `~/.deva/mcp.json` 与 `~/.deva/config.json` 的 `mcp.enabled`，不会改 Studio 原生列表；运行入口注入同名服务时宿主优先。按目标机器填 stdio 命令/路径/环境变量，或远程 URL/请求头，不要把源机凭据原样复制。 |
-| **身份与本地状态** | 在 Deva 的身份页新建或迁入审核过的 `~/.deva/personas/*.md`；`~/.deva/config.json` 的 `personas` 段保存默认、排序、启用和会话选择，不同实例的会话 ID 不要照搬。路径以 Studio **运行用户**为准：`sharedDevaHome` → `DEVA_HOME` → 该用户 `~/.deva`。只迁必要的非密钥字段；账号、Profile、密钥、记忆、历史会话及工作区路径均不由 npm 包带走。 |
+打开「Agent 管理 → Deva → 设置」。默认用 Studio 当前会话模型，或录入该账号/Profile 的自定义模型 Base URL（OpenAI 兼容）和 Key；**本机/内网/HTTP 地址先经目标管理员批准**。MCP 需要在目标机逐项配置、启用和测试；插件 MCP 的 `mcp.json` + `config.mcp.enabled` 与 Studio 原生 MCP 列表分开，不复制未审阅的旧机凭据。身份从宿主运行账号的 `~/.deva/personas` 读取，可按 [审计报告](../../out/DEVA-DOT-DEVA-AUDIT.md) 迁移审阅过的 Markdown 与必要非密钥字段；会话、模型凭据、历史和权限不随包。设置页顶部标题由 Studio 宿主渲染（「Agent 管理 / Deva」），不在本插件交付范围内，也不改 Studio 部署目录。
 
-## 5. 更新与回滚
+## 5. 更新、回滚与排错
 
-有新 tag 后，只取你要升级的版本；以下用已验证的 tag 展示命令形态，把 `NEXT` 改成实际发布的新 tag。沿用上节的认证环境变量或密码选项：
+联网更新：在来源仓库将 `NEXT` 设为实际已发布的新 tag，使用上面的目标 Studio 超管凭据；以下采用 Bearer 环境变量。保留旧 tag 或旧成品。
 
 ```bash
-NEXT=deva-agent-v0.8.15
-git fetch origin tag "$NEXT"
-node scripts/install-deva-agent.mjs --ref "$NEXT"
+git fetch origin tag "$NEXT" &&
+node scripts/install-deva-agent.mjs --ref "$NEXT" &&
 node scripts/install-deva-agent.mjs --ref "$NEXT" --check
 ```
 
-也可 `git fetch origin feat/plugin-deva-agent` 后使用 `--ref FETCH_HEAD`；先确认该提交的版本号和内容。不要用 Studio 的「重载」替代更新：重载运行的是已经安装的副本。更新成功后保留旧 tag/旧 tgz；操作前按目标设备策略备份身份、MCP 和本地配置，不要把备份放入 Git。
-
-优先恢复 Studio 保存的上一版。命令显式固定目标，重复运行不会在两个版本之间来回切换：
+不联网或不想在宿主构建：传送新成品、解包、改用 `--package` 安装并检查。真正跨版本写入提高 revision，同版检查不提高；保留上一版可用时以旧 ref 回滚，示例：
 
 ```bash
 OLD=deva-agent-v0.8.15
-node scripts/install-deva-agent.mjs --rollback --ref "$OLD"
+node scripts/install-deva-agent.mjs --rollback --ref "$OLD" &&
 node scripts/install-deva-agent.mjs --check --ref "$OLD"
 ```
 
-若上一版本已被替换，去掉 `--rollback` 用旧 tag 重新构建并覆盖；若只有备份包，解包后改用 `--package /服务端绝对路径/package`。回滚会生成新的 registry revision，恢复插件代码，不回滚独立用户数据或模型密钥。若新版本做过数据迁移，按版本说明处理备份，不要直接覆盖整份注册表。
+也可在插件详情使用宿主「回滚」。API 是 `PATCH /api/studio/plugins/deva` 传 `action:"rollback"` 和最新 revision；没有保留副本时重新安装可信旧包。回滚的是安装版本，不是 Profile、凭据或用户数据；卸载前先备份，并从 UI/官方 PATCH 操作，不直接删注册表。上一轮在隔离环境备份 registry 及 versions 后测试，未写生产。更新命令以 0.8.16 → 0.8.17 真实升级验证（本机 0.8.30 也完成 0.8.17 热装）；回滚命令从 0.8.17 真实退到 0.8.15。[更新回读](</home/agent/shared_workspace/deva/.tmp/deva-audit-restart.9K7A8k/documented-update.txt>) · [回滚回读](</home/agent/shared_workspace/deva/.tmp/deva-audit-restart.9K7A8k/documented-rollback.txt>)。
 
-| 症状 | 处理 |
-| --- | --- |
-| 版本不兼容、插件不 active | 核对 Studio 版本、目标 ref、包 ID/入口/权限；查看插件中心日志，或用超管登录读 `GET /api/studio/plugins/deva/logs`。服务端日志目录：`${HERMES_WEB_UI_HOME:-$HOME/.hermes-web-ui}/plugins/global/logs/`，文件 `deva.json` 在产生日志后才会出现。 |
-| 401 / 403 | 核对访问的是目标实例、登录 token 未过期、角色是超级管理员；模型 API 的 401 是另一套凭据。 |
-| 409 / revision 改变 | 安装器非零退出；不要盲重试或覆盖 registry。先重新读取当前版本、状态和 revision，再决定是否重跑。 |
-| 前端仍是旧资源 | 页面硬刷新：Windows/Linux `Ctrl+Shift+R`、macOS `Cmd+Shift+R`。宿主 hashed 资产可能设置 `immutable`；反向代理缓存也须按部署方式清理。 |
+401/403 查登录和角色；409 重新取 revision，不覆盖状态；版本不符核对两份 manifest 和 expectedVersion；查插件日志 `GET /api/studio/plugins/deva/logs`（超级管理员），或目标实例 `HERMES_WEB_UI_HOME/plugins/global/logs/`；前端仍见旧静态资源时硬刷新。不要把「重载」当成取新版本，或把模型 API 401 当插件安装失败。
 
-## 6. Deva 设置页顶部标题：待定／不随插件交付
-
-标题方案等待按 Studio 源码重新定位后的结论。安装、更新和回滚 Deva Agent 不修改宿主部署目录；顶部「← Deva」不属于本插件的交付能力。
-
-## 7. 参考
-
-- [Deva README](README.md)、[运行与存储契约](docs/CONTRACTS.md)、[运行说明](docs/OPERATIONS.md)、[Studio 官方插件手册](https://github.com/EKKOLearnAI/ekko-studio/blob/61cda7e6c1d0b7b17f6394a8c4f3822e6dd36944/docs/plugins.md)。
-- 原工作区的历史验收笔记（仅供现场追溯，不随 Git 发布）：[安装测试](INSTALL-STUDIO-TEST.md)、[模型配置](INSTALL-STUDIO-MODEL.md)、[MCP 与 Skills](INSTALL-STUDIO-MCP-SKILLS.md)。本指南不依赖其中的日志或备份。
+**未实测：** 已登录浏览器点击安装/升级/市场流程、Windows 真机、真实第二台设备、机器级完全断网从零部署、其它插件的联网 npm/固定 Git/市场成功安装、目标模型与 MCP 联通，以及尚未发布的未来版本。

@@ -114,7 +114,7 @@ function makeExecute({ run, getPool, onToolSuccess }) {
 }
 
 /**
- * 连接本轮可用的 MCP：**插件自带**（deva-agent/mcp-servers.json，独立管理）
+ * 连接本轮可用的 MCP：**插件自带**（与桌面同构的 <root>/mcp.json + config.json → mcp.enabled）
  * + 宿主注入的 run.mcpServers（只读、不入库；同名时宿主优先）。
  * 连接跨轮复用；配置或凭证变了才重连。连接失败写进系统提示词，不中断对话。
  */

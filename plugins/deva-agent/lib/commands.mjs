@@ -4,7 +4,7 @@
  *  · 消息前缀 `@deva:<id> ...` —— input.transform 拦截并把前缀从消息里剥掉。
  *
  * 两者都只写**会话级**覆盖（不碰 `~/.deva` 身份文件里的默认值），所以同一账号不同会话可以各用各的身份。
- * 身份目录（可选 id/name/description/persona）全部来自 `~/.deva/deva-agent/identity.json`。
+ * 身份目录（可选 id/name/description/persona）全部来自 `~/.deva/personas/*.md`。
  */
 import {
   readSessionIdentityId, resolveIdentityId, writeSessionIdentityId,

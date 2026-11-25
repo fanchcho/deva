@@ -8,7 +8,7 @@
 
 | 身份 id | 显示名 | 来源 | 适合 |
 | --- | --- | --- | --- |
-| `deva`（默认） | Deva | `apps/desktop/src/main/services/deva-personas.ts` | 改代码、跑检查、写文档 |
+| `general`（默认，旧别名 `deva`） | Deva | `apps/desktop/src/main/services/deva-personas.ts` | 改代码、跑检查、写文档 |
 | `xiaomajiang` | 小码酱 | `apps/desktop/src/main/services/xiaomajiang-personas.ts` | 安全研究、逆向、强度更高的执行 |
 
 - 插件 id：`deva`（`plugin.json`）· 包名：`studio-plugin-deva` · 版本与 `package.json` 同步
@@ -18,7 +18,7 @@
 - 入口：`server.mjs` 的 `apply(ctx)`——只注册**一个**通用 Deva Agent（`ctx.extensions.agents.register(...)`），
   外加身份 RPC / 模型 RPC / MCP RPC 与一条身份命令
 - 只暴露一个 Agent：插件不再按身份各注册一个固定 Agent；身份在会话内切换（见下）
-- 通过 **Agent 管理 → Deva → 设置**，或导航栏里的 **Deva** 快捷入口，打开同一组设置页：
+- 通过 **Agent 管理 → Deva → 设置** 打开设置页；插件不注册单独的主导航快捷入口：
   - **身份**（`views: identity`）：新增、编辑身份直接写 `~/.deva/personas/*.md`（保留桌面专属字段）；默认/会话选择写在桌面 `config.json → personas.selected/sessionSelected`
   - **MCP**（`views: mcp`）：管理与桌面同构的 MCP 服务（`~/.deva/mcp.json` + `config.json.mcp.enabled`）——
     新增、改配置、启停、测试、删除。Studio 自己的 MCP 列表完全不受影响

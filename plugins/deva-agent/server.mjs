@@ -70,7 +70,7 @@ export function apply(ctx) {
   registerRpc(ctx, contract, 'get-persona-editor', personaOperation(activationUserId, (config, input) => readStudioPersona(config, input.id)))
   registerRpc(ctx, contract, 'create-persona', personaOperation(activationUserId, addStudioPersona))
   registerRpc(ctx, contract, 'update-persona', personaOperation(activationUserId, updateStudioPersona))
-  // 会话内身份：读写当前会话的覆盖（宿主会话存储 + ~/.deva/deva-agent/sessions.json）。
+  // 会话内身份：读写当前会话的覆盖（宿主会话存储 + ~/.deva/config.json → personas.sessionSelected）。
   registerRpc(ctx, contract, 'get-session-identity', async (_input, run) => {
     const sessionId = run.identity?.sessionId || ''
     if (!sessionId) return { sessionId: '', identity: '', source: 'none' }
@@ -97,7 +97,8 @@ export function apply(ctx) {
     const snapshot = await readIdentitySnapshot(run.state, run.identity, run.config)
     return { ok: true, sessionId, identity: snapshot.selected }
   })
-  // 插件自带 MCP：独立存储 <root>/deva-agent/mcp-servers.json，与 Studio 的 MCP 列表互不影响。
+  // 插件自带 MCP：与桌面同构，读写 <root>/mcp.json 的 mcpServers + <root>/config.json 的 mcp.enabled，
+  // 与 Studio 自己的 MCP 列表互不影响。
   registerRpc(ctx, contract, 'get-mcp-servers', async (_input, run) => {
     const migration = await ensureDevamcpStore(run.config, { state: run.state, identity: run.identity, host: run.host, log: ctx.log })
     const servers = listDevamcpServers(run.config)

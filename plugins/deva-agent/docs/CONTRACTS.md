@@ -11,10 +11,10 @@ MCP 连接配置只存插件自己的 0600 私有文件，与 Studio 的 MCP 列
 
 `plugin.json`：`id: deva`、`apiVersion: 1`、`server: server.mjs`、`client: client.mjs`、
 `permissions: ["agents", "ui", "commands", "browser.cdp", "api.read", "api.write", "compression"]`（技能通道读接口用 `api.read`、写接口用 `api.write`；插件自带 MCP 不再访问 Studio 服务表）、
-`views: [{id: identity, slot: agent-settings, icon: bot, order: 0}, {id: mcp, slot: agent-settings, icon: mcp, order: 1}, {id: model, slot: agent-settings, icon: bot, order: 2}]`
+`views: [{id: identity, slot: agent-settings, icon: book, order: 0}, {id: mcp, slot: agent-settings, icon: mcp, order: 1}, {id: model, slot: agent-settings, icon: settings, order: 2}]`
 （同一个 client 入口按 `ctx.view` 分流，三个页面由宿主 Agent 设置侧栏自动排在一起），
-`navigation.main` 的 Deva 快捷入口指向同一身份页；`configSchema` 默认关闭审批与普通单聊摘要。`i18n` 覆盖 `PLUGIN_LOCALES` 全部
-12 种语言的名称、描述、三个页面标题与快捷入口。插件版本与 `package.json` 的 `version` 必须一致（harness 校验）。
+不注册 `navigation.main`；`configSchema` 默认关闭审批与普通单聊摘要。`i18n` 覆盖 `PLUGIN_LOCALES` 全部
+12 种语言的名称、描述和三个页面标题。插件版本与 `package.json` 的 `version` 必须一致（harness 校验）。
 
 ## Agent 注册
 
@@ -127,8 +127,8 @@ MCP 连接配置只存插件自己的 0600 私有文件，与 Studio 的 MCP 列
 规则：旧 `deva-agent/` 整目录备份到 `~/.deva-backups/` 后迁移并删除；插件不创建任何新的 `.deva` 顶层条目；
 `config.json` 顶层浅合并、段内未知键保留；persona 正文只读写唯一文件、不复制；损坏/权限异常明确报错。
 
-宿主的设置 action 与 `navigation.main` 快捷入口 `plugin:deva/identity` 共用 `agent-settings` 身份页；
-顶部返回链接及三页侧栏由宿主渲染。会话 Agent ID 不变。
+宿主的设置 action 打开 `agent-settings` 身份页；三页侧栏及返回入口由宿主渲染。
+不依赖独立导航注册，也不改用户保存的导航偏好；会话 Agent ID 不变。
 新增/编辑按真实调用账号校验：`sharedDevaUserId`（配置时）否则宿主激活插件的账号。
 显示名按 NFKC / 不区分大小写判重，保留原显示文本；名称/描述拒绝换行和控制字符，
 不接受手填 id。新 id 与桌面相同：最多 40 字符的 ASCII slug（无则 `persona`）+ 8 位随机 hex。
@@ -306,8 +306,8 @@ Studio MCP CRUD 由设置页 RPC 提供，不等同模型工具 `create_mcp`；�
 
 ## 兼容性
 
-只面向声明了 Agent API v1、支持 `agent-settings` 和 `navigation.main` 并注入 scoped 模型的
-Ekko Studio（本仓库验证版本 0.8.28）。宿主升级 Agent 契约时按 `sdk/src/agents.ts`
+只面向声明了 Agent API v1、支持 `agent-settings` 并注入 scoped 模型的
+Ekko Studio（本仓库验证版本 0.8.30）。宿主升级 Agent 契约时按 `sdk/src/agents.ts`
 同步更新本文件与实现，不通过修改宿主类型绕过。
 
 ## Ekko SDK v1 对照补充
