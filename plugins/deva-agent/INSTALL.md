@@ -19,7 +19,7 @@ node --version
 npm --version
 ```
 
-分支入口是 `feat/plugin-deva-agent`。安装所需目录：`plugins/deva-agent/` 含 `plugin.json`、`package.json`、`server.mjs`、`client.mjs`、`lib/`、`contracts/`、`sdk/`；仓库根 `scripts/` 提供安装器和可选的宿主标题脚本。不用安装 monorepo 或桌面端的依赖。
+分支入口是 `feat/plugin-deva-agent`。安装所需目录：`plugins/deva-agent/` 含 `plugin.json`、`package.json`、`server.mjs`、`client.mjs`、`lib/`、`contracts/`、`sdk/`；仓库根 `scripts/` 提供安装器。不用安装 monorepo 或桌面端的依赖。
 
 **脚本构建（不安装）：**
 
@@ -110,31 +110,11 @@ node scripts/install-deva-agent.mjs --check --ref "$OLD"
 | 409 / revision 改变 | 安装器非零退出；不要盲重试或覆盖 registry。先重新读取当前版本、状态和 revision，再决定是否重跑。 |
 | 前端仍是旧资源 | 页面硬刷新：Windows/Linux `Ctrl+Shift+R`、macOS `Cmd+Shift+R`。宿主 hashed 资产可能设置 `immutable`；反向代理缓存也须按部署方式清理。 |
 
-## 6. 可选：复现宿主顶部「← Deva」
+## 6. Deva 设置页顶部标题：待定／不随插件交付
 
-**这不是插件功能，包内没有这项热修。** 本机只改了宿主部署文件 `/app/dist/client/assets/js/PluginPageView-Bsu_7XTl.js:1`，原文件证据备份在本工作区 `.tmp/deva-header-20261125/backup/PluginPageView-Bsu_7XTl.js`。宿主上游源码定位是 [PluginPageView.vue:20–32](https://github.com/EKKOLearnAI/ekko-studio/blob/61cda7e6c1d0b7b17f6394a8c4f3822e6dd36944/packages/client/src/views/PluginPageView.vue#L20-L32)：匹配 `studio.pluginAgentSettings`、`pluginId === 'deva'` 及同一个 `back-link` 标题组；仅该组把文字链接换成有本地化读屏名称的箭头、隐藏斜杠，保留返回到 Agent 管理的路由和 manifest 标题。其他页面不变。
-
-非必要不要改宿主；有宿主部署权限且 SHA-256 **完全相同**时才应用。将 `HOST_JS` 换成目标部署的真实文件：
-
-```bash
-HOST_JS=/app/dist/client/assets/js/PluginPageView-Bsu_7XTl.js
-node scripts/patch-deva-studio-header.mjs "$HOST_JS"            # 默认 dry-run，不写文件
-node scripts/patch-deva-studio-header.mjs "$HOST_JS" --apply     # 备份后原子替换；可重复
-curl -fsS -H 'Cache-Control: no-cache' "$STUDIO_URL/assets/js/PluginPageView-Bsu_7XTl.js" | sha256sum
-# 应用后：e3fde64db9d275042a01434deb1ed41003ed4436e06362d3fd1bd5ac0c1e9b02
-```
-
-应用后硬刷新。要撤回：
-
-```bash
-node scripts/patch-deva-studio-header.mjs "$HOST_JS" --rollback
-curl -fsS -H 'Cache-Control: no-cache' "$STUDIO_URL/assets/js/PluginPageView-Bsu_7XTl.js" | sha256sum
-# 回滚后：cc501c0899425381a90b0c4ae680b88ed132cf9fd92a39cb1b938bdffe8506ff
-```
-
-备份在资产同级的 `.tmp/PluginPageView-Bsu_7XTl.js.deva-original`，回滚前也校验哈希。之前用其它方式打过补丁但没有这份备份时，从同一构建的可信原包恢复，不要凭文件名猜。镜像重建/Studio 升级可能覆盖热修或改变 chunk 名；先重跑 dry-run，未知哈希会停止，需按新源码重新核对，不能拿旧文件覆盖新构建。没有必要为该热修重装 Deva。
+标题方案等待按 Studio 源码重新定位后的结论。安装、更新和回滚 Deva Agent 不修改宿主部署目录；顶部「← Deva」不属于本插件的交付能力。
 
 ## 7. 参考
 
 - [Deva README](README.md)、[运行与存储契约](docs/CONTRACTS.md)、[运行说明](docs/OPERATIONS.md)、[Studio 官方插件手册](https://github.com/EKKOLearnAI/ekko-studio/blob/61cda7e6c1d0b7b17f6394a8c4f3822e6dd36944/docs/plugins.md)。
-- 原工作区的历史验收笔记（仅供现场追溯，不随 Git 发布）：[安装测试](INSTALL-STUDIO-TEST.md)、[模型和标题热修](INSTALL-STUDIO-MODEL.md)、[MCP 与 Skills](INSTALL-STUDIO-MCP-SKILLS.md)。本指南不依赖其中的日志或备份。
+- 原工作区的历史验收笔记（仅供现场追溯，不随 Git 发布）：[安装测试](INSTALL-STUDIO-TEST.md)、[模型配置](INSTALL-STUDIO-MODEL.md)、[MCP 与 Skills](INSTALL-STUDIO-MCP-SKILLS.md)。本指南不依赖其中的日志或备份。
