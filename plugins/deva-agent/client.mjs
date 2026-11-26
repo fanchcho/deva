@@ -1091,7 +1091,7 @@ export async function mount(root, ctx) {
   try { return await mountTraced(root, ctx) }
   catch {
     root.innerHTML = ''
-    root.append(el('p', '', 'Deva 0.8.34 · 客户端初始化失败，模型尚未读取。'))
+    root.append(el('p', '', 'Deva 0.8.35 · 客户端初始化失败，模型尚未读取。'))
     const retry = button('重试加载模型页', 'deva-btn')
     retry.onclick = () => { void mount(root, ctx) }
     root.append(retry)
@@ -1110,18 +1110,17 @@ async function mountTraced(root, ctx) {
   const original = ctx
   const trace = event => {
     if (ctx.signal?.aborted) return
-    const payload = { side: 'client', version: '0.8.34', revision: 'not-exposed-by-sdk', attempt, ...event }
+    const payload = { side: 'client', version: '0.8.35', revision: 'not-exposed-by-sdk', attempt, ...event }
     Promise.resolve().then(() => original.rpc.call('model-ui-trace', payload)).catch(() => {})
   }
   root.innerHTML = ''
-  const status = el('p', 'deva-value-preview', 'Deva 0.8.34 · mount 开始，正在初始化模型页')
-  status.style.cssText = 'position:sticky;top:0;z-index:100;background:var(--bg-card,#fff);color:var(--text-primary,#111);max-height:30vh;overflow:auto;padding:8px;white-space:pre-wrap;overflow-wrap:anywhere;margin:0'
+  const status = el('p', 'deva-value-preview', '正在读取模型…')
+  status.style.cssText = 'padding:8px;white-space:pre-wrap;overflow-wrap:anywhere;margin:0'
   const retryTop = button('重试加载模型页', 'deva-btn')
+  retryTop.hidden = true
   retryTop.onclick = () => { cleanup(); void mount(root, original) }
   const content = el('div', '')
   root.append(status, retryTop, content)
-  const summary = { phase: 'mount', path: '待读取', providers: '?', models: '?', error: '' }
-  const renderSummary = () => { status.textContent = `Deva 0.8.34 · ${summary.phase} · providers=${summary.providers} models=${summary.models}\n${summary.path}\n${summary.error}` }
   const disposers = []
   const measure = () => observeSafely(() => {
     for (const [element, node] of [['root', root], ['candidates', content.querySelector('select[size]')], ['diagnostic', content.querySelector('input[readonly]')], ['status', status]]) trace({ phase: 'geometry', element, ...probeGeometry(node, window) })
@@ -1146,7 +1145,8 @@ async function mountTraced(root, ctx) {
     const raw = String(error?.message || error)
     let safe = raw.replace(/https?:\/\/\S+/g, '[URL]').replace(/(Bearer\s+|(?:key|token|secret|password)["']?\s*[:=]\s*["']?)[^\s"',}]+/gi, '$1[REDACTED]')
     for (const input of content.querySelectorAll('input[type=password]')) if (input.value) safe = safe.split(input.value).join('[REDACTED]')
-    status.textContent = 'Deva 0.8.34 · 页面异常：' + safe.slice(0, 500)
+    status.hidden = false
+    status.textContent = '页面加载失败：' + safe.slice(0, 500)
     const retry = button('重试加载模型页', 'deva-btn')
     retry.onclick = () => { cleanup(); void mount(root, original) }
     status.append(retry)
@@ -1164,13 +1164,14 @@ async function mountTraced(root, ctx) {
   observer.observe(content, { childList: true, subtree: true }) })
   trace({ phase: 'mount', route: (() => { try { const h = window.parent.location.hash.split('?')[0]; return /^#\/(studio|hermes)\/[a-zA-Z0-9/_-]+$/.test(h) ? h : '(other route)' } catch { return '(parent cross-origin)' } })(), readyState: document.readyState })
   const wrapped = { ...ctx, rpc: { call: async (method, input) => {
-    const start = Date.now(); summary.phase = method; renderSummary(); trace({ phase: 'rpc-start', method })
-    try { const result = await original.rpc.call(method, input); if (result.desktopDiagnostics) { try { const d = JSON.parse(result.desktopDiagnostics); Object.assign(summary, { path: d.path, providers: d.providerCount, models: d.modelCount, error: d.error || '', phase: '读取完成' }); renderSummary() } catch { summary.error = '诊断解析失败'; renderSummary() } } trace({ phase: 'rpc-resolved', method, elapsedMs: Date.now() - start }); return result }
-    catch (error) { summary.phase = '读取失败'; summary.error = 'RPC失败，详见下方错误'; renderSummary(); trace({ phase: 'rpc-rejected', method, elapsedMs: Date.now() - start, http: String(error?.message || '').match(/(?:HTTP |API Error )(\d{3})/)?.[1] || 'unknown', errorType: 'Error' }); throw error }
+    const start = Date.now(); trace({ phase: 'rpc-start', method })
+    try { const result = await original.rpc.call(method, input); trace({ phase: 'rpc-resolved', method, elapsedMs: Date.now() - start }); return result }
+    catch (error) { trace({ phase: 'rpc-rejected', method, elapsedMs: Date.now() - start, http: String(error?.message || '').match(/(?:HTTP |API Error )(\d{3})/)?.[1] || 'unknown', errorType: 'Error' }); throw error }
   } } }
   try {
     await mountContent(content, wrapped)
-    renderSummary()
+    status.hidden = true
+    status.textContent = ''
     counts()
   } catch (error) { fail(error) }
   return cleanup
@@ -1206,7 +1207,7 @@ export function modelRpcDiagnostics(ctx, output, getKey = () => '', timeoutMs = 
   const safeUrl = value => {
     try { const url = new URL(value); url.search = ''; url.hash = ''; url.username = ''; url.password = ''; return url.href } catch { return 'unavailable' }
   }
-  const state = { version: '0.8.34', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
+  const state = { version: '0.8.35', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
   observeSafely(() => { if (typeof window !== 'undefined') {
     state.url = safeUrl(window.location.href)
     state.origin = window.origin
@@ -1429,15 +1430,12 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
     problems.push([input, problem])
     return input
   }
-  const title = el('h2', '', desktopLabel)
+  const title = el('h2', '', pickLocale(ctx.locale).startsWith('zh') ? '模型设置' : 'Model settings')
   heading.innerHTML = ''
   heading.append(title, el('p', '', sharedHint))
-  body.append(el('h3', 'deva-section-title', addressLabel))
   const address = field(addressLabel, 'url', 2048)
   address.placeholder = 'https://api.example.com/v1'
-  body.append(el('h3', 'deva-section-title', nameLabel))
   const name = field(nameLabel, 'text', 256)
-  body.append(el('h3', 'deva-section-title', keyLabel))
   const key = field(keyLabel, 'password', 4096)
   key.autocomplete = 'new-password'
   const diagnostic = el('input', 'deva-select')
@@ -1456,7 +1454,6 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
     option.value = value
     effort.append(option)
   }
-  body.append(el('h3', 'deva-section-title', effortLabel))
   const effortRow = el('label', '', effortLabel)
   effortRow.append(effort)
   const effortProblem = el('div', 'deva-field-error')
@@ -1484,7 +1481,7 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
   const actions = el('div', 'deva-model-actions')
   actions.append(save, cancel)
   body.append(actions, diagnostics)
-  card.append(body, status, bindings)
+  card.append(status, body, bindings)
   cancel.onclick = () => { if (current) { show(current); setBusy(false) } }
   const preview = el('p', 'deva-value-preview')
   preview.hidden = true
@@ -1492,7 +1489,7 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
   const syncPreview = () => {
     preview.textContent = [address.value, name.value].filter(Boolean).join('\n')
     preview.hidden = !preview.textContent
-    title.textContent = choose.value === custom ? newProvider : desktopLabel
+    title.textContent = choose.value === custom ? newProvider : (pickLocale(ctx.locale).startsWith('zh') ? '模型设置' : 'Model settings')
     cancel.hidden = choose.value !== custom
   }
   container.append(header, card)
@@ -1522,7 +1519,10 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
   }
   const setError = error => {
     status.className = 'deva-status error'
-    status.textContent = errorText(error)
+    status.textContent = errorText(error).replace(/\s+\[RPC_ERROR\]/g, '').replace(/(HTTP \d+) API Error \d+:/, '$1：')
+    const retry = button(pickLocale(ctx.locale).startsWith('zh') ? '重试读取' : 'Retry', 'deva-btn')
+    retry.onclick = async () => { setBusy(true); try { show(await ctx.rpc.call('get-model-selection')) } catch (error) { setError(error) } finally { setBusy(false) } }
+    status.append(retry)
   }
   const label = (template, values) => format(template, values)
   /** 下拉选项显示「provider 名 / 模型名」这类真实值，而不是把复合 id 直接丢给用户看。 */

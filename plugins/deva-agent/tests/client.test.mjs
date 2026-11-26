@@ -847,3 +847,22 @@ test('measurement, listener and observer failures cannot prevent model mount, re
     } finally { delete globalThis.window; delete globalThis.MutationObserver }
   }
 })
+
+test('model form has one label per field and failed reads offer retry in the existing form', async () => {
+  let failed = true
+  const ctx = fakeContext('zh', async () => {
+    if (failed) throw new Error('HTTP 503 模拟读取失败')
+    return { desktopModels: [{ ref: 'p:m', modelName: 'm' }], modelRef: 'p:m', modelName: 'm' }
+  }, { view: 'model' })
+  const root = await mountPage(ctx)
+  for (const label of ['API 地址（Base URL）', '模型名', 'API Key']) {
+    assert.equal(findAll(root, n => n.textContent === label && ['label', 'h3'].includes(n.tag)).length, 1)
+  }
+  assert.ok(findAll(root, n => n.textContent.includes('503')).length)
+  const retry = findAll(root, n => n.tag === 'button' && n.textContent === '重试读取')[0]
+  assert.ok(retry)
+  failed = false
+  await retry.onclick()
+  assert.equal(findAll(root, n => n.tag === 'select' && n.size === 5).length, 1)
+  assert.equal(findAll(root, n => n.tag === 'select' && n.size === 5)[0].children.length, 1)
+})

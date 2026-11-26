@@ -7,7 +7,7 @@ const directory = fileURLToPath(new URL('../diagnostics/', import.meta.url))
 export function writeUiTrace(event) {
   mkdirSync(directory, { recursive: true, mode: 0o700 })
   chmodSync(directory, 0o700)
-  const row = { time: new Date().toISOString(), version: '0.8.34' }
+  const row = { time: new Date().toISOString(), version: '0.8.35' }
   for (const key of ['side', 'phase', 'method', 'version', 'revision', 'route', 'readyState', 'errorType', 'http', 'elapsedMs', 'count', 'attempt', 'present', 'top', 'left', 'width', 'height', 'offsetHeight', 'clientHeight', 'viewportHeight', 'documentHeight', 'inViewport', 'scrollHeight', 'x', 'y', 'element', 'display', 'visibility', 'opacity', 'overflow', 'scope', 'tag', 'label', 'hitTag', 'hitLabel']) {
     const value = event[key]
     if (typeof value === 'number' && Number.isFinite(value)) row[key] = value
