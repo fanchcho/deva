@@ -1091,7 +1091,7 @@ export async function mount(root, ctx) {
   try { return await mountTraced(root, ctx) }
   catch {
     root.innerHTML = ''
-    root.append(el('p', '', 'Deva 0.8.35 · 客户端初始化失败，模型尚未读取。'))
+    root.append(el('p', '', 'Deva 0.8.36 · 客户端初始化失败，模型尚未读取。'))
     const retry = button('重试加载模型页', 'deva-btn')
     retry.onclick = () => { void mount(root, ctx) }
     root.append(retry)
@@ -1110,7 +1110,7 @@ async function mountTraced(root, ctx) {
   const original = ctx
   const trace = event => {
     if (ctx.signal?.aborted) return
-    const payload = { side: 'client', version: '0.8.35', revision: 'not-exposed-by-sdk', attempt, ...event }
+    const payload = { side: 'client', version: '0.8.36', revision: 'not-exposed-by-sdk', attempt, ...event }
     Promise.resolve().then(() => original.rpc.call('model-ui-trace', payload)).catch(() => {})
   }
   root.innerHTML = ''
@@ -1120,7 +1120,9 @@ async function mountTraced(root, ctx) {
   retryTop.hidden = true
   retryTop.onclick = () => { cleanup(); void mount(root, original) }
   const content = el('div', '')
-  root.append(status, retryTop, content)
+  const version = el('small', '', 'Deva 0.8.36')
+  version.style.cssText = 'display:block;padding:4px 12px;color:var(--text-secondary,#666);font-size:11px'
+  root.append(version, status, retryTop, content)
   const disposers = []
   const measure = () => observeSafely(() => {
     for (const [element, node] of [['root', root], ['candidates', content.querySelector('select[size]')], ['diagnostic', content.querySelector('input[readonly]')], ['status', status]]) trace({ phase: 'geometry', element, ...probeGeometry(node, window) })
@@ -1207,7 +1209,7 @@ export function modelRpcDiagnostics(ctx, output, getKey = () => '', timeoutMs = 
   const safeUrl = value => {
     try { const url = new URL(value); url.search = ''; url.hash = ''; url.username = ''; url.password = ''; return url.href } catch { return 'unavailable' }
   }
-  const state = { version: '0.8.35', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
+  const state = { version: '0.8.36', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
   observeSafely(() => { if (typeof window !== 'undefined') {
     state.url = safeUrl(window.location.href)
     state.origin = window.origin

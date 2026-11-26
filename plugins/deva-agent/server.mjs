@@ -1,3 +1,4 @@
+import { clientDeliveryInterceptor } from './lib/client-delivery.mjs'
 import { writeUiTrace, tracedModelRpc } from './lib/ui-trace.mjs'
 import { discoverModels } from './lib/model-discovery.mjs'
 import { registerCompression } from './lib/compression.mjs'
@@ -41,8 +42,9 @@ function personaOperation(activationUserId, action) {
 export function apply(ctx) {
   const activationUserId = ctx.identity?.userId
   ctx.log.info(`deva: 激活通道 ctx.host.request=${typeof ctx.host?.request === 'function'}`)
+  ctx.lifecycle.add(ctx.extensions.http.register(clientDeliveryInterceptor()))
   registerCompression(ctx)
-  registerRpc(ctx, contract, 'model-ui-trace', input => writeUiTrace(input))
+  registerRpc(ctx, contract, 'model-ui-trace', (input, run) => writeUiTrace({ ...input, userId: run.identity?.userId ?? 0, profile: run.identity?.profile || 'unknown' }))
   registerRpc(ctx, contract, 'list-provider-models', tracedModelRpc('list-provider-models', (input, run) => discoverModels(run, input)))
   registerRpc(ctx, contract, 'get-model-selection', tracedModelRpc('get-model-selection', (_input, run) => readModelSelection({ ...run, desktopActivationUserId: activationUserId })))
   registerRpc(ctx, contract, 'save-model-selection', tracedModelRpc('save-model-selection', (input, run) => saveModelSelection({ ...run, desktopActivationUserId: activationUserId }, input)))

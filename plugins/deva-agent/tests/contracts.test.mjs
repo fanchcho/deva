@@ -97,6 +97,7 @@ function setup() {
     state,
     config: { sharedDevaHome: home },
     extensions: {
+      http: { register() { return () => {} } },
       rpc: { register(name, handler) { rpcs.set(name, handler); return () => rpcs.delete(name) } },
       commands: { register(command) { commands.set(command.name, command); return () => commands.delete(command.name) } },
       agents: { register(definition) { agents.push(definition); return { id: `plugin:deva/${definition.id}`, dispose: async () => { disposers.push('agent') } } } },
@@ -137,7 +138,7 @@ test('Deva uses the native settings views without registering a main navigation 
   assert.equal(manifest.apiVersion, 1)
   assert.equal(manifest.server, 'server.mjs')
   assert.equal(manifest.client, 'client.mjs')
-  assert.deepEqual(manifest.permissions, ['agents', 'ui', 'commands', 'browser.cdp', 'api.read', 'api.write', 'compression'])
+  assert.deepEqual(manifest.permissions, ['agents', 'ui', 'commands', 'browser.cdp', 'api.read', 'api.write', 'compression', 'http'])
   assert.deepEqual(manifest.views.map(view => [view.id, view.slot, view.icon]), [
     ['identity', 'agent-settings', 'book'],
     ['mcp', 'agent-settings', 'mcp'],

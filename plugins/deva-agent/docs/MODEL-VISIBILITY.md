@@ -21,3 +21,10 @@ DOM 有 option 或 RPC 返回成功单独都不构成可见性通过。测试中
 配置原文与 RPC 诊断仅放在默认关闭的「配置来源与诊断」中；字段只保留 label，
 不再为同一字段另加同文 h3。读取失败在表单顶部显示错误及「重试读取」，重试复用表单。
 路径按服务端原文保留，`.deva` 中的点不删除；截图小字号应放大或以 DOM 原文核实。
+
+0.8.36 按实际账号定位需求增加顶部小号版本标记（不含路径或调试计数）。
+声明 http 能力，仅观察 GET /api/studio/plugins/deva/client 的响应，不改变头、正文或批准策略。
+日志新增 userId/profile（宿主认证上下文）、endpoint（Host，不含query）、clientVersion、
+clientSha256（实际source字节）、HTTP状态和字节数；匿名响应标记0/unauthenticated。
+model-ui-trace 的账号/Profile 由服务端run.identity补入，客户端不能伪造这些字段。
+日志落盘错误不影响资源下发。没有请求日志不能证明用户没有访问；旧缓存和请求未到此实例仍需实际页面证据。
