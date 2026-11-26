@@ -21,6 +21,50 @@ export function parseModels(value) {
   })
 }
 
+/**
+ * 「拉模型能用、对话 401」的真实差异就在这里：
+ *  · `GET {base}/models` 即使在**完全不带 Authorization** 时也可能返回 200（网关/代理允许匿名列目录）；
+ *  · `POST {base}/chat/completions` 才是真正消费凭据的端点。
+ * 所以列表 200 **不能**证明 Key 可用。这里在同一凭据、同一 Base URL 上做一次只到鉴权层的探测，
+ * 把结论作为 `authProbe` 一起回给页面——探测本身不产生生成，也不发空消息。
+ */
+/**
+ * 鉴权判别：故意发一个**结构不合法**的 chat 请求（`messages: []`），只到鉴权层。
+ *  · 401/403 → 凭据被拒（unauthorized）；
+ *  · 400/422/404/429/5xx 等 → 鉴权已通过，只是请求体/模型名被拒（authorized）；
+ *  · 网络/批准失败 → unknown。
+ * 这样既不产生生成、也不花 token，也不会因为假模型名被误判成「Key 无效」。
+ */
+const chatProbeBody = model => JSON.stringify({ model, messages: [] })
+
+async function probeChatAuthorization({ endpoint, apiKey, model, signal }) {
+  if (!apiKey) {
+    return {
+      sentAuthorization: false,
+      chatAuthorized: 'absent',
+      reason: '本次列表请求没有可用 Key（未发送 Authorization）。列表 200 只说明该地址允许匿名读取模型清单，不能证明对话可用。',
+    }
+  }
+  const url = new URL(`${endpoint.url.href.split('/models')[0]}/chat/completions`)
+  try {
+    await requestCustomModel({ ...endpoint, url }, { method: 'POST', body: chatProbeBody(model), signal, json: true, headers: { authorization: `Bearer ${apiKey}` } })
+    return { sentAuthorization: true, chatAuthorized: 'authorized', chatHttp: 200, reason: 'chat/completions 接受了该凭据。' }
+  } catch (error) {
+    const status = Number(String(error?.message || '').match(/HTTP (\d{3})/)?.[1] || 0)
+    if (status === 401 || status === 403) {
+      return {
+        sentAuthorization: true, chatAuthorized: 'unauthorized', chatHttp: status,
+        reason: `上游在 chat/completions 拒绝了该凭据（HTTP ${status}）；列表请求返回 200 只说明该地址允许匿名读取模型清单，两者鉴权口径不同。`,
+      }
+    }
+    if (status >= 100 && status < 600) {
+      // 鉴权已通过：上游是因为请求体/模型名不合规而拒绝，不是 Key 的问题。
+      return { sentAuthorization: true, chatAuthorized: 'authorized', chatHttp: status, reason: `鉴权已通过（chat/completions 以 HTTP ${status} 拒绝的是一个故意不合规的探测请求，不代表 Key 无效）。` }
+    }
+    return { sentAuthorization: true, chatAuthorized: 'unknown', reason: `鉴权探测未能完成（${String(error?.message || error).slice(0, 200)}）；这不代表凭据无效。` }
+  }
+}
+
 export async function discoverModels(run, input, { timeoutMs = 15000 } = {}) {
   const options = validateStoredModel('modelDiscoveryInput', input)
   const baseUrl = normalizeBaseUrl(options.baseUrl)
@@ -52,7 +96,10 @@ export async function discoverModels(run, input, { timeoutMs = 15000 } = {}) {
     const value = await Promise.race([aborted, requestCustomModel(endpoint, { method: 'GET', json: true, signal, headers: apiKey ? { authorization: `Bearer ${apiKey}` } : {} })])
     const models = parseModels(value)
     if (apiKey && JSON.stringify(models).includes(apiKey)) throw new Error('模型列表包含敏感凭据，已拒绝回传')
-    return { models }
+    // 列表成功 ≠ 对话可用：把同一凭据在 chat 端点的鉴权结论一并返回。
+    const authProbe = await probeChatAuthorization({ endpoint, apiKey, model: models[0]?.id || '', signal }).catch(error => ({ sentAuthorization: Boolean(apiKey), chatAuthorized: 'unknown', reason: String(error?.message || error).slice(0, 200) }))
+    const safeProbe = { sentAuthorization: Boolean(authProbe.sentAuthorization), chatAuthorized: authProbe.chatAuthorized, ...(authProbe.chatHttp ? { chatHttp: authProbe.chatHttp } : {}), ...(authProbe.reason ? { reason: apiKey ? String(authProbe.reason).split(apiKey).join('[redacted]') : String(authProbe.reason) } : {}) }
+    return { models, authProbe: safeProbe }
   } catch (error) {
     if (timeout.aborted) throw new Error('获取模型列表超时，请检查地址或稍后重试')
     if (run.signal?.aborted) throw new Error('获取模型列表已取消')

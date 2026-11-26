@@ -4,8 +4,8 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  clearDesktopKeyCache, createDpapiDecoder, DESKTOP_DECRYPT_CODES,
-  desktopSecretsPaths, publicDesktopCredential, readDesktopSecrets, resolveDesktopCredential,
+  clearDesktopAclCache, clearDesktopKeyCache, createDpapiDecoder, credentialHealth, DESKTOP_DECRYPT_CODES, detectContainer,
+  desktopSecretsPaths, isToolchainFailure, probeFileOwner, publicDesktopCredential, readDesktopSecrets, resolveDesktopCredential,
 } from '../lib/desktop-secrets.mjs'
 import { readCustomModel, readModelSelection, resolveCredential, saveModelSelection } from '../lib/model-selection.mjs'
 
@@ -131,7 +131,8 @@ test('fixture 4/5 — desktop has the key but decryption fails: an explicit, act
   assert.equal(resolved.desktop.decryptCode, DESKTOP_DECRYPT_CODES.DPAPI_FAILED)
   const view = await readModelSelection(run)
   assert.equal(view.hasApiKey, false)
-  assert.match(view.keyProblem, /无法解密/)
+  // Linux 上默认解码器如实报 platform-unsupported；Windows 上会是 dpapi-* 码。两种都必须说清 DPAPI 前提。
+  assert.match(view.keyProblem, /DPAPI/)
   assert.match(view.keyProblem, /secrets\.json/, '原因里给出确切路径')
   assert.equal(view.keyProblem.includes(CIPHERTEXT), false)
   assert.equal(view.keyProblem.includes(PLAIN), false)
@@ -200,18 +201,24 @@ test('the DPAPI decoder sends the ciphertext on stdin, never in argv, and honour
     platform: 'win32',
     spawn: (binary, script, input) => {
       calls.push({ binary, script, input })
+      if (script.includes('selfcheck')) return { status: 0, stdout: 'DEVADPAPI selfcheck\n{"runtime":"pwsh","assembly":true,"roundtrip":true}' }
       // 第一次（带 v10 前缀）失败，第二次（去掉前缀）成功 —— 与 Chromium 真机行为一致。
-      if (calls.length === 1) return { status: 1, stdout: '', stderr: 'CryptographicException' }
-      return { status: 0, stdout: Buffer.from('fixture.decoded.value').toString('base64') }
+      if (input === Buffer.concat([Buffer.from('v10'), Buffer.from('payload')]).toString('base64')) {
+        return { status: 3, stdout: 'DEVADPAPI unprotect', stderr: 'HResult=0x80090005 bad data' }
+      }
+      return { status: 0, stdout: 'DEVADPAPI ok\n' + Buffer.from('fixture.decoded.value').toString('base64') }
     },
   })
   const prefixed = Buffer.concat([Buffer.from('v10'), Buffer.from('payload')]).toString('base64')
   const result = await decode(prefixed)
   assert.equal(result.ok, true)
   assert.equal(result.plaintext, 'fixture.decoded.value')
-  assert.equal(calls.length, 2)
-  assert.equal(String(calls[0].script).includes('payload'), false, '密文不进脚本/命令行参数')
-  assert.equal(calls[0].input, Buffer.from('v10payload').toString('base64'), '密文只经 stdin')
+  assert.equal(result.prefix, 'v10')
+  const decryptCalls = calls.filter(item => !item.script.includes('selfcheck'))
+  assert.equal(decryptCalls.length, 2)
+  assert.equal(String(decryptCalls[0].script).includes('payload'), false, '密文不进脚本/命令行参数')
+  assert.equal(decryptCalls[0].input, prefixed, '密文只经 stdin（第一次带前缀原样试）')
+  assert.equal(decryptCalls[1].input, Buffer.from('payload').toString('base64'), '第二次去前缀重试')
 })
 
 test('the default decoder refuses to guess on non-Windows hosts', async () => {
@@ -261,4 +268,209 @@ test('saving a key in Studio writes only the plugin side, never the desktop secr
   const custom = await readCustomModel(run, null)
   assert.equal(custom.apiKey, PLUGIN_KEY)
   assert.equal(custom.credentialSource, 'plugin')
+})
+
+// ── 解码器夹具矩阵（0.8.47）：把「工具链坏了」与「密文不属于这个用户/机器」分开 ──
+
+const SELF_OK = 'DEVADPAPI selfcheck\n{"runtime":"pwsh","version":"7.4.1","languageMode":"FullLanguage","assembly":true,"roundtrip":true}'
+const okPayload = text => `DEVADPAPI ok\n${Buffer.from(text).toString('base64')}`
+const BLOB = Buffer.from('user-secret-blob').toString('base64')
+
+/** 造一个「powershell.exe 某行为 X、pwsh.exe 某行为 Y」的 spawn 假件，并区分自检与解密调用。 */
+function variantSpawn(behaviour) {
+  const calls = []
+  const spawn = (binary, script, input) => {
+    const isSelf = script.includes('selfcheck')
+    calls.push({ binary, isSelf, input })
+    const spec = behaviour[binary] || {}
+    return isSelf ? (spec.self || { status: 3, stdout: 'DEVADPAPI assembly', stderr: 'blocked' }) : (spec.decrypt || { status: 3, stdout: 'DEVADPAPI assembly', stderr: 'blocked' })
+  }
+  return { spawn, calls }
+}
+const decodeMatrix = async (decoder, blob = BLOB) => decoder(blob)
+
+test('matrix 1/9 — Windows PowerShell 5.1 variant alone decodes successfully', async () => {
+  const { spawn, calls } = variantSpawn({
+    'powershell.exe': {
+      self: { status: 0, stdout: 'DEVADPAPI selfcheck\n{"runtime":"windows-powershell","version":"5.1.19041","assembly":true,"roundtrip":true}' },
+      decrypt: { status: 0, stdout: okPayload('fixture.ps51.key') },
+    },
+    'pwsh.exe': { self: { error: { code: 'ENOENT' } }, decrypt: { error: { code: 'ENOENT' } } },
+  })
+  const result = await decodeMatrix(createDpapiDecoder({ platform: 'win32', spawn }))
+  assert.equal(result.ok, true)
+  assert.equal(result.plaintext, 'fixture.ps51.key')
+  assert.equal(result.selfCheck.runtime, 'windows-powershell')
+  assert.equal(calls.filter(c => !c.isSelf).length, 1, 'PS5.1 成功即停止，不再试 pwsh')
+})
+
+test('matrix 2/9 — PowerShell 7 variant alone decodes successfully', async () => {
+  const { spawn, calls } = variantSpawn({
+    'powershell.exe': { self: { error: { code: 'ENOENT' } }, decrypt: { error: { code: 'ENOENT' } } },
+    'pwsh.exe': { self: { status: 0, stdout: SELF_OK }, decrypt: { status: 0, stdout: okPayload('fixture.ps7.key') } },
+  })
+  const result = await decodeMatrix(createDpapiDecoder({ platform: 'win32', spawn }))
+  assert.equal(result.ok, true)
+  assert.equal(result.plaintext, 'fixture.ps7.key')
+  assert.ok(calls.some(c => c.binary === 'pwsh.exe'))
+})
+
+test('matrix 3/9 — both variants missing reports decrypt-tool-missing', async () => {
+  const missing = createDpapiDecoder({ platform: 'win32', spawn: () => ({ error: { code: 'ENOENT' } }) })
+  const result = await decodeMatrix(missing)
+  assert.equal(result.ok, false)
+  assert.equal(result.code, DESKTOP_DECRYPT_CODES.TOOL_MISSING)
+})
+
+test('matrix 4/9 — assembly unavailable on both variants reports decrypt-assembly-unavailable', async () => {
+  const { spawn } = variantSpawn({
+    'powershell.exe': { self: { status: 3, stdout: 'DEVADPAPI assembly', stderr: 'Add-Type blocked' }, decrypt: { status: 3, stdout: 'DEVADPAPI assembly', stderr: 'Add-Type blocked' } },
+    'pwsh.exe': { self: { status: 3, stdout: 'DEVADPAPI assembly', stderr: 'Add-Type blocked' }, decrypt: { status: 3, stdout: 'DEVADPAPI assembly', stderr: 'Add-Type blocked' } },
+  })
+  const result = await decodeMatrix(createDpapiDecoder({ platform: 'win32', spawn }))
+  assert.equal(result.code, DESKTOP_DECRYPT_CODES.ASSEMBLY)
+  assert.equal(result.selfCheck.ok, false)
+})
+
+test('matrix 5/9 — stdout polluted with BOM and warning lines still decodes the payload', async () => {
+  const noisy = '\uFEFFWARNING: PowerShell profile failed\r\nMicrosoft.Windows.Something\r\n' + okPayload('fixture.noisy.key')
+  const result = await decodeMatrix(createDpapiDecoder({ platform: 'win32', spawn: (b, script) => script.includes('selfcheck')
+    ? { status: 0, stdout: SELF_OK }
+    : { status: 0, stdout: noisy } }))
+  assert.equal(result.ok, true)
+  assert.equal(result.plaintext, 'fixture.noisy.key', '只取可校验 base64，不被噪声干扰')
+  // 噪声里没有协议行时，退出码 0 也不能当成功。
+  const noMarker = await decodeMatrix(createDpapiDecoder({ platform: 'win32', spawn: (b, script) => script.includes('selfcheck')
+    ? { status: 0, stdout: SELF_OK }
+    : { status: 0, stdout: Buffer.from('garbage-not-a-payload').toString('base64') + '\nextra' } }))
+  assert.equal(noMarker.ok, false)
+  assert.equal(noMarker.code, DESKTOP_DECRYPT_CODES.OUTPUT_INVALID)
+})
+
+test('matrix 6/9 — self-check ok but unprotect fails → blob ownership, with redacted stderr', async () => {
+  const result = await decodeMatrix(createDpapiDecoder({ platform: 'win32', spawn: (b, script) => script.includes('selfcheck')
+    ? { status: 0, stdout: SELF_OK }
+    : { status: 1, stdout: '', stderr: 'boom at C:\\Users\\XYXNY\\x api_key=abc123 and plaintext fixture.value' } }))
+  assert.equal(result.code, DESKTOP_DECRYPT_CODES.FOREIGN_BLOB, '自检成功时解不开 → 归属问题，不报 dpapi-failed')
+  assert.equal(result.stderr.includes('XYXNY'), false, 'stderr 里的用户路径被脱敏')
+  assert.equal(result.stderr.includes('abc123'), false)
+})
+
+test('matrix 7/9 — invalid base64 ciphertext is its own reason, not “cannot decrypt”', async () => {
+  const decoder = createDpapiDecoder({ platform: 'win32', spawn: (b, script) => script.includes('selfcheck') ? { status: 0, stdout: SELF_OK } : { status: 3, stdout: 'DEVADPAPI input', stderr: 'Ciphertext is not valid base64' } })
+  for (const bad of ['', '   ', '%%%%']) {
+    const result = await decodeMatrix(decoder, bad)
+    assert.equal(result.ok, false)
+    assert.equal(result.code, DESKTOP_DECRYPT_CODES.CIPHERTEXT_INVALID)
+  }
+})
+
+test('matrix 8/9 — self-check passes but the blob cannot be decrypted → dpapi-foreign-blob', async () => {
+  const result = await decodeMatrix(createDpapiDecoder({ platform: 'win32', spawn: (b, script) => script.includes('selfcheck')
+    ? { status: 0, stdout: SELF_OK }
+    : { status: 3, stdout: 'DEVADPAPI unprotect', stderr: 'HResult=0x8009000b Key not valid for use in specified state' } }))
+  assert.equal(result.ok, false)
+  assert.equal(result.code, DESKTOP_DECRYPT_CODES.FOREIGN_BLOB)
+  assert.equal(isToolchainFailure(result.code), false, '这不是工具链问题，页面不能让人去修 PowerShell')
+  assert.equal(result.selfCheck.ok, true)
+})
+
+test('matrix 9/9 — a failing self-check never claims the toolchain works', async () => {
+  const result = await decodeMatrix(createDpapiDecoder({ platform: 'win32', spawn: (b, script) => script.includes('selfcheck')
+    ? { status: 0, stdout: 'DEVADPAPI selfcheck\n{"assembly":true,"roundtrip":false}' }
+    : { status: 3, stdout: 'DEVADPAPI unprotect', stderr: 'CryptographicException' } }))
+  assert.equal(result.selfCheck.ok, false)
+  assert.equal(result.code, DESKTOP_DECRYPT_CODES.ROUNDTRIP_FAILED)
+  assert.equal(isToolchainFailure(result.code), true)
+})
+
+test('self-check reports the environment facts the user needs to send back', async () => {
+  const decoder = createDpapiDecoder({ platform: 'win32', spawn: (b, script) => script.includes('selfcheck')
+    ? { status: 0, stdout: 'DEVADPAPI selfcheck\n{"runtime":"windows-powershell","version":"5.1","user":"machine\\\\user","languageMode":"ConstrainedLanguage","assembly":false,"roundtrip":false}' }
+    : { status: 3, stdout: 'DEVADPAPI assembly', stderr: 'blocked' } })
+  const health = credentialHealth(await decoder.selfCheck())
+  assert.equal(health.ok, false)
+  assert.equal(health.variants.length, 2)
+  assert.equal(health.variants[0].languageMode, 'ConstrainedLanguage')
+  assert.equal(health.variants[0].assembly, false)
+  assert.equal(health.platform, 'win32')
+  assert.equal(JSON.stringify(health).includes('fixture'), false)
+})
+
+test('container detection distinguishes a container/WSL server from a native Windows one', () => {
+  assert.equal(detectContainer({}), '')
+  assert.equal(detectContainer({ KUBERNETES_SERVICE_HOST: '10.0.0.1' }), 'kubernetes')
+  assert.equal(detectContainer({ WSL_DISTRO_NAME: 'Ubuntu' }), 'wsl')
+})
+
+test('manual fill is permanent: account scope survives profile change and restart, and clear never resurrects old records', async t => {
+  const fx = await fixture({ desktop: true })
+  t.after(fx.cleanup)
+  const { mkdtemp } = await import('node:fs/promises')
+  const dir = await mkdtemp(join(tmpdir(), 'deva-cred-persist-'))
+  const file = join(dir, 'state.json')
+  await writeFile(file, JSON.stringify({}), { mode: 0o600 })
+  // 磁盘落盘的 memoryState：模拟宿主 state.user 的真实持久化（同一个文件被多次“进程”读）。
+  const diskLayer = name => ({
+    namespace: (...parts) => diskLayer([name, ...parts].join('/')),
+    async get(key) {
+      const all = JSON.parse(await readFile(file, 'utf8'))
+      return all[`${[name]}#${key}`]
+    },
+    async set(key, value) {
+      const all = JSON.parse(await readFile(file, 'utf8'))
+      all[`${[name]}#${key}`] = value
+      await writeFile(file, JSON.stringify(all), { mode: 0o600 })
+    },
+    async delete(key) {
+      const all = JSON.parse(await readFile(file, 'utf8'))
+      delete all[`${[name]}#${key}`]
+      await writeFile(file, JSON.stringify(all), { mode: 0o600 })
+    },
+  })
+  const makeRun = profile => ({ config: fx.config, identity: { userId: 1, profile }, desktopActivationUserId: 1, state: { user: diskLayer('user:1'), profile: diskLayer(`profile:1:${profile}`) } })
+  // 在 profile=default 下由用户手动填写一次。
+  const saved = await saveModelSelection(makeRun('default'), { baseUrl: route.baseUrl, modelName: 'a1', apiKey: PLUGIN_KEY })
+  assert.equal(saved.keySource, 'plugin')
+  // 换到另一个 Profile（Studio 的会话 Profile 是配置哈希派生的），仍然读得到。
+  const other = await resolveCredential(makeRun('studio-web-abc123'), route, { decrypt: failDecoder })
+  assert.equal(other.source, 'plugin')
+  assert.equal(other.key, PLUGIN_KEY)
+  // “重启”= 用全新的 run 对象读同一份磁盘 state，仍然在账号级。
+  const restarted = await resolveCredential(makeRun('studio-web-def456'), route, { decrypt: failDecoder })
+  assert.equal(restarted.source, 'plugin')
+  assert.equal(restarted.key, PLUGIN_KEY)
+  // 持久化确实发生在账号级作用域（不是只在内存里）。
+  const persisted = await readFile(file, 'utf8')
+  assert.equal(persisted.includes('fixture.plugin.token.1111'), true, '账号级记录确实落盘（模拟宿主）')
+  assert.equal(persisted.includes('user:1/desktopModelKeys#'), true, '记录写在账号级命名空间')
+  // 清除：两个作用域都要清；旧 Profile 记录不能复活。
+  await saveModelSelection(makeRun('default'), { baseUrl: route.baseUrl, modelName: 'a1', apiKey: '' })
+  const cleared = await resolveCredential(makeRun('default'), route, { decrypt: failDecoder })
+  assert.equal(cleared.source, 'none')
+  assert.equal(cleared.key, '')
+  // 清除后磁盘上不再有该 Key（旧 Profile 记录不会复活）。
+  const clearedRaw = await readFile(file, 'utf8')
+  assert.equal(clearedRaw.includes('fixture.plugin.token.1111'), false)
+  await rm(dir, { recursive: true, force: true })
+})
+
+test('ACL probe reports the desktop file owner without reading its contents', async () => {
+  const calls = []
+  const spawn = (binary, script, input) => {
+    calls.push({ binary, input })
+    return { status: 0, stdout: 'DEVADPAPI aclok\nDESKTOP\\XYXNY' }
+  }
+  const acl = probeFileOwner('C:\\Users\\XYXNY\\.deva\\secrets.json', { platform: 'win32', spawn })
+  assert.equal(acl.ok, true)
+  assert.equal(acl.owner, 'DESKTOP\\XYXNY')
+  assert.equal(calls[0].input, 'C:\\Users\\XYXNY\\.deva\\secrets.json')
+  // 缓存：同一路径不重复启动 PowerShell。
+  const again = probeFileOwner('C:\\Users\\XYXNY\\.deva\\secrets.json', { platform: 'win32', spawn })
+  assert.equal(again.owner, acl.owner)
+  assert.equal(calls.length, 1)
+  clearDesktopAclCache()
+  const fail = probeFileOwner('C:\\x\\secrets.json', { platform: 'win32', spawn: () => ({ status: 2, stdout: 'DEVADPAPI aclfail' }) })
+  assert.equal(fail.ok, false)
+  assert.equal(fail.owner, '')
 })

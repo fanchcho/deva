@@ -173,6 +173,16 @@ Windows 自检：安装 0.8.25，关闭重开 Studio 的 Deva 模型页；下拉
 
 Windows 请比较桌面与 Studio 进程的 AI_UPPER_HOME / DEVA_HOME，以及运行账号的用户目录。若 Studio 在另一机器，默认 ~/.deva 指的是 Studio 服务器，无法读取 Windows 本地配置；必须使用在该设备运行的宿主或明确配置其可访问的 sharedDevaHome。核对页面 path、exists、stat、providerCount、modelCount；不存在、权限拒绝或 JSON 错误均按页面诊断处理，不要提交 secrets.json 或 API Key。**0.8.44 起**：同一 OS 用户、同一台机器上，插件会在服务端按需只读解密桌面 `secrets.json` 里同一 provider 的密文（Windows DPAPI CurrentUser；明文只在内存、不写回、不进日志、不回前端），因此桌面端存过的 Key 不必在 Studio 再填一遍。跨用户/跨机器仍不可解，页面会给出原因码（`dpapi-failed` 等）与确切路径；此时手填即可。
 
+### 0.8.47 Windows 桌面密钥解密失败怎么判
+
+模型页报「桌面有该提供方密文但解不开」时，先看 `keyDiagnostics` 里的 `decryptCode`，按三类处理：
+
+1. **`decrypt-assembly-unavailable` / `decrypt-language-mode-restricted` / `decrypt-tool-missing` / `decrypt-roundtrip-failed` / `decrypt-output-invalid`**：Studio 所在 Windows 机器上的 PowerShell/DPAPI 工具链有问题（缺程序集、Constrained Language、或被组策略限制）。这是**环境问题**，不是 Key 无效；管理员修好 PowerShell 5.1 或 7 后可重试。
+2. **`dpapi-foreign-blob`**：自检往返已成功（说明本机 DPAPI 正常），但这一个密文解不开——它属于**另一个 Windows 用户或另一台机器**。DPAPI 是用户级加密，**密码学上不可解，任何代码都绕不过去**：只能在模型页手动填一次（账号级，换 Profile/重启都保留），或由桌面端做显式交接（需改桌面端，本版本未实现）。
+3. **`platform-unsupported`（含 container 标记）**：Studio 服务端不在那台 Windows 上（Linux/WSL/容器），同理不可解；把 Studio 部署到同一台 Windows 或手动填一次。
+
+「获取模型列表」成功不代表对话可用：列表请求在没有 Key 时**不带 Authorization**，有的网关允许匿名列清单。页面会显示 `authProbe` 结论；以 `chat/completions` 的结果为准。
+
 ### 0.8.27 旧形态核对
 
 若看到“不兼容的桌面模型配置字段”，记录诊断中的字段路径及 config.json 绝对路径，不要删除原配置或只复制 API Key。当前桌面读取的是 models.providers[].models[]、apiHost 和 models.activeModelId；provider/model/defaultModel/baseUrl 等别名未获当前桌面迁移代码支持，因此明确拒绝猜测转换。若实际桌面版本能读取这些形态，需要对应版本的读取代码或不含密钥的配置结构样本来补兼容。

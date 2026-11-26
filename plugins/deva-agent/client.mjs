@@ -1477,7 +1477,7 @@ async function mountTraced(root, ctx) {
   const original = ctx
   const trace = event => {
     if (ctx.signal?.aborted) return
-    const payload = { side: 'client', version: '0.8.46', revision: 'not-exposed-by-sdk', attempt, ...event }
+    const payload = { side: 'client', version: '0.8.47', revision: 'not-exposed-by-sdk', attempt, ...event }
     Promise.resolve().then(() => original.rpc.call('model-ui-trace', payload)).catch(() => {})
   }
   root.innerHTML = ''
@@ -1581,7 +1581,7 @@ export function modelRpcDiagnostics(ctx, output, getKey = () => '', timeoutMs = 
   const safeUrl = value => {
     try { const url = new URL(value); url.search = ''; url.hash = ''; url.username = ''; url.password = ''; return url.href } catch { return 'unavailable' }
   }
-  const state = { version: '0.8.46', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
+  const state = { version: '0.8.47', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
   observeSafely(() => { if (typeof window !== 'undefined') {
     state.url = safeUrl(window.location.href)
     state.origin = window.origin
@@ -1781,6 +1781,18 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
       if (ctx.signal?.aborted) return
       models = mergeModelCandidates(desktopLocal, result.models)
       message.textContent = models.length ? copy(`远端拉取：${result.models.length} 个；合并候选 ${models.length} 个，请选择。`, `${models.length} models available; select one or enter manually.`) : copy('远端拉取：0 个；接口返回空模型列表，请手动输入模型名或检查供应商。', 'The provider returned an empty list. Enter a model manually or check the provider.')
+      // 列表成功 ≠ 对话可用：把服务端的鉴权探测结论直接说出来，别让用户以为「能拉模型」就万事大吉。
+      const probe = result.authProbe
+      if (probe) {
+        const note = probe.chatAuthorized === 'absent'
+          ? copy('注意：本次列表请求没有发送 Authorization（没有可用 Key）。列表成功只说明该地址允许匿名读取模型清单，不能证明对话可用；对话会返回 401。', 'Note: this list request sent no Authorization header (no usable key). A successful list only means the endpoint allows anonymous model listing; it does not prove chat works — chat will return 401.')
+          : probe.chatAuthorized === 'unauthorized'
+            ? copy('注意：同一凭据在对话端点被上游拒绝（HTTP ' + (probe.chatHttp || '401/403') + '）；列表成功是匿名可读，不代表对话可用。', 'Note: the same credential was rejected by the chat endpoint (HTTP ' + (probe.chatHttp || '401/403') + '). Listing worked anonymously, not because the key is valid.')
+            : probe.chatAuthorized === 'authorized'
+              ? copy('鉴权探测：同一凭据在对话端点已通过（本次未产生生成）。', 'Auth probe: the same credential was accepted by the chat endpoint (no generation produced).')
+              : ''
+        if (note) message.textContent += '\n' + note
+      }
       search.hidden = choices.hidden = !models.length
       filter()
     } catch (error) {

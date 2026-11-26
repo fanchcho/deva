@@ -950,3 +950,23 @@ test('model page shows the key source status only, never a value, and separates 
     assert.match(body, pattern)
   }
 })
+
+test('model page warns that a successful /models fetch does not prove chat works', async () => {
+  const current = { baseUrl: 'https://example.com/v1', modelName: 'manual', modelRef: 'p:manual', hasApiKey: false, legacyNeedsSetup: false }
+  const page = await mountPage(fakeContext('zh', async name => {
+    if (name === 'get-model-selection') return current
+    return { models: [{ id: 'm1' }], authProbe: { sentAuthorization: false, chatAuthorized: 'absent', reason: '无 Key' } }
+  }, { view: 'model' }))
+  const fetch = findAll(page, node => node.tag === 'button' && node.textContent === '刷新远端模型列表')[0]
+  await fetch.onclick()
+  const texts = findAll(page, node => node.textContent).map(node => node.textContent).join('\n')
+  assert.match(texts, /列表成功只说明该地址允许匿名读取模型清单，不能证明对话可用/)
+  assert.equal(/不需要\s*Key|无需鉴权/.test(texts), false)
+  const rejected = await mountPage(fakeContext('zh', async name => {
+    if (name === 'get-model-selection') return current
+    return { models: [{ id: 'm1' }], authProbe: { sentAuthorization: true, chatAuthorized: 'unauthorized', chatHttp: 401, reason: '拒绝' } }
+  }, { view: 'model' }))
+  const fetch2 = findAll(rejected, node => node.tag === 'button' && node.textContent === '刷新远端模型列表')[0]
+  await fetch2.onclick()
+  assert.match(findAll(rejected, node => node.textContent).map(node => node.textContent).join('\n'), /同一凭据在对话端点被上游拒绝/)
+})

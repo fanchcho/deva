@@ -9,7 +9,7 @@ import { getPersona, listPersonas, writePersonaModel } from './persona-store.mjs
 import { resolveDevaRoot } from './deva-fs.mjs'
 import { sharedDevaWritePath, desktopWriteDenial } from './shared-deva-model.mjs'
 import { validateStored, validateStoredModel } from './storage-contracts.mjs'
-import { publicDesktopCredential, resolveDesktopCredential } from './desktop-secrets.mjs'
+import { DESKTOP_DECRYPT_CODES, isToolchainFailure, publicDesktopCredential, resolveDesktopCredential } from './desktop-secrets.mjs'
 
 export const REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const LEGACY_EFFORT = 'minimal'
@@ -232,7 +232,7 @@ function displayBaseUrl(value) {
   }
 }
 
-export async function readCustomModel(run, personaId) {
+export async function readCustomModel(run, personaId, options = {}) {
   if (!sharedDevaWritePath(run)) {
     if (run.mode === 'global') throw new Error(desktopWriteDenial(run))
     return null
@@ -248,18 +248,31 @@ export async function readCustomModel(run, personaId) {
   if (route.adapter !== 'openai' || !route.baseUrl) {
     throw new Error('当前桌面模型没有可用于 Chat Completions 的地址或适配器；未回退')
   }
-  const credential = await resolveCredential(run, route)
+  const credential = await resolveCredential(run, route, options)
   return { ...route, apiKey: credential.key, credentialSource: credential.source, credentialDiagnostics: credentialDetails(credential), reasoningEffort: defaultEffort(desktop) }
 }
 
 /** 运行期诊断行：只说明「查过哪里、结论是什么」，不含任何密钥片段。 */
 function credentialDetails(credential) {
+  const desktop = credential.desktop || null
   return {
     source: credential.source,
     scope: credential.scope,
     reason: credential.reason || '',
+    ...(desktop?.decryptCode ? { decryptCode: desktop.decryptCode } : {}),
+    ...(desktop?.toolchainBroken ? { toolchainBroken: true } : {}),
+    ...(desktop?.selfCheck ? { selfCheck: desktop.selfCheck } : {}),
+    ...(desktop?.stderr ? { stderr: desktop.stderr } : {}),
     plugin: credential.plugin ? { scope: credential.plugin.scope, storeError: credential.plugin.storeError || '', corrupt: Boolean(credential.plugin.corrupt) } : null,
-    desktop: credential.desktop || null,
+    desktop: desktop ? {
+      path: desktop.path, source: desktop.source, exists: desktop.exists, size: desktop.size ?? null,
+      structure: desktop.structure, code: desktop.code, entryCount: desktop.entryCount ?? null,
+      present: Boolean(desktop.present), status: desktop.status || '',
+      ...(desktop.fileOwner ? { fileOwner: desktop.fileOwner } : {}),
+      ...(desktop.aclReadable !== undefined ? { aclReadable: Boolean(desktop.aclReadable) } : {}),
+      ...(desktop.decryptCode ? { decryptCode: desktop.decryptCode } : {}),
+      ...(desktop.toolchainBroken !== undefined ? { toolchainBroken: Boolean(desktop.toolchainBroken) } : {}),
+    } : null,
   }
 }
 
@@ -401,8 +414,26 @@ function credentialProblemMessage(credential, run, route) {
     return `插件侧凭据存储不可用（${credential.plugin.storeError}）；请在下方重新填写一次 API Key。${desktopDetail}`
   }
   switch (credential?.reason) {
-    case 'decrypt-failed':
-      return `桌面端已保存 providerId=${provider} 的密钥，但本次无法解密（${desktop?.decryptCode || '未知原因'}）。DPAPI 密文只能由保存它的同一 Windows 用户、在同一台机器上解密：请确认 Studio 与 Deva 桌面端是同一账号、同一台机器；否则请在下方手动填写。${desktopDetail}`
+    case 'decrypt-failed': {
+      const code = desktop?.decryptCode || 'unknown'
+      const health = desktop?.selfCheck
+      const variantText = health?.variants?.length
+        ? `（PowerShell 变体：${health.variants.map(v => `${v.binary}=${v.ok ? 'ok' : (v.code || 'fail')}`).join('，')}${health.container ? `；运行环境：${health.container}` : ''}）`
+        : ''
+      if (code === DESKTOP_DECRYPT_CODES.FOREIGN_BLOB) {
+        const owner = desktop?.fileOwner ? `文件所有者=${desktop.fileOwner}` : ''
+        const procUser = health?.user ? `当前进程用户=${health.user}` : ''
+        const who = [owner, procUser].filter(Boolean).join('，')
+        return `桌面端已保存 providerId=${provider} 的密钥，但**这份密文不是当前 Studio 进程这个 Windows 用户/这台机器存的**（自检往返成功，说明本机 DPAPI 可用；该 blob 解不开${who ? `；${who}` : ''}）。DPAPI 是用户级加密，跨用户/跨机器在密码学上不可解，Studio 内部绕不过去：请在本页填一次 API Key（会存到 Studio 账号级，换 Profile/重启都保留），或由桌面端做一次显式交接（需改桌面端，本版本未实现）。${desktopDetail}`
+      }
+      if (isToolchainFailure(code)) {
+        return `桌面端已保存 providerId=${provider} 的密钥，但本机没有可用的 DPAPI 工具链（${code}）${variantText}。这不是密钥的问题：请让管理员在 Studio 所在 Windows 机器上确认 Windows PowerShell 5.1 或 PowerShell 7 可用、且未被 Constrained Language/组策略限制；也可先在本页手动填写。${desktopDetail}`
+      }
+      if (code === DESKTOP_DECRYPT_CODES.NOT_WINDOWS) {
+        return `桌面端已保存 providerId=${provider} 的密钥，但 Studio 服务端不在那台 Windows 上（${health?.container ? `检测到 ${health.container}；` : ''}当前平台 ${health?.platform || process.platform}）。DPAPI 密文只在保存它的 Windows 用户/机器上可解，跨机器/容器在密码学上不可解：请在 Studio 本页填一次，或把 Studio 部署到同一台 Windows。${desktopDetail}`
+      }
+      return `桌面端已保存 providerId=${provider} 的密钥，但本次无法解密（${code}）。DPAPI 密文只能由保存它的同一 Windows 用户、在同一台机器上解密；请在本页手动填写一次（之后会永久保留）。${desktopDetail}`
+    }
     case 'desktop-unreadable':
       return `桌面 secrets.json 存在但不可用（${desktop?.code || '未知'}：${desktop?.path || '路径未知'}）；请检查该文件的类型/大小/JSON 结构，或在下方手动填写 Key。`
     case 'missing-desktop-entry':

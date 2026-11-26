@@ -69,7 +69,9 @@ test('model discovery times out, supports cancellation, and reports an empty lis
   controller.abort()
   await assert.rejects(pending, /已取消/)
   hang = false
-  assert.deepEqual(await discoverModels(run, { baseUrl, apiKey: '' }), { models: [] })
+  const empty = await discoverModels(run, { baseUrl, apiKey: '' })
+  assert.deepEqual(empty.models, [])
+  assert.equal(empty.authProbe.chatAuthorized, 'absent', '没有 Key 时列表 200 不算证明，必须明确说「无法证明」')
 })
 
 test('real GET shares exact approval and server credential scope; no host catalog fallback', async t => {
@@ -80,11 +82,15 @@ test('real GET shares exact approval and server credential scope; no host catalo
   })
   await saveModelSelection(run, { baseUrl, modelName: 'manual', apiKey: key })
   const result = await discoverModels(run, { baseUrl: baseUrl + '/' })
-  assert.deepEqual(result, { models: [{ id: 'cn:available', contextWindow: 64000 }, { id: 'without-length' }] })
-  assert.deepEqual(seen, [{ method: 'GET', path: '/v1/models', authorized: true }])
+  assert.deepEqual(result.models, [{ id: 'cn:available', contextWindow: 64000 }, { id: 'without-length' }])
+  // 列表请求带凭据；随后的鉴权探测同样带凭据（用于区分「列表能用」与「对话可用」）。
+  assert.deepEqual(seen.filter(item => item.path === '/v1/models'), [{ method: 'GET', path: '/v1/models', authorized: true }])
+  assert.ok(seen.some(item => item.method === 'POST' && item.path === '/v1/chat/completions' && item.authorized), '鉴权探测走到 chat 端点且带同一凭据')
+  assert.equal(result.authProbe.chatAuthorized, 'authorized')
   assert.equal(JSON.stringify(result).includes(key), false)
+  const beforeRejected = seen.length
   await assert.rejects(discoverModels({ ...run, config: { ...run.config, modelTrustedBases: [] } }, { baseUrl }), /modelTrustedBases/)
-  assert.equal(seen.length, 1)
+  assert.equal(seen.length, beforeRejected, '未批准的地址一个请求都不发（含鉴权探测）')
   const otherBase = baseUrl + '/other'
   run.config.modelTrustedBases.push(otherBase)
   await discoverModels(run, { baseUrl: otherBase })

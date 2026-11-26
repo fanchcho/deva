@@ -1,3 +1,12 @@
+# 0.8.47
+
+- 修复 0.8.46 在 Windows 上「读到了桌面 secrets.json、条目也对，但解密仍报 dpapi-failed」：解码器现在**真的把 powershell.exe 与 pwsh.exe 都试到**（0.8.46 在第一个变体非 ENOENT 失败就 break，pwsh 永远轮不到），并按运行时自适应程序集（PS5.1 用 `System.Security`，PS7 用 `System.Security.Cryptography.ProtectedData`）。
+- stdout 只接受可校验的 base64（去 BOM/CR/噪声行）；输出被污染算独立原因码 `decrypt-output-invalid`，不再静默解成乱码或误报 dpapi-failed。
+- 新增 DPAPI 自检（固定假字符串 protect→unprotect 往返，不碰用户密文），采集服务端进程身份、容器/WSL 检测、PowerShell 变体与版本、程序集/语言模式、往返结果；把「工具链坏了」与「密文属于别的用户/机器」彻底分开。
+- 原因码细化：`decrypt-tool-missing` / `decrypt-assembly-unavailable` / `decrypt-language-mode-restricted` / `decrypt-output-invalid` / `decrypt-roundtrip-failed` / `dpapi-foreign-blob` / `ciphertext-invalid` / `platform-unsupported`；stderr 脱敏后只进诊断。
+- 模型页与 401 报错按三类失败给不同下一步：工具链不可用（说缺什么）、自检成功但该密文解不开（明确「不是当前 Studio 进程这个 Windows 用户/机器存的，Studio 内部绕不过去」）、都没保存（维持原文案）。
+- 「获取模型列表」结果新增 `authProbe`：列表请求不带 Authorization 时明确说「列表 200 不代表对话可用」；同一凭据在 `chat/completions` 被拒时单独给出结论。页面同步显示，不再把「能拉模型」当成凭据可用的证明。
+
 # 0.8.46
 
 - 无可用 Key 时把可操作原因（路径/结构/条目/原因码）直接放状态行，不再只藏在折叠诊断里。

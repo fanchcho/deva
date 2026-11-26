@@ -1,6 +1,7 @@
 import { writeUiTrace } from './ui-trace.mjs'
 import { callModel } from './model.mjs'
 import { ModelInputError, requestCustomModel } from './custom-model-network.mjs'
+import { DESKTOP_DECRYPT_CODES, isToolchainFailure } from './desktop-secrets.mjs'
 import { resolveCustomEndpoint } from './model-selection.mjs'
 
 const noop = async () => {}
@@ -50,13 +51,21 @@ export function createCustomModel(run, { baseUrl, modelName, apiKey, reasoningEf
   const authHint = () => {
     if (!apiKey) {
       const desktop = credentialDiagnostics?.desktop
+      const code = credentialDiagnostics?.decryptCode || desktop?.decryptCode || ''
       const where = desktop?.path ? `桌面 secrets.json 已读取（${desktop.path}，条目=${desktop.entryCount ?? 0}）` : '桌面 secrets.json 未读取到'
-      const why = credentialDiagnostics?.reason === 'decrypt-failed'
-        ? `桌面有该提供方密文但解不开（${desktop?.decryptCode || '未知原因'}）；DPAPI 密文只属于保存它的同一 Windows 用户与机器`
-        : credentialDiagnostics?.reason === 'desktop-unreadable'
-          ? `桌面 secrets.json 不可用（${desktop?.code || '未知'}）`
-          : '插件侧与桌面端都没有该提供方的密钥'
-      return `${why}；${where}。请在 Deva → 模型填写该提供方的 API Key（会保存到 Studio 自己这一侧）`
+      let why = '插件侧与桌面端都没有该提供方的密钥'
+      if (credentialDiagnostics?.reason === 'decrypt-failed') {
+        if (code === DESKTOP_DECRYPT_CODES.FOREIGN_BLOB) {
+          why = `桌面有该提供方密文，但这份密文不是当前 Studio 进程这个 Windows 用户/这台机器存的（本机 DPAPI 自检通过；该 blob 解不开）`
+        } else if (isToolchainFailure(code) || code === DESKTOP_DECRYPT_CODES.NOT_WINDOWS) {
+          why = `桌面有该提供方密文，但本机没有可用的 DPAPI 工具链（${code}）${credentialDiagnostics?.selfCheck?.container ? `；运行环境 ${credentialDiagnostics.selfCheck.container}` : ''}`
+        } else {
+          why = `桌面有该提供方密文但解不开（${code || '未知原因'}）`
+        }
+      } else if (credentialDiagnostics?.reason === 'desktop-unreadable') {
+        why = `桌面 secrets.json 不可用（${desktop?.code || '未知'}）`
+      }
+      return `${why}；${where}。请在 Deva → 模型填写该提供方的 API Key（会保存到 Studio 账号级，换 Profile/重启都保留）`
     }
     if (credentialSource === 'desktop') {
       return '本次使用的 Key 来自桌面端 secrets.json（只读、未复制进 Studio），上游拒绝了它：请在桌面端更新该提供方的 Key，或在此处手动覆盖'

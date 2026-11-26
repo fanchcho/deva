@@ -2129,6 +2129,42 @@
             ],
             "additionalProperties": false
           }
+        },
+        "authProbe": {
+          "type": "object",
+          "description": "本次列表请求是否真的证明了凭据可用：models 请求不强制鉴权时，200 只代表匿名可读，不能证明 Key 有效；chat 端点才是判据。",
+          "properties": {
+            "sentAuthorization": {
+              "type": "boolean",
+              "description": "拉列表时是否带了 Authorization 头（有可用 Key 才带）。"
+            },
+            "chatAuthorized": {
+              "type": "string",
+              "description": "用同一凭据对该 Base URL 的鉴权结论：authorized=上游在接受该凭据（仅探测鉴权，不产生生成）；unauthorized=上游拒绝；absent=本次没有可用 Key，无法证明；unknown=探测未完成（网络/批准等）。",
+              "enum": [
+                "authorized",
+                "unauthorized",
+                "absent",
+                "unknown"
+              ]
+            },
+            "chatHttp": {
+              "type": "integer",
+              "description": "探测鉴权时的 HTTP 状态码；未知时省略。",
+              "minimum": 100,
+              "maximum": 599
+            },
+            "reason": {
+              "type": "string",
+              "description": "结论的可操作说明或原因码；不含凭据。",
+              "maxLength": 512
+            }
+          },
+          "required": [
+            "sentAuthorization",
+            "chatAuthorized"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [

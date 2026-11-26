@@ -389,3 +389,28 @@ phase=geometry 每个element单独记录：root/candidates/diagnostic/status/ifr
 安装成品应先解压，选择包含 plugin.json/package.json 的 package 目录作为安装来源；不能把 zip/tgz 路径直接作为来源。安装后重新加载设置页面或重启 Studio 客户端，才能让已有界面重新读取包含 Skill 页的 manifest/client；服务端热装不代表其他设备已经加载新页面。
 
 外部技能的 edit/delete 由宿主拒绝（400 Only local skills can be edited/deleted）。新建接口不声明外部目标目录，不能承诺落盘到调用者指定的临时目录；本插件不猜测 path/directory 参数。外部样本的真实验证包含读取、支持文件、启停和拒绝编辑/删除，不等同于 local CRUD 成功。
+
+## 0.8.47 桌面密钥解密诊断（Windows）
+
+`list-provider-models` 的返回在 `models` 之外新增 **`authProbe`**（`modelDiscoveryView.authProbe`）：
+
+| 字段 | 含义 |
+| --- | --- |
+| `sentAuthorization` | 拉列表时是否携带 `Authorization`（只有拿到可用 Key 才会带）。 |
+| `chatAuthorized` | `authorized` = 同一凭据在 `POST {base}/chat/completions` 通过鉴权；`unauthorized` = 被 401/403 拒绝；`absent` = 本次没有可用 Key，**列表 200 不能证明对话可用**；`unknown` = 探测未完成（网络/批准等）。 |
+| `chatHttp` | 鉴权探测的 HTTP 状态（未知时省略）。 |
+| `reason` | 可操作说明；不含凭据。 |
+
+鉴权探测故意发送 `{"model": "...", "messages": []}` 这种**结构不合法**的请求，只到鉴权层：401/403 判 `unauthorized`，其它 4xx/5xx 判 `authorized`（说明鉴权已过、只是请求体不合规），**不产生生成、不花 token**。`GET {base}/models` 是否强制鉴权取决于网关，**不能**把「列表 200」当作凭据有效的通用证据，页面文案也不得这么写。
+
+### 解密原因码（`desktop-secrets.mjs`）
+
+`decrypt-tool-missing`（两个 PowerShell 变体都不存在）、`decrypt-assembly-unavailable`（程序集缺失/`Add-Type` 被禁）、`decrypt-language-mode-restricted`（Constrained Language）、`decrypt-output-invalid`（stdout 被噪声/BOM 污染，取不到可校验 base64）、`decrypt-roundtrip-failed`（自检 protect→unprotect 失败）、`ciphertext-invalid`（密文不是合法 base64）、`dpapi-foreign-blob`（**自检成功**但该 blob 解不开 → 属于别的 Windows 用户/机器，密码学上不可解）、`dpapi-failed`（其它）、`platform-unsupported`（Studio 不在 Windows 上）、`decrypt-timeout`、`plaintext-empty`。
+
+前六种归为**工具链问题**（`isToolchainFailure`），页面提示修 PowerShell/程序集/语言模式；`dpapi-foreign-blob` 与 `platform-unsupported` 归为**归属/平台问题**，页面明确说明「Studio 内部绕不过去，需要在模型页填一次，或由桌面端显式交接」。`dpapi-failed` 只在无法归因时兜底。
+
+### DPAPI 自检
+
+`createDpapiDecoder().selfCheck()` 用固定假字符串做 protect→unprotect 往返（**不碰用户密文**），返回 `{platform, container, ok, code, runtime, variants[]}`，每个 variant 含 `binary/runtime/version/languageMode/assembly/roundtrip/code`。容器/WSL 由 `detectContainer()` 从环境变量与 `/proc` 特征只读判断。自检结果只进 `keyDiagnostics`（字符串，脱敏），**不含**密文、明文或 Key 片段；`stderr` 经 `redactStderr()` 去掉用户路径与凭据样式后最多保留 3 行 300 字。
+
+自动迁移与永久性：手动填写的 Key 写在 `state.user.namespace("desktopModelKeys")`（账号级，与 Profile 无关），换 Profile/new run 仍可读；清除同时清账号级与旧 Profile 级记录，旧记录不会复活。
