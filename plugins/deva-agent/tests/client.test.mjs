@@ -814,7 +814,7 @@ test('local candidates precede form fields and expanded JSON never pushes them d
   const choices = nodes.find(n => n.tag === 'select' && n.size === 5)
   assert.equal(choices.children.length, 1)
   assert.ok(nodes.indexOf(choices) < nodes.findIndex(n => n.type === 'url'))
-  const details = nodes.find(n => n.tag === 'details' && findAll(n, child => child.tag === 'pre').length)
+  const details = nodes.find(n => n.tag === 'details' && findAll(n, child => child.tag === 'pre' && child.textContent.includes('"providers"')).length)
   assert.ok(details && !details.open)
   assert.ok(findAll(details, n => n.tag === 'pre')[0].textContent.includes('"providers"'))
   assert.ok(!nodes.find(n => n.role === 'status').textContent.includes('providerCount'))

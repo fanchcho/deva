@@ -52,7 +52,7 @@ export function customModelEndpoint(baseUrl, trustedBases = []) {
   const family = isIP(hostname)
   if (!trusted && (url.protocol !== 'https:' || (family && !publicAddress({ address: hostname, family })))) {
     throw new ModelInputError('allowNonPublic', 'confirmation-required',
-      `${base} 是本机、内网或 HTTP 地址，尚未确认放行；请联系 Studio 管理员将此完整地址加入 modelTrustedBases，或改用公网 HTTPS 地址`)
+      `${base} 是本机、内网或 HTTP 地址，尚未确认放行；请联系 Studio 管理员将此完整地址加入 modelTrustedBases，或改用公网 HTTPS 地址。这是安全策略，页面不能自行批准；管理员：管理插件 → Deva 详情 → 配置 → modelTrustedBases（JSON 数组追加）→ 保存`)
   }
   return { url, trusted, hostname, family }
 }

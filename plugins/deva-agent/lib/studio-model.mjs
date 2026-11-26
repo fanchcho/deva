@@ -35,7 +35,7 @@ function effortRejected(error, reasoningEffort) {
  */
 function approvalHint(error, baseUrl) {
   if (!(error instanceof ModelInputError) || error.code !== 'confirmation-required') return error
-  const hint = `${baseUrl} 是本机、内网或 HTTP 地址，Deva 直连前需要 Studio 管理员批准：请把完整地址 ${baseUrl} 加入插件配置 modelTrustedBases 后重试。`
+  const hint = `${baseUrl} 是本机、内网或 HTTP 地址，Deva 直连前需要 Studio 管理员批准：请把完整地址 ${baseUrl} 加入插件配置 modelTrustedBases 后重试。这是安全策略，页面不能自行批准。管理员入口：管理插件 → Deva 详情 → 配置 → modelTrustedBases（JSON 数组追加，保留原地址）→ 保存。`
   const wrapped = new ModelInputError(error.field, error.code, hint)
   wrapped.cause = error
   return wrapped

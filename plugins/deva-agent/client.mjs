@@ -1097,7 +1097,7 @@ export async function mount(root, ctx) {
   try { return await mountTraced(root, ctx) }
   catch {
     root.innerHTML = ''
-    root.append(el('p', '', 'Deva 0.8.38 · 客户端初始化失败，模型尚未读取。'))
+    root.append(el('p', '', '客户端初始化失败，模型尚未读取。'))
     const retry = button('重试加载模型页', 'deva-btn')
     retry.onclick = () => { void mount(root, ctx) }
     root.append(retry)
@@ -1116,7 +1116,7 @@ async function mountTraced(root, ctx) {
   const original = ctx
   const trace = event => {
     if (ctx.signal?.aborted) return
-    const payload = { side: 'client', version: '0.8.38', revision: 'not-exposed-by-sdk', attempt, ...event }
+    const payload = { side: 'client', version: '0.8.39', revision: 'not-exposed-by-sdk', attempt, ...event }
     Promise.resolve().then(() => original.rpc.call('model-ui-trace', payload)).catch(() => {})
   }
   root.innerHTML = ''
@@ -1126,11 +1126,11 @@ async function mountTraced(root, ctx) {
   retryTop.hidden = true
   retryTop.onclick = () => { cleanup(); void mount(root, original) }
   const content = el('div', '')
-  const version = el('small', '', 'Deva 0.8.38 · 候选 0 个 · 正在读取')
+  const version = el('small', '', '候选 0 个 · 正在读取')
   version.style.cssText = 'position:sticky;top:0;z-index:10;background:var(--bg-card,#fff);display:block;padding:4px 12px;color:var(--text-secondary,#666);font-size:11px'
   root.append(version, status, retryTop, content)
   let candidateCount = 0, phase = '正在读取'
-  const showStage = () => { version.textContent = `Deva 0.8.38 · 候选 ${candidateCount} 个 · ${phase}` }
+  const showStage = () => { version.textContent = `候选 ${candidateCount} 个 · ${phase}` }
   const disposers = []
   const measure = () => observeSafely(() => {
     for (const [element, node] of [['root', root], ['candidates', content.querySelector('select[size]')], ['diagnostic', content.querySelector('input[readonly]')], ['status', status]]) trace({ phase: 'geometry', element, ...probeGeometry(node, window) })
@@ -1219,7 +1219,7 @@ export function modelRpcDiagnostics(ctx, output, getKey = () => '', timeoutMs = 
   const safeUrl = value => {
     try { const url = new URL(value); url.search = ''; url.hash = ''; url.username = ''; url.password = ''; return url.href } catch { return 'unavailable' }
   }
-  const state = { version: '0.8.38', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
+  const state = { version: '0.8.39', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
   observeSafely(() => { if (typeof window !== 'undefined') {
     state.url = safeUrl(window.location.href)
     state.origin = window.origin
@@ -1304,6 +1304,18 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
   const native = el('details', '')
   native.append(el('summary', '', copy('原生选择器', 'Native selector')), choices)
   body.append(native)
+  const approval = el('details', 'deva-approval-help')
+  approval.append(el('summary', '', copy('怎么批准本机 / 内网地址', 'How to approve a local or private address')))
+  approval.append(el('p', '', copy('这是安全策略，页面不能自行批准。请由 Studio 管理员打开右上角「管理插件」→ Deva 详情 →「配置」→ modelTrustedBases，在 JSON 数组中追加完整地址，保留已有地址，然后点「保存」。无需重启。', 'This is a security policy; this page cannot approve itself. Ask a Studio administrator to open Manage plugins → Deva details → Configuration → modelTrustedBases, append the exact URL to the JSON array while keeping existing entries, and Save. No restart is needed.')))
+  const approvalJson = el('pre', 'deva-value-preview')
+  approvalJson.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere'
+  const copyBase = button(copy('复制完整地址', 'Copy exact address'), 'deva-btn deva-model-discover')
+  const approvalBase = () => { try { const u = new URL(address.value.trim()); u.username = ''; u.password = ''; u.search = ''; u.hash = ''; return u.href.replace(/\/$/, '') } catch { return '' } }
+  const updateApproval = () => { approvalJson.textContent = JSON.stringify({ modelTrustedBases: [approvalBase()] }, null, 2) }
+  approval.ontoggle = updateApproval
+  copyBase.onclick = async () => { const value = approvalBase(); try { await navigator.clipboard.writeText(value); copyBase.textContent = copy('已复制地址', 'Address copied') } catch { copyBase.textContent = copy('请从下方手动复制地址', 'Copy the address below') } }
+  approval.append(approvalJson, copyBase, el('p', '', copy('示例只显示待追加地址，不要用它覆盖原数组。127.0.0.1 指 Studio 所在机器；批准后还需确认该机器的服务端口可达。', 'The example is an entry to append, not a replacement. 127.0.0.1 refers to the Studio machine; approval does not prove the port is reachable.')))
+  body.append(approval)
   const commitSelection = button(copy('保存所选模型并设为默认', 'Save selected model as default'), 'deva-btn primary deva-model-discover')
   commitSelection.hidden = true
   commitSelection.onclick = () => saveSelected()

@@ -45,3 +45,10 @@ test('model merge preserves local references and removes duplicate remote ids', 
   const local = [{id:'a',ref:'p:a'}, {id:'a',ref:'q:a'}]
   assert.deepEqual(mergeModelCandidates(local,[{id:'a'},{id:'b'},{id:'b'}]), [...local,{id:'b'}])
 })
+
+test('navigation titles contain no release number in every locale', async () => {
+  const { readFileSync } = await import('node:fs')
+  const manifest = JSON.parse(readFileSync(new URL('../plugin.json', import.meta.url)))
+  for (const locale of Object.values(manifest.i18n)) assert.doesNotMatch(locale.views.model, /Deva|0\.8\./)
+  assert.equal(manifest.views.find(view => view.id === 'model').title, '模型')
+})
