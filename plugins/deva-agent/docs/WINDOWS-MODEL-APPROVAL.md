@@ -17,3 +17,9 @@ Test-NetConnection 127.0.0.1 -Port 7863
 批准必须在那台 Windows 对应的 Studio 实例上执行。127.0.0.1 指 Studio 服务所在机器；如果 Studio 在 Docker/WSL/远程服务器，Windows 自己的Test-NetConnection成功不等于Studio能访问。批准仅授权指定完整地址，不能启动服务、打开端口或修复Key。
 
 这是安全策略，模型页面不能自行批准。批准后重新进入模型页再获取模型；地址必须与批准项一致。Windows真机未在本次Linux环境验证。
+
+## 数据目录与交付路径
+
+本机已核实注册配置保存在 `<Studio数据目录>/plugins/global/state.json` 的 records 中。Windows默认形态为 `C:/Users/<用户名>/.hermes-web-ui/plugins/global/state.json`；若设置 HERMES_WEB_UI_HOME 或安装器采用不同数据目录，必须以该实例实际目录为准。本任务无法读取用户Windows，不能保证默认路径就是那台机器的绝对路径。不要手工修改state.json（有revision及热加载约束），用上述管理员配置页或官方脚本。
+
+推荐ZIP解压到 `C:/DevaPlugin/0.8.39/`，其 `package` 目录可作为Studio本地安装来源；tgz与ZIP内容相同。版本只在插件详情/清单与包名查看，导航仅“模型”。

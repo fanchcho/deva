@@ -1273,6 +1273,16 @@ export function modelRpcDiagnostics(ctx, output, getKey = () => '', timeoutMs = 
   }
 }
 
+export function discoveryFailure(message) {
+  if (/modelTrustedBases|confirmation-required|尚未确认放行/.test(message)) return '地址未批准；请展开“怎么批准”，由管理员追加完整地址并保存。'
+  if (/401|403/.test(message)) return '鉴权失败；检查该地址的 API Key 与账号权限。'
+  if (/404/.test(message)) return '接口不存在（404）；检查 Base URL，不要重复填写 /models。'
+  if (/timeout|超时|TIMEDOUT/i.test(message)) return '请求超时；检查服务是否运行以及网络连接。'
+  if (/JSON|Unexpected token|格式不支持/i.test(message)) return '响应不是有效模型 JSON；检查 /models 返回 data 数组。'
+  if (/ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|fetch failed|连接|不可达/i.test(message)) return '地址不可达；在 Studio 所在机器检查服务、端口和 DNS。'
+  return '获取失败；检查下方错误摘要后重试。'
+}
+
 export function mergeModelCandidates(local, remote) {
   return [...local, ...remote.filter((model, index) => !local.some(item => item.id === model.id) && remote.findIndex(item => item.id === model.id) === index)]
 }
@@ -1300,7 +1310,8 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
   cards.setAttribute('role', 'group')
   cards.setAttribute('aria-label', copy('候选模型', 'Model candidates'))
   cards.style.cssText = 'display:flex;flex-direction:column;gap:6px;max-height:240px;overflow:auto;min-width:0'
-  body.append(message, cards, search, actions, detail)
+  const localStatus = el('p', 'deva-local-source', copy('本地配置：尚未读取', 'Local config: not read'))
+  body.append(localStatus, message, cards, search, actions, detail)
   const native = el('details', '')
   native.append(el('summary', '', copy('原生选择器', 'Native selector')), choices)
   body.append(native)
@@ -1312,7 +1323,16 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
   const copyBase = button(copy('复制完整地址', 'Copy exact address'), 'deva-btn deva-model-discover')
   const approvalBase = () => { try { const u = new URL(address.value.trim()); u.username = ''; u.password = ''; u.search = ''; u.hash = ''; return u.href.replace(/\/$/, '') } catch { return '' } }
   const updateApproval = () => { approvalJson.textContent = JSON.stringify({ modelTrustedBases: [approvalBase()] }, null, 2) }
-  approval.ontoggle = updateApproval
+  const command = el('pre', 'deva-value-preview')
+  command.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere'
+  const commandText = () => `node .\\package\\scripts\\approve-model-base.mjs "<Studio URL>" '${approvalBase().replace(/'/g, "''")}'`
+  const copyJson = button(copy('复制批准配置片段', 'Copy approval JSON'), 'deva-btn deva-model-discover')
+  const copyCommand = button(copy('复制批准命令', 'Copy approval command'), 'deva-btn deva-model-discover')
+  const copyValue = async (node, value) => { try { await navigator.clipboard.writeText(value); node.textContent = copy('已复制', 'Copied') } catch { node.textContent = copy('请从下方手动复制', 'Copy manually below') } }
+  copyJson.onclick = () => copyValue(copyJson, JSON.stringify({ modelTrustedBases: [approvalBase()] }, null, 2))
+  copyCommand.onclick = () => copyValue(copyCommand, commandText())
+  approval.ontoggle = () => { updateApproval(); command.textContent = commandText() }
+  approval.append(copyJson, copyCommand, command, el('p', '', copy('命令中的 <Studio URL> 替换为目标 Studio 地址；管理员 token 仅通过 STUDIO_API_TOKEN 环境变量提供。', 'Replace <Studio URL>; supply the administrator token only via STUDIO_API_TOKEN.')))
   copyBase.onclick = async () => { const value = approvalBase(); try { await navigator.clipboard.writeText(value); copyBase.textContent = copy('已复制地址', 'Address copied') } catch { copyBase.textContent = copy('请从下方手动复制地址', 'Copy the address below') } }
   approval.append(approvalJson, copyBase, el('p', '', copy('示例只显示待追加地址，不要用它覆盖原数组。127.0.0.1 指 Studio 所在机器；批准后还需确认该机器的服务端口可达。', 'The example is an entry to append, not a replacement. 127.0.0.1 refers to the Studio machine; approval does not prove the port is reachable.')))
   body.append(approval)
@@ -1350,6 +1370,7 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
   }
   const invalidate = () => {
     models = desktopLocal = []
+    localStatus.textContent = copy('本地配置：当前表单候选已重置；点击获取将重新读取桌面配置。', 'Local config: form reset; fetch to reload desktop choices.')
     search.value = ''
     search.hidden = choices.hidden = detail.hidden = true
     choices.innerHTML = ''; cards.innerHTML = ''
@@ -1389,7 +1410,7 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
   const fetchRemote = async () => {
     if (ctx.signal?.aborted) return
     setBusy(true)
-    message.textContent = copy('正在获取模型列表…', 'Fetching models…')
+    message.textContent = copy('远端拉取：正在获取模型列表…', 'Remote: fetching models…')
     try {
       const result = await ctx.rpc.call('list-provider-models', {
         baseUrl: address.value.trim(), modelRef: choose.value === '__deva_new_provider__' ? '' : choose.value,
@@ -1397,11 +1418,11 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
       })
       if (ctx.signal?.aborted) return
       models = mergeModelCandidates(desktopLocal, result.models)
-      message.textContent = models.length ? copy(`已获取 ${models.length} 个模型，请选择；仍可手动填写。`, `${models.length} models available; select one or enter manually.`) : copy('接口返回空模型列表，请手动输入模型名或检查供应商。', 'The provider returned an empty list. Enter a model manually or check the provider.')
+      message.textContent = models.length ? copy(`远端拉取：${result.models.length} 个；合并候选 ${models.length} 个，请选择。`, `${models.length} models available; select one or enter manually.`) : copy('远端拉取：0 个；接口返回空模型列表，请手动输入模型名或检查供应商。', 'The provider returned an empty list. Enter a model manually or check the provider.')
       search.hidden = choices.hidden = !models.length
       filter()
     } catch (error) {
-      if (!ctx.signal?.aborted) message.textContent = copy('获取失败：', 'Fetch failed: ') + errorText(error)
+      if (!ctx.signal?.aborted) message.textContent = copy('远端拉取失败：' + discoveryFailure(errorText(error)) + ' 获取失败：', 'Remote fetch failed: ') + errorText(error)
     } finally { if (!ctx.signal?.aborted) { setBusy(false); observeSafely(() => cards.scrollIntoView({ block: 'nearest' })) } }
   }
   remote.onclick = fetchRemote
@@ -1409,16 +1430,20 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
     if (busy || ctx.signal?.aborted) return
     setBusy(true)
     try {
+      const draft = { base: address.value, ref: choose.value, model: name.value, key: key.value, edited: choose.value === '__deva_new_provider__' || address.value !== storedBase }
       const settings = await ctx.rpc.call('get-model-selection')
       reloadDesktop(settings)
+      if (draft.base && draft.edited) { address.value = draft.base; choose.value = draft.ref; name.value = draft.model; key.value = draft.key; syncPreview() }
+      localStatus.textContent = copy(`本地配置：${desktopLocal.length} 个模型；当前地址匹配 ${desktopLocal.filter(m => m.baseUrl === address.value.trim()).length} 个。`, `Local config: ${desktopLocal.length} models.`)
       await fetchRemote()
-    } catch (error) { message.textContent = copy('读取桌面失败：', 'Desktop read failed: ') + errorText(error) }
+    } catch (error) { localStatus.textContent = copy('本地配置读取失败：', 'Desktop read failed: ') + errorText(error) }
     finally { setBusy(false) }
   }
   const setDesktop = settings => {
     const rows = settings.desktopModels || []
     models = rows.map(m => ({ ...m, id: m.modelName }))
     desktopLocal = models
+    localStatus.textContent = copy(`本地配置：${rows.length} 个模型；当前地址匹配 ${rows.filter(m => m.baseUrl === address.value.trim()).length} 个。`, `Local config: ${rows.length} models.`)
     search.hidden = choices.hidden = !models.length
     filter()
     message.textContent = copy(`桌面已配置 ${rows.length} 个模型；本地候选 ${models.length} 个。`, `${rows.length} desktop models; ${models.length} local choices.`)
