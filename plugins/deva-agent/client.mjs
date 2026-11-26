@@ -919,6 +919,10 @@ const STYLES = `
 .deva-model-page .deva-check-row{display:flex;align-items:center;gap:8px;min-height:36px}
 .deva-model-page .deva-section-title{margin:16px 0 0;padding-top:16px;border-top:1px solid var(--border-color,#e0e0e0);font-size:1em;font-weight:600}
 .deva-model-page .deva-value-preview{margin:0;color:var(--text-secondary,#666);font-size:12px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.deva-model-page .deva-discovery-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.deva-model-page .deva-model-diagnostics{max-width:100%}
+.deva-model-page .deva-model-diagnostics summary{cursor:pointer}
+.deva-model-page .deva-model-diagnostics pre{max-height:240px;overflow:auto}
 .deva-model-page .deva-status{white-space:pre-wrap;overflow-wrap:anywhere}
 .deva-model-page .deva-model-actions{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-top:12px}
 .deva-model-page :is(input,select,button):focus-visible{outline:2px solid var(--accent-primary,#333);outline-offset:2px}
@@ -1087,11 +1091,16 @@ export async function mount(root, ctx) {
   try { return await mountTraced(root, ctx) }
   catch {
     root.innerHTML = ''
-    root.append(el('p', '', 'Deva 0.8.33 · 客户端初始化失败，模型尚未读取。'))
+    root.append(el('p', '', 'Deva 0.8.34 · 客户端初始化失败，模型尚未读取。'))
     const retry = button('重试加载模型页', 'deva-btn')
     retry.onclick = () => { void mount(root, ctx) }
     root.append(retry)
   }
+}
+
+// Optional measurement must never stop the business UI, including setup and disposal.
+export function observeSafely(callback) {
+  try { return callback() } catch { return undefined }
 }
 
 // Lifecycle telemetry travels through the same authenticated host RPC bridge.
@@ -1101,61 +1110,58 @@ async function mountTraced(root, ctx) {
   const original = ctx
   const trace = event => {
     if (ctx.signal?.aborted) return
-    const payload = { side: 'client', version: '0.8.33', revision: 'not-exposed-by-sdk', attempt, ...event }
-    Promise.resolve().then(() => original.rpc.call('model-ui-trace', payload)).catch(() => {
-      status.textContent = 'Deva 0.8.33 · 诊断日志未送达：RPC 桥不可用；请保留当前页面。'
-    })
+    const payload = { side: 'client', version: '0.8.34', revision: 'not-exposed-by-sdk', attempt, ...event }
+    Promise.resolve().then(() => original.rpc.call('model-ui-trace', payload)).catch(() => {})
   }
   root.innerHTML = ''
-  const status = el('p', 'deva-value-preview', 'Deva 0.8.33 · mount 开始，正在初始化模型页')
+  const status = el('p', 'deva-value-preview', 'Deva 0.8.34 · mount 开始，正在初始化模型页')
   status.style.cssText = 'position:sticky;top:0;z-index:100;background:var(--bg-card,#fff);color:var(--text-primary,#111);max-height:30vh;overflow:auto;padding:8px;white-space:pre-wrap;overflow-wrap:anywhere;margin:0'
   const retryTop = button('重试加载模型页', 'deva-btn')
   retryTop.onclick = () => { cleanup(); void mount(root, original) }
   const content = el('div', '')
   root.append(status, retryTop, content)
   const summary = { phase: 'mount', path: '待读取', providers: '?', models: '?', error: '' }
-  const renderSummary = () => { status.textContent = `Deva 0.8.33 · ${summary.phase} · providers=${summary.providers} models=${summary.models}\n${summary.path}\n${summary.error}` }
+  const renderSummary = () => { status.textContent = `Deva 0.8.34 · ${summary.phase} · providers=${summary.providers} models=${summary.models}\n${summary.path}\n${summary.error}` }
   const disposers = []
-  const measure = () => {
+  const measure = () => observeSafely(() => {
     for (const [element, node] of [['root', root], ['candidates', content.querySelector('select[size]')], ['diagnostic', content.querySelector('input[readonly]')], ['status', status]]) trace({ phase: 'geometry', element, ...probeGeometry(node, window) })
     try { trace({ phase: 'geometry', element: 'iframe', ...probeGeometry(window.frameElement, window.parent) }) } catch { trace({ phase: 'geometry', element: 'iframe', errorType: 'CrossOrigin' }) }
-  }
-  const listen = (doc, scope) => {
-    const handler = event => {
+  })
+  const listen = (doc, scope) => observeSafely(() => {
+    const handler = event => observeSafely(() => {
       const hit = doc.elementFromPoint(event.clientX, event.clientY)
       trace({ phase: event.type, scope, tag: event.target?.tagName || 'unknown', label: probeLabel(event.target), hitTag: hit?.tagName || 'none', hitLabel: probeLabel(hit), x: event.clientX, y: event.clientY })
       measure()
-    }
+    })
     for (const type of ['pointerdown', 'click']) { doc.addEventListener(type, handler, true); disposers.push(() => doc.removeEventListener(type, handler, true)) }
-  }
-  listen(document, 'iframe-document')
+  })
+  observeSafely(() => listen(document, 'iframe-document'))
   try { if (window.parent !== window) listen(window.parent.document, 'host-document') } catch { trace({ phase: 'parent-unavailable', errorType: 'CrossOrigin' }) }
   let timer
   const scheduleMeasure = () => { clearTimeout(timer); timer = setTimeout(measure, 200) }
-  window.addEventListener('resize', scheduleMeasure)
-  window.addEventListener('scroll', scheduleMeasure, true)
+  observeSafely(() => window.addEventListener('resize', scheduleMeasure))
+  observeSafely(() => window.addEventListener('scroll', scheduleMeasure, true))
   disposers.push(() => { clearTimeout(timer); window.removeEventListener('resize', scheduleMeasure); window.removeEventListener('scroll', scheduleMeasure, true) })
   const fail = error => {
     const raw = String(error?.message || error)
     let safe = raw.replace(/https?:\/\/\S+/g, '[URL]').replace(/(Bearer\s+|(?:key|token|secret|password)["']?\s*[:=]\s*["']?)[^\s"',}]+/gi, '$1[REDACTED]')
     for (const input of content.querySelectorAll('input[type=password]')) if (input.value) safe = safe.split(input.value).join('[REDACTED]')
-    status.textContent = 'Deva 0.8.33 · 页面异常：' + safe.slice(0, 500)
+    status.textContent = 'Deva 0.8.34 · 页面异常：' + safe.slice(0, 500)
     const retry = button('重试加载模型页', 'deva-btn')
     retry.onclick = () => { cleanup(); void mount(root, original) }
     status.append(retry)
     trace({ phase: 'render-error', errorType: 'Error' })
   }
-  const onError = event => fail(event.error || event.reason || event.message)
-  window.addEventListener('error', onError)
-  window.addEventListener('unhandledrejection', onError)
+  const onError = event => observeSafely(() => fail(event.error || event.reason || event.message))
+  observeSafely(() => window.addEventListener('error', onError))
+  observeSafely(() => window.addEventListener('unhandledrejection', onError))
   let observer
-  const cleanup = () => { for (const dispose of disposers) dispose(); observer?.disconnect(); window.removeEventListener('error', onError); window.removeEventListener('unhandledrejection', onError) }
+  const cleanup = () => { for (const dispose of disposers) observeSafely(dispose); observeSafely(() => observer?.disconnect()); observeSafely(() => window.removeEventListener('error', onError)); observeSafely(() => window.removeEventListener('unhandledrejection', onError)) }
   ctx.signal?.addEventListener('abort', cleanup, { once: true })
-  const counts = () => { trace({ phase: 'rendered', count: content.querySelectorAll('select[size] option').length }); scheduleMeasure() }
+  const counts = () => observeSafely(() => { trace({ phase: 'rendered', count: content.querySelectorAll('select[size] option').length }); scheduleMeasure() })
   let queued = false
-  observer = new MutationObserver(() => { if (!queued) { queued = true; queueMicrotask(() => { queued = false; if (!ctx.signal?.aborted) counts() }) } })
-  observer.observe(content, { childList: true, subtree: true })
-  ctx.signal?.addEventListener('abort', () => observer.disconnect(), { once: true })
+  observeSafely(() => { observer = new MutationObserver(() => { if (!queued) { queued = true; queueMicrotask(() => { queued = false; if (!ctx.signal?.aborted) counts() }) } })
+  observer.observe(content, { childList: true, subtree: true }) })
   trace({ phase: 'mount', route: (() => { try { const h = window.parent.location.hash.split('?')[0]; return /^#\/(studio|hermes)\/[a-zA-Z0-9/_-]+$/.test(h) ? h : '(other route)' } catch { return '(parent cross-origin)' } })(), readyState: document.readyState })
   const wrapped = { ...ctx, rpc: { call: async (method, input) => {
     const start = Date.now(); summary.phase = method; renderSummary(); trace({ phase: 'rpc-start', method })
@@ -1167,7 +1173,7 @@ async function mountTraced(root, ctx) {
     renderSummary()
     counts()
   } catch (error) { fail(error) }
-  return () => { cleanup(); observer.disconnect() }
+  return cleanup
 }
 
 /** @param {HTMLElement} root @param {import('./sdk/src/index.ts').ClientContext} ctx */
@@ -1181,8 +1187,6 @@ async function mountContent(root, ctx) {
 
   const container = el('div', 'deva-settings')
   root.append(container)
-  if (ctx.view === 'model') container.append(el('p', 'deva-value-preview',
-    locale.startsWith('zh') ? 'Deva 0.8.33 · 模型客户端已加载；正在读取桌面配置，路径与条数见下方诊断。' : 'Deva 0.8.33 · Model client loaded; desktop configuration path and counts appear in diagnostics below.'))
 
   // 路由变化会重新挂载，按 view 只渲染对应页面。
   if (ctx.view === 'mcp') await mountMcp(container, ctx, text)
@@ -1202,8 +1206,8 @@ export function modelRpcDiagnostics(ctx, output, getKey = () => '', timeoutMs = 
   const safeUrl = value => {
     try { const url = new URL(value); url.search = ''; url.hash = ''; url.username = ''; url.password = ''; return url.href } catch { return 'unavailable' }
   }
-  const state = { version: '0.8.33', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
-  if (typeof window !== 'undefined') {
+  const state = { version: '0.8.34', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
+  observeSafely(() => { if (typeof window !== 'undefined') {
     state.url = safeUrl(window.location.href)
     state.origin = window.origin
     state.locationOrigin = window.location.origin
@@ -1214,9 +1218,9 @@ export function modelRpcDiagnostics(ctx, output, getKey = () => '', timeoutMs = 
       state.src = state.src === 'srcdoc' || state.src === 'none' ? state.src : safeUrl(state.src)
       state.sandbox = window.frameElement?.getAttribute('sandbox') ?? 'absent'
     } catch { state.parentOrigin = state.src = state.sandbox = 'unavailable-cross-origin' }
-  }
-  const render = () => { output.value = JSON.stringify(state); output.title = output.value }
-  if (typeof window !== 'undefined' && ctx.signal) {
+  } })
+  const render = () => observeSafely(() => { output.value = JSON.stringify(state); output.title = output.value })
+  observeSafely(() => { if (typeof window !== 'undefined' && ctx.signal) {
     const onPolicy = event => {
       state.browserError = { type: 'CSP', directive: event.effectiveDirective, blocked: safeUrl(event.blockedURI) }
       render()
@@ -1230,7 +1234,7 @@ export function modelRpcDiagnostics(ctx, output, getKey = () => '', timeoutMs = 
       window.removeEventListener('error', onError)
       window.removeEventListener('unhandledrejection', onError)
     }, { once: true })
-  }
+  } })
   render()
   return async (method, input) => {
     Object.assign(state, { method, phase: 'pending', http: 'unknown', code: '', error: '' }); render()
@@ -1257,10 +1261,9 @@ export function modelRpcDiagnostics(ctx, output, getKey = () => '', timeoutMs = 
 }
 
 // The discovery panel stays inside the existing form; manual model entry remains available.
-function mountModelDiscovery(body, ctx, { diagnostic, address, key, name, choose, field, syncPreview, setBusy, saveSelected, reloadDesktop }) {
+function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syncPreview, setBusy, saveSelected, reloadDesktop }) {
   const zh = pickLocale(ctx.locale).startsWith('zh')
   const copy = (cn, en) => zh ? cn : en
-  body.append(el('h3', 'deva-section-title', copy('从供应商获取模型', 'Discover provider models')))
   const fetchModels = button(copy('获取模型列表', 'Fetch models'), 'deva-btn deva-model-discover')
   const message = el('div', 'deva-value-preview')
   message.role = 'status'
@@ -1273,7 +1276,9 @@ function mountModelDiscovery(body, ctx, { diagnostic, address, key, name, choose
   const detail = el('p', 'deva-value-preview')
   search.hidden = choices.hidden = detail.hidden = true
   const remote = button(copy('刷新远端模型列表', 'Refresh remote models'), 'deva-btn deva-model-discover')
-  body.append(fetchModels, diagnostic, remote, message, search, choices, detail)
+  const actions = el('div', 'deva-discovery-actions')
+  actions.append(fetchModels, remote)
+  body.append(message, choices, search, actions, detail)
   const commitSelection = button(copy('保存所选模型并设为默认', 'Save selected model as default'), 'deva-btn primary deva-model-discover')
   commitSelection.hidden = true
   commitSelection.onclick = () => saveSelected()
@@ -1372,7 +1377,7 @@ function mountModelDiscovery(body, ctx, { diagnostic, address, key, name, choose
     search.hidden = choices.hidden = !models.length
     filter()
     message.textContent = copy(`桌面已配置 ${rows.length} 个模型；本地候选 ${models.length} 个。`, `${rows.length} desktop models; ${models.length} local choices.`)
-      + '\n' + (settings.desktopDiagnostics || '') + '\n' + (settings.credentialError || '')
+      + (settings.credentialError ? '\n' + settings.credentialError : '')
   }
   address.oninput = () => { fillLimits(); dirty = true; invalidate(); syncPreview() }
   key.oninput = refresh
@@ -1405,7 +1410,11 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
   const choose = el('select', 'deva-select')
   const choiceRow = el('label', '', desktopLabel)
   choiceRow.append(choose)
-  body.append(shared, catalog, choiceRow)
+  body.append(choiceRow)
+  const discoveryBody = el('div', 'deva-model-discovery deva-card-body')
+  body.append(discoveryBody)
+  const diagnostics = el('details', 'deva-model-diagnostics')
+  diagnostics.append(el('summary', '', pickLocale(ctx.locale).startsWith('zh') ? '配置来源与诊断（展开可复制）' : 'Configuration and diagnostics (expand to copy)'), shared, catalog)
   const problems = []
   const field = (label, type, maxLength) => {
     const input = el('input', type === 'checkbox' ? 'deva-check' : 'deva-select')
@@ -1438,7 +1447,8 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
   diagnostic.onfocus = () => diagnostic.select?.()
   const originalContext = ctx
   ctx = { ...ctx, rpc: { call: modelRpcDiagnostics(originalContext, diagnostic, () => key.value) } }
-  const discovery = mountModelDiscovery(body, ctx, { diagnostic, address, key, name, choose, field, syncPreview: () => syncPreview(), setBusy: value => setBusy(value), saveSelected: () => save.onclick(), reloadDesktop: settings => show(settings) })
+  diagnostics.append(diagnostic)
+  const discovery = mountModelDiscovery(discoveryBody, ctx, { address, key, name, choose, field, syncPreview: () => syncPreview(), setBusy: value => setBusy(value), saveSelected: () => save.onclick(), reloadDesktop: settings => show(settings) })
   // 档位值就是下发给上游的 reasoning_effort，原样显示；空值表示不发送。
   const effort = el('select', 'deva-select')
   for (const value of ['', ...REASONING_EFFORTS]) {
@@ -1473,7 +1483,7 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
   cancel.hidden = true
   const actions = el('div', 'deva-model-actions')
   actions.append(save, cancel)
-  body.append(actions)
+  body.append(actions, diagnostics)
   card.append(body, status, bindings)
   cancel.onclick = () => { if (current) { show(current); setBusy(false) } }
   const preview = el('p', 'deva-value-preview')

@@ -654,7 +654,8 @@ test('model view renders the real desktop custom provider instead of "no default
 
     const [choice] = findAll(root, node => node.tag === 'select')
     assert.equal(choice.value, 'custom-1794383812625:cn:deepseek-v4.1-flash', `${locale}: 下拉必须停在桌面真实选择上`)
-    const [address, model] = findAll(root, node => node.tag === 'input')
+    const [address] = findAll(root, node => node.tag === 'input' && node.type === 'url')
+    const [model] = findAll(root, node => node.tag === 'input' && node.type === 'text' && !node.readOnly)
     assert.equal(address.value, 'http://127.0.0.1:7863/v1', `${locale}: 地址要回填`)
     assert.equal(model.value, 'cn:deepseek-v4.1-flash', `${locale}: 模型名要回填`)
     // 关键反向断言：状态行不能再出现“未选择默认模型”；空态占位项本身留在下拉里是正常的，
@@ -800,4 +801,49 @@ test('local candidates include other providers and disambiguate identical model 
   const call = modelRpcDiagnostics({ rpc: { call: async () => { throw Error('API Error 500: config read failed') } } }, output)
   await assert.rejects(call('get-model-selection'), /HTTP 500.*config read failed/)
   assert.match(output.value, /500/)
+})
+
+test('local candidates precede form fields and expanded JSON never pushes them down', async () => {
+  const settings = { modelRef: 'p:m', baseUrl: 'https://example.com/v1', modelName: 'm', desktopModels: [{ ref: 'p:m', modelName: 'm', baseUrl: 'https://example.com/v1' }], desktopDiagnostics: JSON.stringify({ path: '/desktop/config.json', providerCount: 1, modelCount: 1 }), desktopProviders: [{ id: 'p', models: ['m'] }] }
+  const root = await mountPage(fakeContext('zh', async () => settings, { view: 'model' }))
+  const nodes = findAll(root, () => true)
+  const choices = nodes.find(n => n.tag === 'select' && n.size === 5)
+  assert.equal(choices.children.length, 1)
+  assert.ok(nodes.indexOf(choices) < nodes.findIndex(n => n.type === 'url'))
+  const details = nodes.find(n => n.tag === 'details')
+  assert.ok(details && !details.open)
+  assert.ok(findAll(details, n => n.tag === 'pre')[0].textContent.includes('"providers"'))
+  assert.ok(!nodes.find(n => n.role === 'status').textContent.includes('providerCount'))
+})
+
+test('measurement, listener and observer failures cannot prevent model mount, reload or disposal', async () => {
+  const { mount } = await import('../client.mjs')
+  for (const stage of ['observer', 'listener', 'geometry', 'trace']) {
+    const calls = [], listeners = {}
+    const root = new StubElement('div')
+    const win = { innerHeight: 700, innerWidth: 1000, origin: 'http://localhost', location: { href: 'http://localhost/plugin-frame.html', origin: 'http://localhost', hash: '#/studio/plugin-agent-settings/deva/model' },
+      addEventListener(type, fn) { if (stage === 'listener') throw Error('measurement listener failed'); listeners[type] = fn }, removeEventListener() {},
+      getComputedStyle() { throw Error('geometry unavailable') } }
+    win.parent = win
+    globalThis.window = win
+    globalThis.document = { readyState: 'complete', createElement: tag => new StubElement(tag), addEventListener: win.addEventListener, removeEventListener() {}, documentElement: { scrollHeight: 900 }, elementFromPoint() { throw Error('hit test failed') } }
+    win.document = globalThis.document
+    globalThis.MutationObserver = class { constructor() { if (stage === 'observer') throw Error('observer unavailable') } observe() {} disconnect() {} }
+    // Traversal is deliberately unavailable in the geometry case; rendering uses append.
+    root.querySelector = () => { throw Error('geometry query unavailable') }
+    const settings = { modelRef: 'p:m', baseUrl: 'https://example.com/v1', modelName: 'm', desktopModels: [{ ref: 'p:m', modelName: 'm' }] }
+    const ctx = fakeContext('zh', async method => { calls.push(method); if (method === 'model-ui-trace') { if (stage === 'trace') throw Error('trace rejected'); return {} } return settings }, { view: 'model' })
+    ctx.signal = new AbortController().signal
+    try {
+      const dispose = await mount(root, ctx)
+      const choices = findAll(root, n => n.tag === 'select' && n.size === 5)[0]
+      assert.equal(choices?.children.length, 1, stage)
+      const reload = findAll(root, n => n.tag === 'button' && n.textContent === '获取模型列表')[0]
+      assert.equal(reload.disabled, false, stage)
+      await reload.onclick()
+      assert.equal(calls.filter(m => m === 'get-model-selection').length, 2, stage)
+      listeners.click?.({ type: 'click', clientX: 1, clientY: 1 })
+      dispose()
+    } finally { delete globalThis.window; delete globalThis.MutationObserver }
+  }
 })
