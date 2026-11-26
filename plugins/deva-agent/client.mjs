@@ -1084,8 +1084,73 @@ export async function mount(root, ctx) {
 }
 
 
+// Keep this helper in the single Blob entry: relative imports are not served by Studio.
+export function modelRpcDiagnostics(ctx, output, getKey = () => '', timeoutMs = 20000) {
+  const redact = value => {
+    let text = String(value ?? '')
+    const key = getKey()
+    if (key) text = text.split(key).join('[REDACTED]')
+    return text.replace(/(Bearer\s+|(?:api[_-]?key|token|secret|password)["']?\s*[:=]\s*["']?)[^\s"',}]+/gi, '$1[REDACTED]')
+  }
+  const safeUrl = value => {
+    try { const url = new URL(value); url.search = ''; url.hash = ''; url.username = ''; url.password = ''; return url.href } catch { return 'unavailable' }
+  }
+  const state = { version: '0.8.28', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
+  if (typeof window !== 'undefined') {
+    state.url = safeUrl(window.location.href)
+    state.origin = window.origin
+    state.locationOrigin = window.location.origin
+    state.iframe = window.parent !== window
+    try {
+      state.parentOrigin = window.parent.location.origin
+      state.src = window.frameElement?.getAttribute('src') || (window.frameElement?.hasAttribute('srcdoc') ? 'srcdoc' : 'none')
+      state.src = state.src === 'srcdoc' || state.src === 'none' ? state.src : safeUrl(state.src)
+      state.sandbox = window.frameElement?.getAttribute('sandbox') ?? 'absent'
+    } catch { state.parentOrigin = state.src = state.sandbox = 'unavailable-cross-origin' }
+  }
+  const render = () => { output.value = JSON.stringify(state); output.title = output.value }
+  if (typeof window !== 'undefined' && ctx.signal) {
+    const onPolicy = event => {
+      state.browserError = { type: 'CSP', directive: event.effectiveDirective, blocked: safeUrl(event.blockedURI) }
+      render()
+    }
+    const onError = event => { state.browserError = { type: event.type, message: redact(event.message || event.reason?.message || event.reason).slice(0, 4000) }; render() }
+    window.addEventListener('securitypolicyviolation', onPolicy)
+    window.addEventListener('error', onError)
+    window.addEventListener('unhandledrejection', onError)
+    ctx.signal.addEventListener('abort', () => {
+      window.removeEventListener('securitypolicyviolation', onPolicy)
+      window.removeEventListener('error', onError)
+      window.removeEventListener('unhandledrejection', onError)
+    }, { once: true })
+  }
+  render()
+  return async (method, input) => {
+    Object.assign(state, { method, phase: 'pending', http: 'unknown', code: '', error: '' }); render()
+    let timer
+    try {
+      const pending = Promise.resolve().then(() => ctx.rpc.call(method, input))
+      const result = await (method === 'get-model-selection' || method === 'list-provider-models'
+        ? Promise.race([pending, new Promise((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error('插件 RPC 等待超时；HTTP 状态未知，请重试并复制诊断'), { code: 'RPC_TIMEOUT' })), timeoutMs) })])
+        : pending)
+      if (!result || typeof result !== 'object' || result.result) throw Object.assign(new Error('插件 RPC 返回结构不匹配'), { code: 'RPC_SHAPE' })
+      if (result.desktopDiagnostics) {
+        try { const d = JSON.parse(result.desktopDiagnostics); Object.assign(state, { path: redact(d.path), providers: d.providerCount, models: d.modelCount, configError: redact(d.error || '') }) } catch { state.configError = '诊断格式不匹配' }
+      }
+      state.phase = state.configError ? 'config-error' : 'resolved'
+      if (state.configError) state.code = 'CONFIG_READ'
+      return result
+    } catch (error) {
+      const message = redact(error?.message || error)
+      const status = error?.status || error?.statusCode || message.match(/HTTP\s+(\d{3})/i)?.[1] || 'unknown'
+      Object.assign(state, { phase: 'failed', http: status, code: redact(error?.code || 'RPC_ERROR'), error: message })
+      throw new Error(`HTTP ${status === 'unknown' ? '未知' : status} [${state.code}] ${message}`)
+    } finally { clearTimeout(timer); render() }
+  }
+}
+
 // The discovery panel stays inside the existing form; manual model entry remains available.
-function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syncPreview, setBusy, saveSelected, reloadDesktop }) {
+function mountModelDiscovery(body, ctx, { diagnostic, address, key, name, choose, field, syncPreview, setBusy, saveSelected, reloadDesktop }) {
   const zh = pickLocale(ctx.locale).startsWith('zh')
   const copy = (cn, en) => zh ? cn : en
   body.append(el('h3', 'deva-section-title', copy('从供应商获取模型', 'Discover provider models')))
@@ -1101,7 +1166,7 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
   const detail = el('p', 'deva-value-preview')
   search.hidden = choices.hidden = detail.hidden = true
   const remote = button(copy('刷新远端模型列表', 'Refresh remote models'), 'deva-btn deva-model-discover')
-  body.append(fetchModels, remote, message, search, choices, detail)
+  body.append(fetchModels, diagnostic, remote, message, search, choices, detail)
   const commitSelection = button(copy('保存所选模型并设为默认', 'Save selected model as default'), 'deva-btn primary deva-model-discover')
   commitSelection.hidden = true
   commitSelection.onclick = () => saveSelected()
@@ -1254,7 +1319,14 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
   body.append(el('h3', 'deva-section-title', keyLabel))
   const key = field(keyLabel, 'password', 4096)
   key.autocomplete = 'new-password'
-  const discovery = mountModelDiscovery(body, ctx, { address, key, name, choose, field, syncPreview: () => syncPreview(), setBusy: value => setBusy(value), saveSelected: () => save.onclick(), reloadDesktop: settings => show(settings) })
+  const diagnostic = el('input', 'deva-select')
+  diagnostic.type = 'text'
+  diagnostic.readOnly = true
+  diagnostic.ariaLabel = 'Deva 诊断（点击后可全选复制）'
+  diagnostic.onfocus = () => diagnostic.select?.()
+  const originalContext = ctx
+  ctx = { ...ctx, rpc: { call: modelRpcDiagnostics(originalContext, diagnostic, () => key.value) } }
+  const discovery = mountModelDiscovery(body, ctx, { diagnostic, address, key, name, choose, field, syncPreview: () => syncPreview(), setBusy: value => setBusy(value), saveSelected: () => save.onclick(), reloadDesktop: settings => show(settings) })
   // 档位值就是下发给上游的 reasoning_effort，原样显示；空值表示不发送。
   const effort = el('select', 'deva-select')
   for (const value of ['', ...REASONING_EFFORTS]) {
@@ -1305,11 +1377,11 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
 
   const setBusy = busy => {
     // 未授权账号禁用写入（服务端也会拒绝），但不禁用整页：页面要能说清缺哪项配置。
-    const readOnly = current?.desktopAccessRequired === true || current?.desktopWriteRequired === true
+    const readOnly = !current || current?.desktopAccessRequired === true || current?.desktopWriteRequired === true
     choose.disabled = address.disabled = name.disabled = key.disabled = effort.disabled = clear.disabled = busy || readOnly
     save.disabled = busy || readOnly
     cancel.disabled = busy
-    discovery.setBusy(busy || readOnly)
+    discovery.setBusy(busy)
   }
   /** 字段级错误：标在出错的输入项下方；传 null 清空。占位符必须填好再看，不能把 {baseUrl} 直接显示给用户。 */
   const problemText = error => (error.code === 'confirmation-required'
@@ -1422,9 +1494,7 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
     show(settings)
   } catch (error) {
     if (!ctx.signal?.aborted) setError(error)
-    return
-  }
-  setBusy(false)
+  } finally { setBusy(false) }
   save.onclick = async () => {
     if (save.disabled || ctx.signal?.aborted) return
     setBusy(true)

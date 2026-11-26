@@ -263,7 +263,7 @@ test('model view reads custom settings, keeps the key field empty and saves via 
   const selects = findAll(root, node => node.tag === 'select' && node.size !== 5)
   assert.equal(selects.length, 2, '模型设置包含桌面默认模型和强度下拉')
   assert.deepEqual(selects[1].children.map(option => option.value), ['', 'low', 'medium', 'high', 'xhigh', 'max'])
-  const [address, model, password, clear] = findAll(root, node => node.tag === 'input' && !['search', 'number'].includes(node.type))
+  const [address, model, password, clear] = findAll(root, node => node.tag === 'input' && !node.readOnly && !['search', 'number'].includes(node.type))
   assert.deepEqual([address.type, model.type, password.type, clear.type], ['url', 'text', 'password', 'checkbox'])
   assert.equal(password.autocomplete, 'new-password')
   assert.equal(password.value, '')
@@ -295,7 +295,7 @@ test('model view displays the admin network gate without a self-approval checkbo
       return { ...settings, error: { field: 'allowNonPublic', code: 'confirmation-required', message: 'server zh' } }
     }, { view: 'model' })
     const root = await mountPage(ctx)
-    const [address, model, , clear, allow] = findAll(root, node => node.tag === 'input' && !['search', 'number'].includes(node.type))
+    const [address, model, , clear, allow] = findAll(root, node => node.tag === 'input' && !node.readOnly && !['search', 'number'].includes(node.type))
     assert.equal(clear.type, 'checkbox')
     assert.equal(allow, undefined)
     const [save] = findAll(root, node => node.tag === 'button' && !node.className?.includes('deva-model-discover'))
@@ -380,7 +380,7 @@ test('model view shows an old catalog selection as inactive without populating t
   }, { view: 'model' })
   const root = await mountPage(ctx)
   assert.ok(findAll(root, node => node.className === 'deva-status' && /旧版 Studio 目录模型已停用/.test(node.textContent)).length)
-  assert.ok(findAll(root, node => node.tag === 'input' && !['search', 'number'].includes(node.type)).every(input => !input.value))
+  assert.ok(findAll(root, node => node.tag === 'input' && !node.readOnly && !['search', 'number'].includes(node.type)).every(input => !input.value))
 })
 
 test('model settings show the shared file and per-app credential warning in each locale', async () => {
@@ -676,7 +676,7 @@ test('model view explains exactly what an unauthorized account must configure', 
   assert.match(texts, /sharedDevaUserId/)
   assert.match(texts, /\/srv\/\.deva\/config\.json/)
   assert.equal(/请联系 Studio 管理员授权访问桌面模型配置/.test(texts), false, '模糊的“求授权”文案不能再出现')
-  const [save] = findAll(root, node => node.tag === 'button')
+  const [save] = findAll(root, node => node.tag === 'button' && node.textContent === '保存')
   assert.equal(save.disabled, true, '未授权时写入必须禁用（服务端也会拒绝）')
 })
 
@@ -754,4 +754,32 @@ test('desktop fetch refreshes default dropdown after the desktop file changes', 
   await findAll(root, n => n.tag === 'button' && n.textContent === '获取模型列表')[0].onclick()
   assert.equal(findAll(root, n => n.tag === 'select')[0].value, 'p:new')
   assert.equal(findAll(root, n => n.tag === 'select' && n.size === 5)[0].children[0].value, 'new')
+})
+
+test('initial RPC failure leaves desktop fetch retry enabled with copyable redacted diagnostic', async () => {
+  let fail = true
+  const root = await mountPage(fakeContext('zh', async () => {
+    if (fail) throw Object.assign(new Error('HTTP 403 permission denied token=private-value'), { status: 403, code: 'DENIED' })
+    return { baseUrl: '', modelName: '', hasApiKey: false, desktopModels: [], desktopDiagnostics: JSON.stringify({ path: '/fixture/config.json', providerCount: 0, modelCount: 0 }) }
+  }, { view: 'model' }))
+  const fetch = findAll(root, n => n.tag === 'button' && n.textContent === '获取模型列表')[0]
+  const diagnostic = findAll(root, n => n.readOnly === true)[0]
+  assert.equal(fetch.disabled, false)
+  assert.match(diagnostic.value, /403/)
+  assert.ok(!diagnostic.value.includes('private-value'))
+  fail = false
+  await fetch.onclick()
+  assert.equal(JSON.parse(diagnostic.value).phase, 'resolved')
+  assert.equal(JSON.parse(diagnostic.value).providers, 0)
+})
+
+test('RPC timeout settles with visible code and unavailable HTTP status, without leaking a draft key', async () => {
+  const { modelRpcDiagnostics } = await import('../client.mjs')
+  const output = {}
+  const call = modelRpcDiagnostics({ rpc: { call: () => new Promise(() => {}) } }, output, () => 'fixture-key', 10)
+  await assert.rejects(call('get-model-selection'), /HTTP 未知.*RPC_TIMEOUT/)
+  assert.equal(JSON.parse(output.value).phase, 'failed')
+  const reject = modelRpcDiagnostics({ rpc: { call: () => { throw Error('HTTP 401 fixture-key') } } }, output, () => 'fixture-key')
+  await assert.rejects(reject('get-model-selection'), /HTTP 401/)
+  assert.ok(!output.value.includes('fixture-key'))
 })

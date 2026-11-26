@@ -335,3 +335,11 @@ modelSettingsView.desktopWriteMessage 是可选拒绝提示，含当前调用账
 在当前字段缺失时出现顶层 providers/provider/model/defaultModel、models.provider/model/defaultModel、provider.model/baseUrl/baseURL，或 providers/models 非数组，均显式报告不兼容字段路径并禁用写入，不自动猜测或迁移。当前桌面源码不提供这些别名迁移，不能将例子称为已经证实的历史版本格式。真正空配置仍是空态，不是结构错误。未知的桌面扩展字段继续保留，不作为别名覆盖现有标准字段。
 
 读取错误时 desktopDiagnostics 保持合法 JSON 文本，包含 path/exists/stat 和 error；无法解析的条数为 null。保存继续写原 config.json，不建立模型副本；回归验证顶层扩展、models 扩展、provider headers/threshold、model name/tags 等不丢失。
+
+## 0.8.28 页面桥接诊断
+
+模型页「获取模型列表」旁有只读可全选复制的 JSON 文本，记录客户端版本、当前文档 URL（移除查询/片段/凭据）、origin、iframe、可访问的 parentOrigin/src/sandbox，以及 RPC 方法、阶段、HTTP 状态（桥未提供时为 unknown）、错误码、配置路径和条数。无法跨源读取的环境信息明确为 unavailable-cross-origin，不推断。监听本 iframe 的 CSP 违规事件并在卸载时移除，不放宽 CSP。
+
+get-model-selection/list-provider-models 等待上限20秒，超时显示 RPC_TIMEOUT；不自动重试、不把超时说成 HTTP 504；保存操作不添加超时，避免不确定写入后重试。初次读取失败释放 busy 状态，允许点击本地获取重试；在成功读取设置前仍禁止保存。错误脱敏后同时出现在诊断与页面错误区。非 JSON 上游响应现在保留实际 HTTP 状态。
+
+上述诊断仅在客户端 mount 已执行时存在。若宿主未加载模块、Blob import 被 CSP 拦截或 mount 未被调用，插件代码无法自行显示诊断；必须从宿主页面控制台和 DOM 获取证据。客户端 API 的 CSP 响应头不能代替父页面/iframe 文档 CSP。

@@ -93,7 +93,7 @@ export async function requestCustomModel({ url, trusted, hostname, family }, { h
         })
         response.on('error', () => reject(new Error('模型列表读取中断')))
         response.on('end', () => {
-          try { resolve(JSON.parse(raw)) } catch { reject(new Error('模型列表接口返回非 JSON')) }
+          try { resolve(JSON.parse(raw)) } catch { reject(new Error(`模型列表接口返回非 JSON（HTTP ${status}）`)) }
         })
       } else if (!/^text\/event-stream(?:\s*;|$)/i.test(response.headers['content-type'] || '')) {
         response.destroy()
