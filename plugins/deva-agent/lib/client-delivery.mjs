@@ -13,7 +13,7 @@ export function clientDeliveryInterceptor(write = writeUiTrace) {
         write({ side: 'server', phase: 'client-delivery', userId: http.identity?.userId ?? 0,
           profile: http.identity?.profile || 'unauthenticated', endpoint: endpoint.host,
           http: response.status, count: typeof source === 'string' ? Buffer.byteLength(source) : 0,
-          clientVersion: typeof source === 'string' ? source.match(/Deva (\d+\.\d+\.\d+)/)?.[1] || 'unknown' : 'unavailable',
+          clientVersion: typeof source === 'string' ? source.match(/version:\s*['"](\d+\.\d+\.\d+)['"]/)?.[1] || source.match(/Deva (\d+\.\d+\.\d+)/)?.[1] || 'unknown' : 'unavailable',
           clientSha256: typeof source === 'string' ? createHash('sha256').update(source).digest('hex') : 'unavailable' })
       } catch { /* Observation cannot change client delivery or authentication. */ }
     },

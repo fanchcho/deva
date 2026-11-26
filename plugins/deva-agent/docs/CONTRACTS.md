@@ -363,3 +363,5 @@ model-ui-trace RPC 接收 uiTraceInput 并返回 uiTraceResult。日志写安装
 0.8.33 的 uiTraceInput 增加点击及几何字段：phase=pointerdown/click 时 scope 区分 iframe-document/host-document，坐标为该document的CSS像素，tag/label与hitTag/hitLabel分别对应target与elementFromPoint。文本仅允许插件固定按钮名称，其他文本写[other]，不读取input值或宿主会话正文。父文档监听仅在浏览器同源策略允许时建立，卸载释放；没有跨源绕过。
 
 phase=geometry 每个element单独记录：root/candidates/diagnostic/status/iframe；present、top/left/width/height、offsetHeight/clientHeight、viewportHeight/documentHeight、display/visibility/opacity/overflow、inViewport及最近滚动祖先clientHeight(scrollHeight字段)。inViewport只表示矩形相交，不证明没被遮罩；点击hit和父文档iframe几何须一起看。渲染、resize、scroll后采样。固定状态区使用iframe内sticky，不能越过宿主遮罩或保证零高度iframe内可见。不能把无点击事件作为用户没点击的充分证据。
+
+几何诊断的 element=candidate-buttons 指普通按钮列表，native-select 指折叠原生选择框；top/bottom/height/inViewport 分别测量，不能跨对象推断可见性。服务端 version 来自安装包清单，clientVersion 来自实际下发模块元数据。

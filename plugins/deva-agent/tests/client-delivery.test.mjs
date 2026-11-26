@@ -20,3 +20,9 @@ test('client delivery records authenticated identity and actual bytes only', () 
   assert.doesNotThrow(() => clientDeliveryInterceptor(() => { throw Error('disk full') }).onResponse(response, http))
   assert.deepEqual(response.headers, {})
 })
+
+test('client version is detected without a visible version label', () => {
+  const rows = []
+  clientDeliveryInterceptor(row => rows.push(row)).onResponse({ status: 200, body: { source: "const payload = { version: '0.8.41' }" } }, { request: { method: 'GET', headers: {host:'localhost:8648'} }, originalUrl: '/api/studio/plugins/deva/client', identity: {userId:1,profile:'default'} })
+  assert.equal(rows[0].clientVersion, '0.8.41')
+})

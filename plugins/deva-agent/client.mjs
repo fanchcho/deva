@@ -1079,12 +1079,16 @@ export function probeGeometry(node, win) {
   const r = node.getBoundingClientRect(), style = win.getComputedStyle(node)
   let scroll = node.parentElement
   while (scroll && !/(auto|scroll|hidden|clip)/.test(win.getComputedStyle(scroll).overflowY)) scroll = scroll.parentElement
-  return { present: 1, top: r.top, left: r.left, width: r.width, height: r.height,
+  return { present: 1, top: r.top, bottom: r.bottom, left: r.left, width: r.width, height: r.height,
     offsetHeight: node.offsetHeight, clientHeight: node.clientHeight, viewportHeight: win.innerHeight,
     documentHeight: win.document.documentElement.scrollHeight,
     inViewport: r.bottom > 0 && r.top < win.innerHeight && r.right > 0 && r.left < win.innerWidth ? 1 : 0,
     display: style.display, visibility: style.visibility, opacity: style.opacity, overflow: style.overflow,
     scrollHeight: scroll?.clientHeight ?? win.document.documentElement.clientHeight }
+}
+
+export function candidateGeometryTargets(content) {
+  return [['candidate-buttons', content.querySelector('.deva-model-candidates')], ['native-select', content.querySelector('select[size]')]]
 }
 
 export function revealModelChoices(node, viewportHeight) {
@@ -1116,7 +1120,7 @@ async function mountTraced(root, ctx) {
   const original = ctx
   const trace = event => {
     if (ctx.signal?.aborted) return
-    const payload = { side: 'client', version: '0.8.40', revision: 'not-exposed-by-sdk', attempt, ...event }
+    const payload = { side: 'client', version: '0.8.41', revision: 'not-exposed-by-sdk', attempt, ...event }
     Promise.resolve().then(() => original.rpc.call('model-ui-trace', payload)).catch(() => {})
   }
   root.innerHTML = ''
@@ -1133,7 +1137,7 @@ async function mountTraced(root, ctx) {
   const showStage = () => { version.textContent = `候选 ${candidateCount} 个 · ${phase}` }
   const disposers = []
   const measure = () => observeSafely(() => {
-    for (const [element, node] of [['root', root], ['candidates', content.querySelector('select[size]')], ['diagnostic', content.querySelector('input[readonly]')], ['status', status]]) trace({ phase: 'geometry', element, ...probeGeometry(node, window) })
+    for (const [element, node] of [['root', root], ...candidateGeometryTargets(content), ['diagnostic', content.querySelector('input[readonly]')], ['status', status]]) trace({ phase: 'geometry', element, ...probeGeometry(node, window) })
     try { trace({ phase: 'geometry', element: 'iframe', ...probeGeometry(window.frameElement, window.parent) }) } catch { trace({ phase: 'geometry', element: 'iframe', errorType: 'CrossOrigin' }) }
   })
   const listen = (doc, scope) => observeSafely(() => {
@@ -1219,7 +1223,7 @@ export function modelRpcDiagnostics(ctx, output, getKey = () => '', timeoutMs = 
   const safeUrl = value => {
     try { const url = new URL(value); url.search = ''; url.hash = ''; url.username = ''; url.password = ''; return url.href } catch { return 'unavailable' }
   }
-  const state = { version: '0.8.40', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
+  const state = { version: '0.8.41', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
   observeSafely(() => { if (typeof window !== 'undefined') {
     state.url = safeUrl(window.location.href)
     state.origin = window.origin

@@ -2206,6 +2206,7 @@
           "type": "number",
           "description": "DOM geometry measurement in CSS pixels or presence boolean."
         },
+        "bottom": {"type": "number", "description": "DOM rectangle bottom edge in CSS pixels; measured independently for candidate-buttons and native-select."},
         "viewportHeight": {
           "type": "number",
           "description": "DOM geometry measurement in CSS pixels or presence boolean."

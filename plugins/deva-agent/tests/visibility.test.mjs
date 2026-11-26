@@ -57,3 +57,12 @@ test('discovery errors distinguish approval, auth, missing endpoint, timeout, fo
   const { discoveryFailure } = await import('../client.mjs')
   for (const [message, pattern] of [['modelTrustedBases',/未批准/],['HTTP 401',/鉴权/],['HTTP 404',/接口不存在/],['RPC_TIMEOUT',/超时/],['Unexpected token in JSON',/JSON/],['ECONNREFUSED',/不可达/]]) assert.match(discoveryFailure(message), pattern)
 })
+
+ test('button candidates and collapsed native select have independent geometry', async () => {
+  const { candidateGeometryTargets } = await import('../client.mjs')
+  const buttons = { getBoundingClientRect: () => ({ top: 50, bottom: 100, left: 0, right: 100, width: 100, height: 50 }) }
+  const select = { getBoundingClientRect: () => ({ top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }) }
+  const win = { innerHeight: 500, innerWidth: 320, getComputedStyle: () => ({}), document: { documentElement: {} } }
+  const samples = candidateGeometryTargets({ querySelector: selector => selector === '.deva-model-candidates' ? buttons : select }).map(([element,node]) => ({element,...probeGeometry(node,win)}))
+  assert.deepEqual(samples.map(s => [s.element,s.top,s.bottom,s.inViewport]), [['candidate-buttons',50,100,1],['native-select',0,0,0]])
+})
