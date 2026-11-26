@@ -1065,11 +1065,29 @@ const NEW_CONFIG_TEMPLATE = `{
   }
 }`
 
+// This stays in the self-contained Blob module. Never log input values or arbitrary page text.
+export function probeLabel(node) {
+  const text = String(node?.textContent || '').trim()
+  return ['获取模型列表', '刷新远端模型列表', 'Fetch models', 'Refresh remote models', '重试加载模型页'].includes(text) ? text : '[other]'
+}
+export function probeGeometry(node, win) {
+  if (!node) return { present: 0 }
+  const r = node.getBoundingClientRect(), style = win.getComputedStyle(node)
+  let scroll = node.parentElement
+  while (scroll && !/(auto|scroll|hidden|clip)/.test(win.getComputedStyle(scroll).overflowY)) scroll = scroll.parentElement
+  return { present: 1, top: r.top, left: r.left, width: r.width, height: r.height,
+    offsetHeight: node.offsetHeight, clientHeight: node.clientHeight, viewportHeight: win.innerHeight,
+    documentHeight: win.document.documentElement.scrollHeight,
+    inViewport: r.bottom > 0 && r.top < win.innerHeight && r.right > 0 && r.left < win.innerWidth ? 1 : 0,
+    display: style.display, visibility: style.visibility, opacity: style.opacity, overflow: style.overflow,
+    scrollHeight: scroll?.clientHeight ?? win.document.documentElement.clientHeight }
+}
+
 export async function mount(root, ctx) {
   try { return await mountTraced(root, ctx) }
   catch {
     root.innerHTML = ''
-    root.append(el('p', '', 'Deva 0.8.32 · 客户端初始化失败，模型尚未读取。'))
+    root.append(el('p', '', 'Deva 0.8.33 · 客户端初始化失败，模型尚未读取。'))
     const retry = button('重试加载模型页', 'deva-btn')
     retry.onclick = () => { void mount(root, ctx) }
     root.append(retry)
@@ -1083,20 +1101,45 @@ async function mountTraced(root, ctx) {
   const original = ctx
   const trace = event => {
     if (ctx.signal?.aborted) return
-    const payload = { side: 'client', version: '0.8.32', revision: 'not-exposed-by-sdk', attempt, ...event }
+    const payload = { side: 'client', version: '0.8.33', revision: 'not-exposed-by-sdk', attempt, ...event }
     Promise.resolve().then(() => original.rpc.call('model-ui-trace', payload)).catch(() => {
-      status.textContent = 'Deva 0.8.32 · 诊断日志未送达：RPC 桥不可用；请保留当前页面。'
+      status.textContent = 'Deva 0.8.33 · 诊断日志未送达：RPC 桥不可用；请保留当前页面。'
     })
   }
   root.innerHTML = ''
-  const status = el('p', 'deva-value-preview', 'Deva 0.8.32 · mount 开始，正在初始化模型页')
+  const status = el('p', 'deva-value-preview', 'Deva 0.8.33 · mount 开始，正在初始化模型页')
+  status.style.cssText = 'position:sticky;top:0;z-index:100;background:var(--bg-card,#fff);color:var(--text-primary,#111);max-height:30vh;overflow:auto;padding:8px;white-space:pre-wrap;overflow-wrap:anywhere;margin:0'
+  const retryTop = button('重试加载模型页', 'deva-btn')
+  retryTop.onclick = () => { cleanup(); void mount(root, original) }
   const content = el('div', '')
-  root.append(status, content)
+  root.append(status, retryTop, content)
+  const summary = { phase: 'mount', path: '待读取', providers: '?', models: '?', error: '' }
+  const renderSummary = () => { status.textContent = `Deva 0.8.33 · ${summary.phase} · providers=${summary.providers} models=${summary.models}\n${summary.path}\n${summary.error}` }
+  const disposers = []
+  const measure = () => {
+    for (const [element, node] of [['root', root], ['candidates', content.querySelector('select[size]')], ['diagnostic', content.querySelector('input[readonly]')], ['status', status]]) trace({ phase: 'geometry', element, ...probeGeometry(node, window) })
+    try { trace({ phase: 'geometry', element: 'iframe', ...probeGeometry(window.frameElement, window.parent) }) } catch { trace({ phase: 'geometry', element: 'iframe', errorType: 'CrossOrigin' }) }
+  }
+  const listen = (doc, scope) => {
+    const handler = event => {
+      const hit = doc.elementFromPoint(event.clientX, event.clientY)
+      trace({ phase: event.type, scope, tag: event.target?.tagName || 'unknown', label: probeLabel(event.target), hitTag: hit?.tagName || 'none', hitLabel: probeLabel(hit), x: event.clientX, y: event.clientY })
+      measure()
+    }
+    for (const type of ['pointerdown', 'click']) { doc.addEventListener(type, handler, true); disposers.push(() => doc.removeEventListener(type, handler, true)) }
+  }
+  listen(document, 'iframe-document')
+  try { if (window.parent !== window) listen(window.parent.document, 'host-document') } catch { trace({ phase: 'parent-unavailable', errorType: 'CrossOrigin' }) }
+  let timer
+  const scheduleMeasure = () => { clearTimeout(timer); timer = setTimeout(measure, 200) }
+  window.addEventListener('resize', scheduleMeasure)
+  window.addEventListener('scroll', scheduleMeasure, true)
+  disposers.push(() => { clearTimeout(timer); window.removeEventListener('resize', scheduleMeasure); window.removeEventListener('scroll', scheduleMeasure, true) })
   const fail = error => {
     const raw = String(error?.message || error)
     let safe = raw.replace(/https?:\/\/\S+/g, '[URL]').replace(/(Bearer\s+|(?:key|token|secret|password)["']?\s*[:=]\s*["']?)[^\s"',}]+/gi, '$1[REDACTED]')
     for (const input of content.querySelectorAll('input[type=password]')) if (input.value) safe = safe.split(input.value).join('[REDACTED]')
-    status.textContent = 'Deva 0.8.32 · 页面异常：' + safe.slice(0, 500)
+    status.textContent = 'Deva 0.8.33 · 页面异常：' + safe.slice(0, 500)
     const retry = button('重试加载模型页', 'deva-btn')
     retry.onclick = () => { cleanup(); void mount(root, original) }
     status.append(retry)
@@ -1106,22 +1149,22 @@ async function mountTraced(root, ctx) {
   window.addEventListener('error', onError)
   window.addEventListener('unhandledrejection', onError)
   let observer
-  const cleanup = () => { observer?.disconnect(); window.removeEventListener('error', onError); window.removeEventListener('unhandledrejection', onError) }
+  const cleanup = () => { for (const dispose of disposers) dispose(); observer?.disconnect(); window.removeEventListener('error', onError); window.removeEventListener('unhandledrejection', onError) }
   ctx.signal?.addEventListener('abort', cleanup, { once: true })
-  const counts = () => trace({ phase: 'rendered', count: content.querySelectorAll('select[size] option').length })
+  const counts = () => { trace({ phase: 'rendered', count: content.querySelectorAll('select[size] option').length }); scheduleMeasure() }
   let queued = false
   observer = new MutationObserver(() => { if (!queued) { queued = true; queueMicrotask(() => { queued = false; if (!ctx.signal?.aborted) counts() }) } })
   observer.observe(content, { childList: true, subtree: true })
   ctx.signal?.addEventListener('abort', () => observer.disconnect(), { once: true })
-  trace({ phase: 'mount', route: window.location.hash.startsWith('#/studio/plugin-agent-settings/deva/model') ? '#/studio/plugin-agent-settings/deva/model' : '(iframe hash empty or other)', readyState: document.readyState })
+  trace({ phase: 'mount', route: (() => { try { const h = window.parent.location.hash.split('?')[0]; return /^#\/(studio|hermes)\/[a-zA-Z0-9/_-]+$/.test(h) ? h : '(other route)' } catch { return '(parent cross-origin)' } })(), readyState: document.readyState })
   const wrapped = { ...ctx, rpc: { call: async (method, input) => {
-    const start = Date.now(); trace({ phase: 'rpc-start', method })
-    try { const result = await original.rpc.call(method, input); trace({ phase: 'rpc-resolved', method, elapsedMs: Date.now() - start }); return result }
-    catch (error) { trace({ phase: 'rpc-rejected', method, elapsedMs: Date.now() - start, http: String(error?.message || '').match(/(?:HTTP |API Error )(\d{3})/)?.[1] || 'unknown', errorType: 'Error' }); throw error }
+    const start = Date.now(); summary.phase = method; renderSummary(); trace({ phase: 'rpc-start', method })
+    try { const result = await original.rpc.call(method, input); if (result.desktopDiagnostics) { try { const d = JSON.parse(result.desktopDiagnostics); Object.assign(summary, { path: d.path, providers: d.providerCount, models: d.modelCount, error: d.error || '', phase: '读取完成' }); renderSummary() } catch { summary.error = '诊断解析失败'; renderSummary() } } trace({ phase: 'rpc-resolved', method, elapsedMs: Date.now() - start }); return result }
+    catch (error) { summary.phase = '读取失败'; summary.error = 'RPC失败，详见下方错误'; renderSummary(); trace({ phase: 'rpc-rejected', method, elapsedMs: Date.now() - start, http: String(error?.message || '').match(/(?:HTTP |API Error )(\d{3})/)?.[1] || 'unknown', errorType: 'Error' }); throw error }
   } } }
   try {
     await mountContent(content, wrapped)
-    status.textContent = 'Deva 0.8.32 · 模型页面已挂载；读取路径和计数见下方诊断'
+    renderSummary()
     counts()
   } catch (error) { fail(error) }
   return () => { cleanup(); observer.disconnect() }
@@ -1139,7 +1182,7 @@ async function mountContent(root, ctx) {
   const container = el('div', 'deva-settings')
   root.append(container)
   if (ctx.view === 'model') container.append(el('p', 'deva-value-preview',
-    locale.startsWith('zh') ? 'Deva 0.8.32 · 模型客户端已加载；正在读取桌面配置，路径与条数见下方诊断。' : 'Deva 0.8.32 · Model client loaded; desktop configuration path and counts appear in diagnostics below.'))
+    locale.startsWith('zh') ? 'Deva 0.8.33 · 模型客户端已加载；正在读取桌面配置，路径与条数见下方诊断。' : 'Deva 0.8.33 · Model client loaded; desktop configuration path and counts appear in diagnostics below.'))
 
   // 路由变化会重新挂载，按 view 只渲染对应页面。
   if (ctx.view === 'mcp') await mountMcp(container, ctx, text)
@@ -1159,7 +1202,7 @@ export function modelRpcDiagnostics(ctx, output, getKey = () => '', timeoutMs = 
   const safeUrl = value => {
     try { const url = new URL(value); url.search = ''; url.hash = ''; url.username = ''; url.password = ''; return url.href } catch { return 'unavailable' }
   }
-  const state = { version: '0.8.32', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
+  const state = { version: '0.8.33', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
   if (typeof window !== 'undefined') {
     state.url = safeUrl(window.location.href)
     state.origin = window.origin

@@ -357,3 +357,7 @@ get-model-selection/list-provider-models 等待上限20秒，超时显示 RPC_TI
 model-ui-trace RPC 接收 uiTraceInput 并返回 uiTraceResult。日志写安装插件目录 diagnostics/model-ui.jsonl，目录0700、文件0600，当前文件256KiB后滚动到单份.1。只记录阶段/方法/状态/耗时/计数等元数据；不记录RPC输入、配置正文、Key或原始异常文本。client报告不等同于可信HTTP访问日志。revision不是ClientContext公开字段，明确记录not-exposed-by-sdk，需和当时registry快照关联。
 
 宿主client资源GET与iframe初始化发送没有插件SDK钩子，无法在插件内直接记录；mount事件只能证明初始化已到达并执行。无日志不能推出未请求client、未mount或用户点了宿主页面。服务器resolved阶段HTTP由宿主控制，记录host-owned，不伪造200。
+
+0.8.33 的 uiTraceInput 增加点击及几何字段：phase=pointerdown/click 时 scope 区分 iframe-document/host-document，坐标为该document的CSS像素，tag/label与hitTag/hitLabel分别对应target与elementFromPoint。文本仅允许插件固定按钮名称，其他文本写[other]，不读取input值或宿主会话正文。父文档监听仅在浏览器同源策略允许时建立，卸载释放；没有跨源绕过。
+
+phase=geometry 每个element单独记录：root/candidates/diagnostic/status/iframe；present、top/left/width/height、offsetHeight/clientHeight、viewportHeight/documentHeight、display/visibility/opacity/overflow、inViewport及最近滚动祖先clientHeight(scrollHeight字段)。inViewport只表示矩形相交，不证明没被遮罩；点击hit和父文档iframe几何须一起看。渲染、resize、scroll后采样。固定状态区使用iframe内sticky，不能越过宿主遮罩或保证零高度iframe内可见。不能把无点击事件作为用户没点击的充分证据。

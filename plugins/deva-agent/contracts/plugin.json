@@ -2177,6 +2177,108 @@
         "count": {
           "type": "number",
           "description": "Measured count or milliseconds."
+        },
+        "present": {
+          "type": "number",
+          "description": "DOM geometry measurement in CSS pixels or presence boolean."
+        },
+        "top": {
+          "type": "number",
+          "description": "DOM geometry measurement in CSS pixels or presence boolean."
+        },
+        "left": {
+          "type": "number",
+          "description": "DOM geometry measurement in CSS pixels or presence boolean."
+        },
+        "width": {
+          "type": "number",
+          "description": "DOM geometry measurement in CSS pixels or presence boolean."
+        },
+        "height": {
+          "type": "number",
+          "description": "DOM geometry measurement in CSS pixels or presence boolean."
+        },
+        "offsetHeight": {
+          "type": "number",
+          "description": "DOM geometry measurement in CSS pixels or presence boolean."
+        },
+        "clientHeight": {
+          "type": "number",
+          "description": "DOM geometry measurement in CSS pixels or presence boolean."
+        },
+        "viewportHeight": {
+          "type": "number",
+          "description": "DOM geometry measurement in CSS pixels or presence boolean."
+        },
+        "documentHeight": {
+          "type": "number",
+          "description": "DOM geometry measurement in CSS pixels or presence boolean."
+        },
+        "inViewport": {
+          "type": "number",
+          "description": "DOM geometry measurement in CSS pixels or presence boolean."
+        },
+        "scrollHeight": {
+          "type": "number",
+          "description": "DOM geometry measurement in CSS pixels or presence boolean."
+        },
+        "x": {
+          "type": "number",
+          "description": "DOM geometry measurement in CSS pixels or presence boolean."
+        },
+        "y": {
+          "type": "number",
+          "description": "DOM geometry measurement in CSS pixels or presence boolean."
+        },
+        "element": {
+          "type": "string",
+          "maxLength": 180,
+          "description": "Allowlisted element label or computed CSS metadata; never input values."
+        },
+        "display": {
+          "type": "string",
+          "maxLength": 180,
+          "description": "Allowlisted element label or computed CSS metadata; never input values."
+        },
+        "visibility": {
+          "type": "string",
+          "maxLength": 180,
+          "description": "Allowlisted element label or computed CSS metadata; never input values."
+        },
+        "opacity": {
+          "type": "string",
+          "maxLength": 180,
+          "description": "Allowlisted element label or computed CSS metadata; never input values."
+        },
+        "overflow": {
+          "type": "string",
+          "maxLength": 180,
+          "description": "Allowlisted element label or computed CSS metadata; never input values."
+        },
+        "scope": {
+          "type": "string",
+          "maxLength": 180,
+          "description": "Allowlisted element label or computed CSS metadata; never input values."
+        },
+        "tag": {
+          "type": "string",
+          "maxLength": 180,
+          "description": "Allowlisted element label or computed CSS metadata; never input values."
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 180,
+          "description": "Allowlisted element label or computed CSS metadata; never input values."
+        },
+        "hitTag": {
+          "type": "string",
+          "maxLength": 180,
+          "description": "Allowlisted element label or computed CSS metadata; never input values."
+        },
+        "hitLabel": {
+          "type": "string",
+          "maxLength": 180,
+          "description": "Allowlisted element label or computed CSS metadata; never input values."
         }
       },
       "additionalProperties": false,
