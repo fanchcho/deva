@@ -186,3 +186,5 @@ Windows 请比较桌面与 Studio 进程的 AI_UPPER_HOME / DEVA_HOME，以及�
 热装后重新加载 Studio 页面再从上述入口进入。标题与正文版本都应一致。若标题仍旧，刷新宿主目录；若标题新而正文旧或缺失，记录 iframe 加载错误。本版本只增加入口与加载阶段识别，不声称修复尚未复现的空白根因。插件无法在自身 JS 根本未执行时控制 iframe 正文，占位边界由宿主管理。
 
 0.8.31 保留宿主桥接 `API Error 500` 中的 HTTP 状态码，错误不再显示成 HTTP 未知。独立真实宿主验证与原实例的用户页面故障是两项证据，不可互相替代。
+
+只读命令行（不依赖页面）：`node scripts/list-desktop-models.mjs --studio http://127.0.0.1:8648`。认证从 STUDIO_TOKEN 环境变量读取，勿把凭据写命令参数或日志。支持 STUDIO_PROFILE。`--config` 指定实际文件；默认沿用插件路径解析。仅调用 get-model-selection，不调用保存/远端模型刷新。若使用现有认证 MCP 传输，可将刚收到的完整 JSON 响应送入 `--rpc-stdin`；此模式不是脚本自行联网，输出不应声称它自行完成了 HTTP 请求。两种模式均独立读取本地配置并打印 provider/model 引用，不输出Key。
