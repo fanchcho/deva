@@ -1095,7 +1095,7 @@ export function modelRpcDiagnostics(ctx, output, getKey = () => '', timeoutMs = 
   const safeUrl = value => {
     try { const url = new URL(value); url.search = ''; url.hash = ''; url.username = ''; url.password = ''; return url.href } catch { return 'unavailable' }
   }
-  const state = { version: '0.8.28', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
+  const state = { version: '0.8.29', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
   if (typeof window !== 'undefined') {
     state.url = safeUrl(window.location.href)
     state.origin = window.origin
@@ -1209,16 +1209,20 @@ function mountModelDiscovery(body, ctx, { diagnostic, address, key, name, choose
   const filter = () => {
     choices.innerHTML = ''
     for (const model of models.filter(m => m.id.toLowerCase().includes(search.value.toLowerCase()))) {
-      const item = el('option', '', model.id)
-      item.value = model.id
+      const item = el('option', '', model.providerName ? `${model.providerName} / ${model.id}` : model.id)
+      item.value = model.ref || model.id
       choices.append(item)
     }
-    choices.value = name.value
+    choices.value = models.find(m => m.id === name.value && (!m.ref || m.ref === choose.value))?.ref || name.value
   }
   search.oninput = filter
   choices.onchange = () => {
-    const model = models.find(m => m.id === choices.value)
+    const model = models.find(m => (m.ref || m.id) === choices.value)
     if (!model) return
+    if (model.ref) {
+      if (choose.value !== model.ref) { key.value = ''; storedKey = false }
+      choose.value = model.ref; address.value = model.baseUrl; refresh()
+    }
     name.value = model.id
     fillLimits(model)
     dirty = true
@@ -1256,11 +1260,11 @@ function mountModelDiscovery(body, ctx, { diagnostic, address, key, name, choose
   }
   const setDesktop = settings => {
     const rows = settings.desktopModels || []
-    models = rows.filter(m => m.baseUrl === address.value.trim().replace(/\/+$/, '')).map(m => ({ ...m, id: m.modelName }))
+    models = rows.map(m => ({ ...m, id: m.modelName }))
     desktopLocal = models
     search.hidden = choices.hidden = !models.length
     filter()
-    message.textContent = copy(`桌面已配置 ${rows.length} 个模型；当前地址 ${models.length} 个。`, `${rows.length} desktop models; ${models.length} for this address.`)
+    message.textContent = copy(`桌面已配置 ${rows.length} 个模型；本地候选 ${models.length} 个。`, `${rows.length} desktop models; ${models.length} local choices.`)
       + '\n' + (settings.desktopDiagnostics || '') + '\n' + (settings.credentialError || '')
   }
   address.oninput = () => { fillLimits(); dirty = true; invalidate(); syncPreview() }
@@ -1288,12 +1292,13 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
   header.append(heading)
   const card = el('div', 'deva-card')
   const body = el('div', 'deva-card-body deva-model-form')
+  const catalog = el('pre', 'deva-value-preview')
   const shared = el('p')
   shared.hidden = true
   const choose = el('select', 'deva-select')
   const choiceRow = el('label', '', desktopLabel)
   choiceRow.append(choose)
-  body.append(shared, choiceRow)
+  body.append(shared, catalog, choiceRow)
   const problems = []
   const field = (label, type, maxLength) => {
     const input = el('input', type === 'checkbox' ? 'deva-check' : 'deva-select')
@@ -1410,6 +1415,7 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
   }
   const show = settings => {
     current = settings
+    catalog.textContent = JSON.stringify({ providers: settings.desktopProviders || [], defaultModel: settings.modelRef || '' }, null, 2)
     const models = settings.desktopModels || []
     const fill = model => {
       address.value = model?.baseUrl || ''
@@ -1418,6 +1424,7 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
       key.placeholder = model?.ref === settings.modelRef && settings.hasApiKey ? configured : ''
       clear.checked = false
       discovery.reset(model, model?.ref === settings.modelRef && settings.hasApiKey)
+      discovery.setDesktop(settings)
       syncPreview()
     }
     choose.innerHTML = ''

@@ -4,48 +4,51 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { readModelSelection, saveModelSelection } from '../lib/model-selection.mjs'
-import { readModels } from '../lib/desktop-model-schema.mjs'
-
-const base = () => ({ extraDesktop: { untouched: true }, models: { activeModelId: 'p:qwen:8b', desktopOnly: 'keep', providers: [{ id: 'p', name: '桌面名称', apiHost: 'https://example.com/v1', adapter: 'openai', headers: { 'x-fixture': 'keep' }, threshold: 0.7, models: [{ id: 'qwen:8b', name: '本地显示名', tags: ['keep'], contextWindow: 4096 }] }] } })
-const unsupported = [
-  ['top-providers', { providers: [] }], ['single-provider', { models: { provider: { id: 'p' } } }],
-  ['providers-object', { models: { providers: { id: 'p' } } }], ['top-model', { model: 'm' }],
-  ['single-model', { models: { providers: [{ id: 'p', model: 'm' }] } }],
-  ['models-string', { models: { providers: [{ id: 'p', models: 'm' }] } }],
-  ['defaultModel', { models: { providers: [], defaultModel: 'p:m' } }],
-  ['baseUrl', { models: { providers: [{ id: 'p', baseUrl: 'https://example.com', models: [{ id: 'm' }] }] } }],
-]
-for (const [name, config] of unsupported) test(`unsupported desktop shape ${name} is explicit and never written`, async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'desktop-shape-'))
+const p = { id: 'p', name: 'Provider', baseUrl: 'https://example.com/v1', models: ['qwen:8b'], headers: { 'x-fixture': 'keep' } }
+const cases = {
+  nested: { models: { providers: [p], activeModelId: 'p:qwen:8b' } },
+  top: { providers: [p], defaultModel: 'qwen:8b' },
+  single: { provider: p, defaultModel: { providerId: 'p', modelId: 'qwen:8b' } },
+  object: { models: { providers: p, defaultModel: 'qwen:8b' } },
+  singleModel: { models: { provider: { ...p, models: undefined, model: 'qwen:8b' }, defaultModel: 'qwen:8b' } },
+  nameOnly: { providers: [{ ...p, models: [{ name: 'qwen:8b', tags: ['keep'] }] }], defaultModel: 'qwen:8b' },
+  bare: { provider: 'p', baseURL: p.baseUrl, model: 'qwen:8b' },
+  empty: { providers: [{ ...p, models: [] }] },
+  missing: { providers: [{ id: 'p', baseUrl: p.baseUrl }] },
+}
+for (const [name, value] of Object.entries(cases)) test(`legacy ${name} reads and saves through the same file`, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'desktop-legacy-')), path = join(dir, 'config.json')
+  const storage = { namespace() { return this }, async get() {}, async delete() {} }
+  const run = { config: { sharedDevaHome: dir, sharedDevaUserId: 1 }, identity: { userId: 1 }, state: { profile: storage } }
   try {
-    const raw = JSON.stringify(config), path = join(dir, 'config.json')
-    writeFileSync(path, raw, { mode: 0o600 })
+    value.opaque = { untouched: true }
+    const original = JSON.stringify(value)
+    writeFileSync(path, original, { mode: 0o600 })
+    const result = await readModelSelection(run)
+    assert.equal(result.desktopProviders.length, 1)
+    assert.equal(readFileSync(path, 'utf8'), original, 'reads never migrate')
+    if (['empty', 'missing'].includes(name)) { assert.equal(result.desktopModels.length, 0); return }
+    assert.equal(result.modelRef, 'p:qwen:8b')
+    assert.equal(result.desktopModels.length, 1)
+    await saveModelSelection(run, { modelRef: result.modelRef, baseUrl: result.baseUrl, modelName: result.modelName, reasoningEffort: 'high' })
+    const after = JSON.parse(readFileSync(path))
+    assert.deepEqual(after.opaque, value.opaque)
+    assert.equal(after.models.activeModelId, 'p:qwen:8b')
+    const reopened = await readModelSelection(run)
+    assert.equal(reopened.modelRef, 'p:qwen:8b')
+    if (name !== 'bare') assert.deepEqual(after.models.providers[0].headers, p.headers)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+for (const [name, value] of Object.entries({ malformed: { providers: [17] }, missingId: { providers: [{ models: [{}] }] }, ambiguous: { providers: [p, { ...p, id: 'q' }], defaultModel: 'qwen:8b' } })) test(`${name} returns a copyable failure, never empty success`, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'desktop-invalid-')), path = join(dir, 'config.json')
+  try {
+    const raw = JSON.stringify(value); writeFileSync(path, raw, { mode: 0o600 })
     const result = await readModelSelection({ config: { sharedDevaHome: dir } })
-    assert.equal(result.desktopWriteRequired, true)
     const diagnostic = JSON.parse(result.desktopDiagnostics)
+    assert.equal(result.desktopWriteRequired, true)
     assert.equal(diagnostic.path, path)
-    assert.equal(diagnostic.exists, true)
-    assert.match(diagnostic.error, /不兼容/)
+    assert.equal(diagnostic.json, 'parsed')
+    assert.ok(diagnostic.error)
     assert.equal(readFileSync(path, 'utf8'), raw)
   } finally { rmSync(dir, { recursive: true, force: true }) }
-})
-test('canonical legacy optional fields and colon model IDs read and save without erasing Desktop fields', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'desktop-preserve-'))
-  const storage = { namespace() { return this }, async get() {}, async delete() {} }
-  try {
-    const config = base(), path = join(dir, 'config.json')
-    writeFileSync(path, JSON.stringify(config), { mode: 0o600 })
-    const run = { config: { sharedDevaHome: dir, sharedDevaUserId: 1 }, identity: { userId: 1 }, state: { profile: storage } }
-    const before = await readModelSelection(run)
-    assert.equal(before.modelRef, 'p:qwen:8b')
-    assert.equal(before.desktopModels.length, 1)
-    assert.equal(before.providerName, '桌面名称')
-    assert.equal(before.baseUrl, 'https://example.com/v1')
-    await saveModelSelection(run, { modelRef: before.modelRef, baseUrl: before.baseUrl, modelName: before.modelName, reasoningEffort: 'high' })
-    assert.deepEqual(JSON.parse(readFileSync(path)), { ...config, models: { ...config.models, activeEffort: 'high' } })
-  } finally { rmSync(dir, { recursive: true, force: true }) }
-})
-test('genuinely empty desktop config is distinct from unsupported aliases', () => {
-  assert.deepEqual(readModels({}), { models: {}, providers: [] })
-  assert.deepEqual(readModels({ models: { providers: [] } }).providers, [])
 })

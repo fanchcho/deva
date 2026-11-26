@@ -1,4 +1,4 @@
-import { readModels } from './desktop-model-schema.mjs'
+import { readModels, writeModels } from './desktop-model-schema.mjs'
 /**
  * 桌面端模型配置（`~/.deva/config.json`）的只读视图与受控写入。
  *
@@ -126,7 +126,7 @@ export function desktopModelState(config = {}, { includeDisabled = false } = {})
 export function writeDesktopDefaults(config, snapshot, models) {
   if (JSON.stringify(models) === JSON.stringify(snapshot.value.models)) return
   if (!snapshot.exists) ensurePrivateDirectory(checkDesktopRoot(config))
-  writeAtomic(snapshot.path, `${JSON.stringify({ ...snapshot.value, models }, null, 2)}
+  writeAtomic(snapshot.path, `${JSON.stringify(writeModels(snapshot.value, models), null, 2)}
 `, { expectedRaw: snapshot.raw })
 }
 

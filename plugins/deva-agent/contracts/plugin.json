@@ -325,6 +325,58 @@
         "credentialError": {
           "type": "string",
           "description": "凭据不可用提示，不阻止桌面模型显示。"
+        },
+        "desktopProviders": {
+          "type": "array",
+          "description": "完整桌面提供商，包括空模型清单；不含密钥。",
+          "items": {
+            "type": "object",
+            "description": "本地提供商。",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "提供商标识。"
+              },
+              "name": {
+                "type": "string",
+                "description": "显示名。"
+              },
+              "baseUrl": {
+                "type": "string",
+                "description": "脱敏地址。"
+              },
+              "models": {
+                "type": "array",
+                "description": "已配置模型。",
+                "items": {
+                  "type": "object",
+                  "description": "模型标识和显示名。",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "标识。"
+                    },
+                    "name": {
+                      "type": "string",
+                      "description": "显示名。"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "baseUrl",
+              "models"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [

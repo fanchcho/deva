@@ -343,3 +343,11 @@ modelSettingsView.desktopWriteMessage 是可选拒绝提示，含当前调用账
 get-model-selection/list-provider-models 等待上限20秒，超时显示 RPC_TIMEOUT；不自动重试、不把超时说成 HTTP 504；保存操作不添加超时，避免不确定写入后重试。初次读取失败释放 busy 状态，允许点击本地获取重试；在成功读取设置前仍禁止保存。错误脱敏后同时出现在诊断与页面错误区。非 JSON 上游响应现在保留实际 HTTP 状态。
 
 上述诊断仅在客户端 mount 已执行时存在。若宿主未加载模块、Blob import 被 CSP 拦截或 mount 未被调用，插件代码无法自行显示诊断；必须从宿主页面控制台和 DOM 获取证据。客户端 API 的 CSP 响应头不能代替父页面/iframe 文档 CSP。
+
+## 0.8.29 历史形态兼容（替代0.8.27的别名拒读规则）
+
+读取统一支持顶层/嵌套 providers 数组或单对象、provider、apiHost/baseUrl/baseURL、models 数组（含空数组）或单 model、字符串模型以及 id/model/name 标识的对象模型。activeModelId/defaultModel 可为 providerId:modelId、无歧义裸模型名或 {providerId,modelId}；模型ID可含冒号。缺少 provider ID 时按文件顺序使用 legacy-provider-N；若裸模型名命中多个提供商，明确报告歧义，不擅自选择。损坏字段、非字符串ID、JSON错误均返回诊断，不能当空列表。
+
+读取不迁移。明确保存才在同一个 config.json 中写当前桌面规范 models 段，同时保留并同步已存在的提供商/地址/默认引用别名。旧模型字符串可在保存时转成对象；未知扩展字段保留。未改动的规范提供商按原对象保留，避免给无关字段补默认值。此为插件兼容策略，不宣称所有历史桌面程序都接受迁移后的字段类型。
+
+新增 modelSettingsView.desktopProviders：包括没有模型的 provider，公开 id/name/baseUrl/models(id/name)，不包含 secrets/headers。页面展示完整本地目录与默认引用；远端依旧只按用户明确点击补充。desktopDiagnostics 含 step、json=parsed、路径/stat/条数/具体失败原因。

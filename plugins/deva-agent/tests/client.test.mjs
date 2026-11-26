@@ -733,7 +733,7 @@ test('desktop discovery works without credentials and retains local choices on r
   assert.equal(fetch.disabled, false)
   await fetch.onclick()
   assert.equal(select.hidden, false)
-  assert.equal(select.children[0].value, 'local')
+  assert.equal(select.children[0].value, 'p:local')
   assert.ok(calls.every(n => n === 'get-model-selection'))
   assert.equal(remote.disabled, true)
   const key = findAll(root, n => n.type === 'password')[0]
@@ -742,7 +742,7 @@ test('desktop discovery works without credentials and retains local choices on r
   key.value = 'fixture'; key.oninput()
   await remote.onclick()
   assert.equal(select.hidden, false)
-  assert.equal(select.children[0].value, 'local')
+  assert.equal(select.children[0].value, 'p:local')
   assert.ok(findAll(root, n => /获取失败.*401/.test(n.textContent)).length)
 })
 
@@ -753,7 +753,7 @@ test('desktop fetch refreshes default dropdown after the desktop file changes', 
   id = 'new'
   await findAll(root, n => n.tag === 'button' && n.textContent === '获取模型列表')[0].onclick()
   assert.equal(findAll(root, n => n.tag === 'select')[0].value, 'p:new')
-  assert.equal(findAll(root, n => n.tag === 'select' && n.size === 5)[0].children[0].value, 'new')
+  assert.equal(findAll(root, n => n.tag === 'select' && n.size === 5)[0].children[0].value, 'p:new')
 })
 
 test('initial RPC failure leaves desktop fetch retry enabled with copyable redacted diagnostic', async () => {
@@ -782,4 +782,14 @@ test('RPC timeout settles with visible code and unavailable HTTP status, without
   const reject = modelRpcDiagnostics({ rpc: { call: () => { throw Error('HTTP 401 fixture-key') } } }, output, () => 'fixture-key')
   await assert.rejects(reject('get-model-selection'), /HTTP 401/)
   assert.ok(!output.value.includes('fixture-key'))
+})
+
+test('local candidates include other providers and disambiguate identical model ids', async () => {
+  const rows = ['p', 'q'].map(id => ({ ref: `${id}:same`, providerName: id, modelName: 'same', baseUrl: `https://${id}.example/v1` }))
+  const root = await mountPage(fakeContext('zh', async () => ({ baseUrl: rows[0].baseUrl, modelName: 'same', modelRef: rows[0].ref, hasApiKey: false, desktopModels: rows }), { view: 'model' }))
+  const list = findAll(root, n => n.tag === 'select' && n.size === 5)[0]
+  assert.deepEqual(list.children.map(n => n.value), ['p:same', 'q:same'])
+  list.value = 'q:same'; list.onchange()
+  assert.equal(findAll(root, n => n.tag === 'select')[0].value, 'q:same')
+  assert.equal(findAll(root, n => n.type === 'url')[0].value, rows[1].baseUrl)
 })

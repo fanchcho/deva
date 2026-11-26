@@ -118,7 +118,7 @@ test('registered model settings RPC round-trips the Desktop schema without expos
   const path = join(home, 'config.json')
   const input = { baseUrl: 'https://example.test/v1', modelName: 'manual' }
   assert.equal((await call('get-model-selection', null)).modelRef, '')
-  for (const fixture of [{}, { models: {} }, ...[null, '', 17].map(activeModelId => ({ models: { activeModelId } }))]) {
+  for (const fixture of [{}, { models: {} }, ...[null, ''].map(activeModelId => ({ models: { activeModelId } }))]) {
     await writeFile(path, JSON.stringify(fixture))
     assert.equal((await call('get-model-selection', null)).modelRef, '')
     const saved = await call('save-model-selection', input)

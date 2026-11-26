@@ -104,7 +104,9 @@ function defaultEffort(desktop) {
 /** 镜像展示用：不改变任何信任判定，只保证 URL 规范化失败时页面仍看得到桌面存的原文。 */
 function displayBaseUrl(value) {
   if (!value) return ''
-  try { return normalizeBaseUrl(value) } catch { return String(value) }
+  try { return normalizeBaseUrl(value) } catch {
+    try { const url = new URL(value); url.username = ''; url.password = ''; url.search = ''; url.hash = ''; return url.href } catch { return '[地址格式无效]' }
+  }
 }
 
 export async function readCustomModel(run, personaId) {
@@ -217,6 +219,7 @@ async function readDesktopSelection(run) {
     desktopConfigPath: location.path,
     desktopConfigExists: location.exists,
     desktopOwnership: location.ownership,
+    desktopProviders: desktop.providers.map(p => ({ id: p.id, name: p.name, baseUrl: displayBaseUrl(p.apiHost), models: p.models.map(m => ({ id: m.id, name: m.name })) })),
     desktopModels: desktop.choices.map(route => publishableRoute({ ...route, providerName: desktop.providers.find(item => item.id === route.providerId)?.name })),
     personaModels: [],
     ...(unresolvedActiveRef(desktop) ? { unresolvedModelRef: unresolvedActiveRef(desktop) } : {}),

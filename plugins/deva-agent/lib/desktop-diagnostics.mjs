@@ -1,7 +1,7 @@
 import { lstatSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveDevaRootSource } from './deva-fs.mjs'
-import { listDesktopModels } from './desktop-models.mjs'
+import { listDesktopModels, readDesktopConfig } from './desktop-models.mjs'
 
 /** Diagnostics contain metadata only; never include config or secrets file contents. */
 export function desktopDiagnostics(config = {}) {
@@ -18,9 +18,14 @@ export function desktopDiagnostics(config = {}) {
       result.exists = error.code === 'ENOENT' ? false : null
       throw error
     }
+    result.step = 'read-json'
+    readDesktopConfig(config)
+    result.json = 'parsed'
+    result.step = 'model-schema'
     const view = listDesktopModels(config)
     result.providerCount = view.providers.length
     result.modelCount = view.providers.reduce((n, p) => n + p.models.length, 0)
+    result.step = 'complete'
   } catch (error) {
     result.error = String(error?.message || error)
   }
