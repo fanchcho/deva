@@ -14,6 +14,7 @@ class StubElement {
     this.value = ''
     this.type = ''
   }
+  setAttribute(name, value) { this[name] = String(value) }
   set innerHTML(value) {
     this._html = String(value)
     if (this._html === '') this.children = []
@@ -735,7 +736,10 @@ test('desktop discovery works without credentials and retains local choices on r
   await fetch.onclick()
   assert.equal(select.hidden, false)
   assert.equal(select.children[0].value, 'p:local')
-  assert.ok(calls.every(n => n === 'get-model-selection'))
+  assert.ok(calls.includes('get-model-selection')); assert.ok(calls.includes('list-provider-models'))
+  const card = findAll(root, n => n.tag === 'button' && n.textContent === 'local')[0]
+  assert.ok(card, 'local model remains a visible ordinary button after remote failure')
+  assert.equal(card.disabled, false)
   assert.equal(remote.disabled, true)
   const key = findAll(root, n => n.type === 'password')[0]
   key.value = 'fixture'; key.oninput()
@@ -810,7 +814,7 @@ test('local candidates precede form fields and expanded JSON never pushes them d
   const choices = nodes.find(n => n.tag === 'select' && n.size === 5)
   assert.equal(choices.children.length, 1)
   assert.ok(nodes.indexOf(choices) < nodes.findIndex(n => n.type === 'url'))
-  const details = nodes.find(n => n.tag === 'details')
+  const details = nodes.find(n => n.tag === 'details' && findAll(n, child => child.tag === 'pre').length)
   assert.ok(details && !details.open)
   assert.ok(findAll(details, n => n.tag === 'pre')[0].textContent.includes('"providers"'))
   assert.ok(!nodes.find(n => n.role === 'status').textContent.includes('providerCount'))

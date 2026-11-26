@@ -1097,7 +1097,7 @@ export async function mount(root, ctx) {
   try { return await mountTraced(root, ctx) }
   catch {
     root.innerHTML = ''
-    root.append(el('p', '', 'Deva 0.8.37 · 客户端初始化失败，模型尚未读取。'))
+    root.append(el('p', '', 'Deva 0.8.38 · 客户端初始化失败，模型尚未读取。'))
     const retry = button('重试加载模型页', 'deva-btn')
     retry.onclick = () => { void mount(root, ctx) }
     root.append(retry)
@@ -1116,7 +1116,7 @@ async function mountTraced(root, ctx) {
   const original = ctx
   const trace = event => {
     if (ctx.signal?.aborted) return
-    const payload = { side: 'client', version: '0.8.37', revision: 'not-exposed-by-sdk', attempt, ...event }
+    const payload = { side: 'client', version: '0.8.38', revision: 'not-exposed-by-sdk', attempt, ...event }
     Promise.resolve().then(() => original.rpc.call('model-ui-trace', payload)).catch(() => {})
   }
   root.innerHTML = ''
@@ -1126,11 +1126,11 @@ async function mountTraced(root, ctx) {
   retryTop.hidden = true
   retryTop.onclick = () => { cleanup(); void mount(root, original) }
   const content = el('div', '')
-  const version = el('small', '', 'Deva 0.8.37 · 候选 0 个 · 正在读取')
+  const version = el('small', '', 'Deva 0.8.38 · 候选 0 个 · 正在读取')
   version.style.cssText = 'position:sticky;top:0;z-index:10;background:var(--bg-card,#fff);display:block;padding:4px 12px;color:var(--text-secondary,#666);font-size:11px'
   root.append(version, status, retryTop, content)
   let candidateCount = 0, phase = '正在读取'
-  const showStage = () => { version.textContent = `Deva 0.8.37 · 候选 ${candidateCount} 个 · ${phase}` }
+  const showStage = () => { version.textContent = `Deva 0.8.38 · 候选 ${candidateCount} 个 · ${phase}` }
   const disposers = []
   const measure = () => observeSafely(() => {
     for (const [element, node] of [['root', root], ['candidates', content.querySelector('select[size]')], ['diagnostic', content.querySelector('input[readonly]')], ['status', status]]) trace({ phase: 'geometry', element, ...probeGeometry(node, window) })
@@ -1169,7 +1169,7 @@ async function mountTraced(root, ctx) {
   let observer
   const cleanup = () => { for (const dispose of disposers) observeSafely(dispose); observeSafely(() => observer?.disconnect()); observeSafely(() => window.removeEventListener('error', onError)); observeSafely(() => window.removeEventListener('unhandledrejection', onError)) }
   ctx.signal?.addEventListener('abort', cleanup, { once: true })
-  const counts = () => observeSafely(() => { candidateCount = content.querySelectorAll('select[size] option').length; if (content.querySelector('.deva-status.error')?.textContent) phase = '读取失败，详见下方原因'; else if (!candidateCount && phase === '读取完成') phase = '没有匹配的模型，请检查配置或筛选'; showStage(); trace({ phase: 'rendered', count: candidateCount }); scheduleMeasure() })
+  const counts = () => observeSafely(() => { candidateCount = content.querySelectorAll('select[size] option').length; if (content.querySelector('.deva-status.error')?.textContent) phase = content.querySelector('.deva-status.error').textContent; else if (content.querySelector('.deva-discovery-result')?.textContent.match(/获取失败|读取桌面失败|Fetch failed|Desktop read failed/)) phase = content.querySelector('.deva-discovery-result').textContent; else if (!candidateCount && phase === '读取完成') phase = '没有匹配的模型，请检查配置或筛选'; showStage(); trace({ phase: 'rendered', count: candidateCount }); scheduleMeasure() })
   let queued = false
   observeSafely(() => { observer = new MutationObserver(() => { if (!queued) { queued = true; queueMicrotask(() => { queued = false; if (!ctx.signal?.aborted) counts() }) } })
   observer.observe(content, { childList: true, subtree: true }) })
@@ -1184,7 +1184,7 @@ async function mountTraced(root, ctx) {
     status.hidden = true
     status.textContent = ''
     counts()
-    observeSafely(() => revealModelChoices(content.querySelector('select[size]'), window.innerHeight))
+    observeSafely(() => content.querySelector('.deva-model-candidates')?.scrollIntoView({ block: 'nearest' }))
   } catch (error) { fail(error) }
   return cleanup
 }
@@ -1219,7 +1219,7 @@ export function modelRpcDiagnostics(ctx, output, getKey = () => '', timeoutMs = 
   const safeUrl = value => {
     try { const url = new URL(value); url.search = ''; url.hash = ''; url.username = ''; url.password = ''; return url.href } catch { return 'unavailable' }
   }
-  const state = { version: '0.8.37', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
+  const state = { version: '0.8.38', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
   observeSafely(() => { if (typeof window !== 'undefined') {
     state.url = safeUrl(window.location.href)
     state.origin = window.origin
@@ -1273,6 +1273,10 @@ export function modelRpcDiagnostics(ctx, output, getKey = () => '', timeoutMs = 
   }
 }
 
+export function mergeModelCandidates(local, remote) {
+  return [...local, ...remote.filter((model, index) => !local.some(item => item.id === model.id) && remote.findIndex(item => item.id === model.id) === index)]
+}
+
 // The discovery panel stays inside the existing form; manual model entry remains available.
 function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syncPreview, setBusy, saveSelected, reloadDesktop }) {
   const zh = pickLocale(ctx.locale).startsWith('zh')
@@ -1291,7 +1295,15 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
   const remote = button(copy('刷新远端模型列表', 'Refresh remote models'), 'deva-btn deva-model-discover')
   const actions = el('div', 'deva-discovery-actions')
   actions.append(fetchModels, remote)
-  body.append(message, choices, search, actions, detail)
+  message.className += ' deva-discovery-result'
+  const cards = el('div', 'deva-model-candidates')
+  cards.setAttribute('role', 'group')
+  cards.setAttribute('aria-label', copy('候选模型', 'Model candidates'))
+  cards.style.cssText = 'display:flex;flex-direction:column;gap:6px;max-height:240px;overflow:auto;min-width:0'
+  body.append(message, cards, search, actions, detail)
+  const native = el('details', '')
+  native.append(el('summary', '', copy('原生选择器', 'Native selector')), choices)
+  body.append(native)
   const commitSelection = button(copy('保存所选模型并设为默认', 'Save selected model as default'), 'deva-btn primary deva-model-discover')
   commitSelection.hidden = true
   commitSelection.onclick = () => saveSelected()
@@ -1317,6 +1329,7 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
     fetchModels.disabled = busy
     remote.disabled = busy || !ready
     search.disabled = choices.disabled = busy
+    for (const card of cards.children) card.disabled = busy
     commitSelection.disabled = busy
     for (const input of Object.values(limits)) input.disabled = busy
   }
@@ -1327,16 +1340,21 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
     models = desktopLocal = []
     search.value = ''
     search.hidden = choices.hidden = detail.hidden = true
-    choices.innerHTML = ''
+    choices.innerHTML = ''; cards.innerHTML = ''
     message.textContent = copy('填写 Base URL 和 API Key，或使用此地址已设置的 Key。也可直接手填模型名。', 'Enter a Base URL and API key, or use the saved key for this address. Manual model entry is also available.')
     refresh()
   }
   const filter = () => {
-    choices.innerHTML = ''
+    choices.innerHTML = ''; cards.innerHTML = ''
     for (const model of models.filter(m => m.id.toLowerCase().includes(search.value.toLowerCase()))) {
       const item = el('option', '', model.providerName ? `${model.providerName} / ${model.id}` : model.id)
       item.value = model.ref || model.id
       choices.append(item)
+      const card = button(item.textContent, 'deva-btn deva-model-discover')
+      card.style.cssText = 'text-align:start;white-space:normal;overflow-wrap:anywhere;min-height:36px;flex-shrink:0'
+      card.setAttribute('aria-pressed', String(item.value === (choose.value || name.value)))
+      card.onclick = () => { choices.value = item.value; choices.onchange(); for (const child of cards.children) child.setAttribute('aria-pressed', String(child === card)) }
+      cards.append(card)
     }
     choices.value = models.find(m => m.id === name.value && (!m.ref || m.ref === choose.value))?.ref || name.value
   }
@@ -1356,8 +1374,8 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
     detail.textContent = model.id + '\n' + Object.entries(limits).map(([id, input]) => `${input.ariaLabel}: ${model[id] ?? copy('未提供', 'Not provided')}`).join('\n')
     syncPreview()
   }
-  remote.onclick = async () => {
-    if (remote.disabled || ctx.signal?.aborted) return
+  const fetchRemote = async () => {
+    if (ctx.signal?.aborted) return
     setBusy(true)
     message.textContent = copy('正在获取模型列表…', 'Fetching models…')
     try {
@@ -1366,20 +1384,22 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
         ...(key.value ? { apiKey: key.value } : {}),
       })
       if (ctx.signal?.aborted) return
-      models = [...desktopLocal, ...result.models.filter(m => !desktopLocal.some(local => local.id === m.id))]
+      models = mergeModelCandidates(desktopLocal, result.models)
       message.textContent = models.length ? copy(`已获取 ${models.length} 个模型，请选择；仍可手动填写。`, `${models.length} models available; select one or enter manually.`) : copy('接口返回空模型列表，请手动输入模型名或检查供应商。', 'The provider returned an empty list. Enter a model manually or check the provider.')
       search.hidden = choices.hidden = !models.length
       filter()
     } catch (error) {
       if (!ctx.signal?.aborted) message.textContent = copy('获取失败：', 'Fetch failed: ') + errorText(error)
-    } finally { if (!ctx.signal?.aborted) setBusy(false) }
+    } finally { if (!ctx.signal?.aborted) { setBusy(false); observeSafely(() => cards.scrollIntoView({ block: 'nearest' })) } }
   }
+  remote.onclick = fetchRemote
   fetchModels.onclick = async () => {
     if (busy || ctx.signal?.aborted) return
     setBusy(true)
     try {
       const settings = await ctx.rpc.call('get-model-selection')
       reloadDesktop(settings)
+      await fetchRemote()
     } catch (error) { message.textContent = copy('读取桌面失败：', 'Desktop read failed: ') + errorText(error) }
     finally { setBusy(false) }
   }

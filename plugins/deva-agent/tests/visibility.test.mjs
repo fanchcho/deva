@@ -39,3 +39,9 @@ test('host Unauthorized errors retain the visible HTTP 401 meaning', async () =>
   await assert.rejects(call('get-model-selection'), /HTTP 401/)
   assert.equal(JSON.parse(output.value).http, 401)
 })
+
+test('model merge preserves local references and removes duplicate remote ids', async () => {
+  const { mergeModelCandidates } = await import('../client.mjs')
+  const local = [{id:'a',ref:'p:a'}, {id:'a',ref:'q:a'}]
+  assert.deepEqual(mergeModelCandidates(local,[{id:'a'},{id:'b'},{id:'b'}]), [...local,{id:'b'}])
+})
