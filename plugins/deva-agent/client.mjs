@@ -1082,7 +1082,7 @@ export function probeGeometry(node, win) {
   return { present: 1, top: r.top, bottom: r.bottom, left: r.left, width: r.width, height: r.height,
     offsetHeight: node.offsetHeight, clientHeight: node.clientHeight, viewportHeight: win.innerHeight,
     documentHeight: win.document.documentElement.scrollHeight,
-    inViewport: r.bottom > 0 && r.top < win.innerHeight && r.right > 0 && r.left < win.innerWidth ? 1 : 0,
+    inViewport: r.height > 0 && r.width > 0 && r.bottom > 0 && r.top < win.innerHeight && r.right > 0 && r.left < win.innerWidth ? 1 : 0,
     display: style.display, visibility: style.visibility, opacity: style.opacity, overflow: style.overflow,
     scrollHeight: scroll?.clientHeight ?? win.document.documentElement.clientHeight }
 }

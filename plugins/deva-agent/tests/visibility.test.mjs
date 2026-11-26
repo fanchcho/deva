@@ -16,6 +16,8 @@ test('geometry distinguishes present offscreen candidates and collapsed iframe',
   assert.equal(off.present, 1); assert.equal(off.inViewport, 0); assert.equal(off.scrollHeight, 180)
   node.getBoundingClientRect = () => ({ top: 0, bottom: 0, left: 0, right: 320, width: 320, height: 0 })
   assert.equal(probeGeometry(node, win).inViewport, 0)
+  node.getBoundingClientRect = () => ({ top: 50, bottom: 50, left: 0, right: 320, width: 320, height: 0 })
+  assert.equal(probeGeometry(node, win).inViewport, 0)
   assert.deepEqual(probeGeometry(null, win), { present: 0 })
 })
 
