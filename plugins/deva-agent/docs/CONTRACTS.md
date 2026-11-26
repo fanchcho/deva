@@ -351,3 +351,9 @@ get-model-selection/list-provider-models 等待上限20秒，超时显示 RPC_TI
 读取不迁移。明确保存才在同一个 config.json 中写当前桌面规范 models 段，同时保留并同步已存在的提供商/地址/默认引用别名。旧模型字符串可在保存时转成对象；未知扩展字段保留。未改动的规范提供商按原对象保留，避免给无关字段补默认值。此为插件兼容策略，不宣称所有历史桌面程序都接受迁移后的字段类型。
 
 新增 modelSettingsView.desktopProviders：包括没有模型的 provider，公开 id/name/baseUrl/models(id/name)，不包含 secrets/headers。页面展示完整本地目录与默认引用；远端依旧只按用户明确点击补充。desktopDiagnostics 含 step、json=parsed、路径/stat/条数/具体失败原因。
+
+## 页面取证日志 0.8.32
+
+model-ui-trace RPC 接收 uiTraceInput 并返回 uiTraceResult。日志写安装插件目录 diagnostics/model-ui.jsonl，目录0700、文件0600，当前文件256KiB后滚动到单份.1。只记录阶段/方法/状态/耗时/计数等元数据；不记录RPC输入、配置正文、Key或原始异常文本。client报告不等同于可信HTTP访问日志。revision不是ClientContext公开字段，明确记录not-exposed-by-sdk，需和当时registry快照关联。
+
+宿主client资源GET与iframe初始化发送没有插件SDK钩子，无法在插件内直接记录；mount事件只能证明初始化已到达并执行。无日志不能推出未请求client、未mount或用户点了宿主页面。服务器resolved阶段HTTP由宿主控制，记录host-owned，不伪造200。

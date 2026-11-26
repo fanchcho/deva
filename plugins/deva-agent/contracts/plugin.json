@@ -2115,6 +2115,93 @@
         "models"
       ],
       "additionalProperties": false
+    },
+    "uiTraceInput": {
+      "type": "object",
+      "description": "Page lifecycle telemetry without secrets.",
+      "properties": {
+        "side": {
+          "type": "string",
+          "description": "Bounded diagnostic metadata; never credentials.",
+          "maxLength": 180
+        },
+        "phase": {
+          "type": "string",
+          "description": "Bounded diagnostic metadata; never credentials.",
+          "maxLength": 180
+        },
+        "method": {
+          "type": "string",
+          "description": "Bounded diagnostic metadata; never credentials.",
+          "maxLength": 180
+        },
+        "version": {
+          "type": "string",
+          "description": "Bounded diagnostic metadata; never credentials.",
+          "maxLength": 180
+        },
+        "revision": {
+          "type": "string",
+          "description": "Bounded diagnostic metadata; never credentials.",
+          "maxLength": 180
+        },
+        "route": {
+          "type": "string",
+          "description": "Bounded diagnostic metadata; never credentials.",
+          "maxLength": 180
+        },
+        "readyState": {
+          "type": "string",
+          "description": "Bounded diagnostic metadata; never credentials.",
+          "maxLength": 180
+        },
+        "errorType": {
+          "type": "string",
+          "description": "Bounded diagnostic metadata; never credentials.",
+          "maxLength": 180
+        },
+        "http": {
+          "type": "string",
+          "description": "Bounded diagnostic metadata; never credentials.",
+          "maxLength": 180
+        },
+        "attempt": {
+          "type": "string",
+          "description": "Bounded diagnostic metadata; never credentials.",
+          "maxLength": 180
+        },
+        "elapsedMs": {
+          "type": "number",
+          "description": "Measured count or milliseconds."
+        },
+        "count": {
+          "type": "number",
+          "description": "Measured count or milliseconds."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "phase"
+      ]
+    },
+    "uiTraceResult": {
+      "type": "object",
+      "description": "Confirmed trace append location.",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "Append succeeded."
+        },
+        "logPath": {
+          "type": "string",
+          "description": "Absolute restricted log path."
+        }
+      },
+      "required": [
+        "ok",
+        "logPath"
+      ],
+      "additionalProperties": false
     }
   },
   "rpc": {
@@ -2217,6 +2304,11 @@
       "description": "通过批准的 Base URL 获取模型列表，不回退宿主目录",
       "input": "modelDiscoveryInput",
       "output": "modelDiscoveryView"
+    },
+    "model-ui-trace": {
+      "description": "Append bounded page lifecycle diagnostics, never model inputs or credentials.",
+      "input": "uiTraceInput",
+      "output": "uiTraceResult"
     }
   },
   "tools": {},
