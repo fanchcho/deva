@@ -78,7 +78,9 @@ Studio MCP 连接配置保留在宿主，旧桌面 MCP 文件不迁入 Studio。
 - 迁移只对授权账号发生：匹配同地址＋模型的 Desktop provider 时重用；否则导入一个独立提供方。已有有效桌面默认不覆盖，旧选择保留在候选项里；没有有效默认才采用可迁移旧值。迁移成功后删除原私有路由；需要批准的新增地址未经允许时明确报错并保留旧记录。只有旧 Studio 目录 ID、没有可解释的路由时提示重新选择。
 - API Key 存 Studio 服务端用户 + Profile，按 providerId 与规范化 Base URL 绑定；不写 Desktop 配置，不读/解密 Electron safeStorage 明文。省略保留，空串清除；已存在桌面凭据的 provider 更换 URL 被拒。修改环境复用同一 Desktop 路径时，不把旧地址 Key 带到新地址。
 - 本机、内网与 HTTP 只有在管理员精确配置 `modelTrustedBases` 时允许直连。旧 `allowNonPublic` 输入与 `modelNetworkConsent` 不会授予网络权限。DNS 固定、出站不继承重定向；错误状态、非 SSE 或连接失败不回退。新版强度 `low/medium/high/xhigh/max` 写桌面 `activeEffort`，默认不发送；旧版专有 `minimal` 不改写成其他档位。
-- `global` 模型目录保留稳定 ID `deva-direct`；有配置才返回，目录不含 Base URL 或 Key。会话显式强度仍优先于默认，直连被上游拒绝时不移除参数偷偷重试。
+- `global.listModels` 返回 SDK `AgentModelCatalog`：桌面启用项 + 每个已启用 OpenAI provider 的 `/models` 去重结果，`scope=available`，不返回 Key/路由地址。远端失败不清空本地项，原因进入 `message`；没有候选且失败时为 `status=error`。宿主 0.8.30 对 ready 的 message 不显示，详细原因在插件模型页查看。
+- 具体项 ID 为 `deva-model:` + `encodeURIComponent(providerId:modelId)`；模型名可含冒号。空 model、`default` 和旧 `deva-direct` 跟随身份/桌面默认；`default` 为 SDK 默认条目，旧 ID 以 hidden 条目保留兼容。宿主自己生成“Agent 默认模型”行并去重默认的具体模型。
+- 会话具体选择由 Studio 保存并以 `run.model.model` 注入；global 运行优先解析它，provider 被删除/禁用或模型被明确禁用即报错，不回退。不修改 `~/.deva/config.json` 的默认引用或身份绑定，也不新增持久化目录真源。远端专有模型按已配置 provider 的地址与该账号/Profile 的凭据运行；所有真实网络仍复核批准。会话显式强度优先于默认，上游拒绝时不移除参数重试。
 
 ## 会话内切换的两种文本入口
 

@@ -51,6 +51,10 @@ Studio 选中 Agent「Deva」并选模型
 
 Studio 直连只支持有明确 Base URL 的 OpenAI Chat Completions 模型。公网 HTTPS 可用；本机、内网和 HTTP 必须由管理员在 `modelTrustedBases` 批准确切地址，页面不能自行放行。直连失败直接报错，不替换为会话模型。无桌面路由时，`scoped` 仍用宿主会话模型；`global` 需要可用的桌面路由。详见 [契约](docs/CONTRACTS.md#自定义模型-apirpc存储与推理)。
 
+### 会话模型选择器
+
+在会话中选择 Deva → 全局 → 底部模型按钮，目录显示桌面本地模型与各 provider 远端 `/models` 的合并结果。“Agent 默认模型”表示跟随当前身份/桌面默认；点具体模型固定当前会话，不改桌面默认。弹窗“刷新”重新获取目录，失败保留本地项；详细批准/连接错误在 Deva 设置 → 模型查看。Studio 0.8.30 的新建会话弹窗点击即保存草稿，未单独提供保存按钮；已创建 global 会话的模型按钮由宿主禁用，本插件不改变该宿主限制。
+
 ## Agent 能力
 
 | 工具 | 用途 |

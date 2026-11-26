@@ -1,4 +1,5 @@
 import { desktopDiagnostics } from './desktop-diagnostics.mjs'
+import { resolveAgentModel } from './agent-model-ref.mjs'
 /** Desktop owns the route and the default; Studio owns only its server-side credentials. */
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
@@ -115,11 +116,12 @@ export async function readCustomModel(run, personaId) {
     return null
   }
   const desktop = await migrateLegacy(run, modelStore(run))
+  const explicit = run.mode === 'global' ? resolveAgentModel(desktop, run.model?.model) : null
   const selected = personaId ?? desktop.snapshot.value.personas?.selected
   const ref = selected && getPersona(run.config, selected)?.model
-  if (ref && !desktop.resolve(ref)) throw new Error(`身份模型引用失效：${ref}；请在 Deva → 模型 → 身份模型绑定重新选择`)
-  if (!ref && unresolvedActiveRef(desktop)) throw new Error(`桌面默认模型引用失效：${desktop.models.activeModelId}；请在 Deva → 模型重新选择`)
-  const route = (ref && desktop.resolve(ref)) || desktop.active
+  if (!explicit && ref && !desktop.resolve(ref)) throw new Error(`身份模型引用失效：${ref}；请在 Deva → 模型 → 身份模型绑定重新选择`)
+  if (!explicit && !ref && unresolvedActiveRef(desktop)) throw new Error(`桌面默认模型引用失效：${desktop.models.activeModelId}；请在 Deva → 模型重新选择`)
+  const route = explicit || (ref && desktop.resolve(ref)) || desktop.active
   if (!route) return null
   if (route.adapter !== 'openai' || !route.baseUrl) {
     throw new Error('当前桌面模型没有可用于 Chat Completions 的地址或适配器；未回退')

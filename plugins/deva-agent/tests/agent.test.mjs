@@ -409,6 +409,7 @@ test('global mode runs on the configured direct model with the chosen effort and
   const { dir, cleanup } = await workspace()
   const seen = []
   const upstream = createServer((req, res) => {
+    if (req.url === '/v1/models') { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ data: [{ id: 'remote-only' }, { id: 'mine' }] })); return }
     let body = ''
     req.on('data', chunk => { body += chunk })
     req.on('end', () => {
@@ -430,20 +431,23 @@ test('global mode runs on the configured direct model with the chosen effort and
     assert.equal((await def.modes.global.listModels(management)).status, 'empty')
     await saveModelSelection(run, { baseUrl, modelName: 'mine', allowNonPublic: true, reasoningEffort: 'medium' })
     const catalog = await def.modes.global.listModels(management)
-    assert.deepEqual(catalog.models.map(model => [model.id, model.name, model.isDefault, model.reasoningEfforts.join()]), [['deva-direct', 'mine', true, 'low,medium,high,xhigh,max']])
+    assert.equal(catalog.models.find(m => m.id === 'default').isDefault, true)
+    assert.ok(catalog.models.some(m => m.name === 'remote-only'))
     // 改模型名后目录 id 不变，已记住该 id 的会话不会被宿主判为「模型已不可用」。
     await saveModelSelection(run, { baseUrl, modelName: 'renamed', allowNonPublic: true })
-    assert.deepEqual((await def.modes.global.listModels(management)).models.map(model => [model.id, model.name]), [['deva-direct', 'renamed']])
+    assert.equal((await def.modes.global.listModels(management)).models.find(m => m.id === 'deva-direct').name, 'renamed')
     await saveModelSelection(run, { baseUrl, modelName: 'mine', allowNonPublic: true })
     const session = await def.runtime.createSession(run)
     const turn = model => session.run({ input: [{ type: 'text', text: 'hello' }], history: [], instructions: [], options: {} }, globalRun(model))
     try {
       assert.equal((await turn({})).content[0].text, 'global-ok')
       assert.equal((await turn({ model: 'deva-direct', reasoningEffort: 'high' })).content[0].text, 'global-ok')
+      assert.equal((await turn({ model: catalog.models.find(m => m.name === 'remote-only').id })).content[0].text, 'global-ok')
       await assert.rejects(turn({ model: 'deva-direct', reasoningEffort: 'ultra' }), /模型强度 ultra 不受支持/)
       assert.deepEqual(seen, [
         { path: '/v1/chat/completions', model: 'mine', reasoning_effort: 'medium', authPresent: false },
         { path: '/v1/chat/completions', model: 'mine', reasoning_effort: 'high', authPresent: false },
+        { path: '/v1/chat/completions', model: 'remote-only', reasoning_effort: 'medium', authPresent: false },
       ])
     } finally { await session.dispose() }
   } finally {

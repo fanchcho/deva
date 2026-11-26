@@ -11,7 +11,8 @@ import { readFileSync } from 'node:fs'
 import { IDENTITY_META } from './identities.mjs'
 import { resolveIdentityId } from './selection.mjs'
 import { loadIdentityRecord } from './deva-home.mjs'
-import { listConfiguredModels, readCustomModel, resolveRunEffort } from './model-selection.mjs'
+import { readCustomModel, resolveRunEffort } from './model-selection.mjs'
+import { listAgentModels } from './agent-model-catalog.mjs'
 import { createCustomModel } from './studio-model.mjs'
 import { applyInputIdentity } from './commands.mjs'
 import { buildSystemPrompt } from './prompt.mjs'
@@ -193,7 +194,7 @@ export function createAgentDefinition({ log = console, runTurn = runAgentTurn, i
       global: {
         async listModels(ctx) {
           if (!plugin) throw new Error('Deva 模型目录需要插件上下文')
-          return listConfiguredModels({ identity: ctx.identity, state: plugin.state, config: plugin.config, desktopActivationUserId: plugin.identity?.userId })
+          return listAgentModels({ identity: ctx.identity, signal: ctx.signal, state: plugin.state, config: plugin.config, desktopActivationUserId: plugin.identity?.userId })
         },
       },
     },
