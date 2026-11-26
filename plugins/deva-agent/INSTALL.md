@@ -1,5 +1,7 @@
 # Deva Agent 安装、更新和回滚：Ekko Studio 0.8.30
 
+**当前 0.8.37 升级入口见 [交付与升级](docs/DELIVERY.md)。** Git 推送与镜像更新不会自动替另一台 Studio 安装插件；请使用目标服务端可访问的已解包目录升级。下文旧版本号用于保留历史验收记录。
+
 **Studio 不支持把源码 bundle 或 `.tgz` 直接上传、导入为插件。** 本轮验证的官方安装入口是「插件中心」或管理 API：把**已解包的成品目录放到 Studio 服务端**，让 Studio 从其绝对路径复制和注册。Git bundle 能恢复源码，不是即装即用的离线安装包。
 
 执行记录（2026-11-25）：本机 Studio 0.8.30 已热装 **Deva 0.8.17**，并用 `GET /api/studio/plugins` 读回 active / enabled（版本与 revision 见本轮报告）。发布件跟随 [deva-agent-v0.8.17](https://github.com/fanchcho/deva/tree/deva-agent-v0.8.17)。插件 ID `deva`，Agent ID `plugin:deva/deva`。Windows 请看 [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md)。
