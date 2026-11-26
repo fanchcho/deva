@@ -9,7 +9,7 @@
       "views": {
         "identity": "Identity",
         "mcp": "MCP",
-        "model": "Model"
+        "model": "Model · Deva 0.8.30"
       }
     },
     "zh": {
@@ -18,7 +18,7 @@
       "views": {
         "identity": "身份",
         "mcp": "MCP",
-        "model": "模型"
+        "model": "模型 · Deva 0.8.30"
       }
     },
     "zh-TW": {
@@ -27,7 +27,7 @@
       "views": {
         "identity": "身分",
         "mcp": "MCP",
-        "model": "模型"
+        "model": "模型 · Deva 0.8.30"
       }
     },
     "ja": {
@@ -36,7 +36,7 @@
       "views": {
         "identity": "アイデンティティ",
         "mcp": "MCP",
-        "model": "モデル"
+        "model": "モデル · Deva 0.8.30"
       }
     },
     "ko": {
@@ -45,7 +45,7 @@
       "views": {
         "identity": "아이덴티티",
         "mcp": "MCP",
-        "model": "모델"
+        "model": "모델 · Deva 0.8.30"
       }
     },
     "fr": {
@@ -54,7 +54,7 @@
       "views": {
         "identity": "Identité",
         "mcp": "MCP",
-        "model": "Modèle"
+        "model": "Modèle · Deva 0.8.30"
       }
     },
     "es": {
@@ -63,7 +63,7 @@
       "views": {
         "identity": "Identidad",
         "mcp": "MCP",
-        "model": "Modelo"
+        "model": "Modelo · Deva 0.8.30"
       }
     },
     "de": {
@@ -72,7 +72,7 @@
       "views": {
         "identity": "Identität",
         "mcp": "MCP",
-        "model": "Modell"
+        "model": "Modell · Deva 0.8.30"
       }
     },
     "pt": {
@@ -81,7 +81,7 @@
       "views": {
         "identity": "Identidade",
         "mcp": "MCP",
-        "model": "Modelo"
+        "model": "Modelo · Deva 0.8.30"
       }
     },
     "ru": {
@@ -90,7 +90,7 @@
       "views": {
         "identity": "Идентичность",
         "mcp": "MCP",
-        "model": "Модель"
+        "model": "Модель · Deva 0.8.30"
       }
     },
     "ar": {
@@ -99,7 +99,7 @@
       "views": {
         "identity": "الهوية",
         "mcp": "MCP",
-        "model": "النموذج"
+        "model": "النموذج · Deva 0.8.30"
       }
     },
     "tr": {
@@ -108,11 +108,11 @@
       "views": {
         "identity": "Kimlik",
         "mcp": "MCP",
-        "model": "Model"
+        "model": "Model · Deva 0.8.30"
       }
     }
   },
-  "version": "0.8.29",
+  "version": "0.8.30",
   "apiVersion": 1,
   "author": {
     "name": "Deva"
@@ -152,7 +152,7 @@
     },
     {
       "id": "model",
-      "title": "模型",
+      "title": "模型 · Deva 0.8.30",
       "slot": "agent-settings",
       "icon": "settings",
       "order": 2

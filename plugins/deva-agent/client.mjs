@@ -1076,6 +1076,8 @@ export async function mount(root, ctx) {
 
   const container = el('div', 'deva-settings')
   root.append(container)
+  if (ctx.view === 'model') container.append(el('p', 'deva-value-preview',
+    locale.startsWith('zh') ? 'Deva 0.8.30 · 模型客户端已加载；正在读取桌面配置，路径与条数见下方诊断。' : 'Deva 0.8.30 · Model client loaded; desktop configuration path and counts appear in diagnostics below.'))
 
   // 路由变化会重新挂载，按 view 只渲染对应页面。
   if (ctx.view === 'mcp') await mountMcp(container, ctx, text)
@@ -1095,7 +1097,7 @@ export function modelRpcDiagnostics(ctx, output, getKey = () => '', timeoutMs = 
   const safeUrl = value => {
     try { const url = new URL(value); url.search = ''; url.hash = ''; url.username = ''; url.password = ''; return url.href } catch { return 'unavailable' }
   }
-  const state = { version: '0.8.29', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
+  const state = { version: '0.8.30', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
   if (typeof window !== 'undefined') {
     state.url = safeUrl(window.location.href)
     state.origin = window.origin

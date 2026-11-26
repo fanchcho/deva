@@ -176,3 +176,11 @@ Windows 请比较桌面与 Studio 进程的 AI_UPPER_HOME / DEVA_HOME，以及�
 ### 0.8.27 旧形态核对
 
 若看到“不兼容的桌面模型配置字段”，记录诊断中的字段路径及 config.json 绝对路径，不要删除原配置或只复制 API Key。当前桌面读取的是 models.providers[].models[]、apiHost 和 models.activeModelId；provider/model/defaultModel/baseUrl 等别名未获当前桌面迁移代码支持，因此明确拒绝猜测转换。若实际桌面版本能读取这些形态，需要对应版本的读取代码或不含密钥的配置结构样本来补兼容。
+
+## 0.8.30：确认进入插件模型页
+
+入口是 Agent 管理 → Deva → 设置 → 模型 · Deva 0.8.30。hash 路由为 `/#/studio/plugin-agent-settings/deva/model`，不是 Studio 自带模型/供应商页。
+
+侧栏标题来自 manifest，独立于插件 client 执行；正文顶部“Deva 0.8.30 · 模型客户端已加载”证明 mount 已执行。只有标题没有正文标记时，尚不能认为 RPC 已发出，须检查宿主 iframe/模块加载。正文加载后路径、条数及错误仍由真实 RPC 诊断返回，不猜路径或把未知计数写成零。
+
+热装后重新加载 Studio 页面再从上述入口进入。标题与正文版本都应一致。若标题仍旧，刷新宿主目录；若标题新而正文旧或缺失，记录 iframe 加载错误。本版本只增加入口与加载阶段识别，不声称修复尚未复现的空白根因。插件无法在自身 JS 根本未执行时控制 iframe 正文，占位边界由宿主管理。
