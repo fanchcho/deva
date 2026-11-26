@@ -1,3 +1,4 @@
+import { writeUiTrace } from './ui-trace.mjs'
 import { callModel } from './model.mjs'
 import { ModelInputError, requestCustomModel } from './custom-model-network.mjs'
 import { resolveCustomEndpoint } from './model-selection.mjs'
@@ -50,9 +51,18 @@ export function createCustomModel(run, { baseUrl, modelName, apiKey, reasoningEf
     const reasoning = apiKey ? protectDelta(onReasoning, apiKey) : null
     const result = await callModel({
       ...options, apiMode: 'chat_completions', model: { model: modelName, ...(reasoningEffort ? { reasoningEffort } : {}) }, baseUrl, token: apiKey,
-      chatRequest: request => requestCustomModel(endpoint, request).catch(error => { throw /HTTP (401|403)；/.test(error.message)
+      chatRequest: request => {
+        // Observe only routing metadata from the actual serialized request, never headers or messages.
+        try {
+          const body = JSON.parse(request.body)
+          writeUiTrace({ side: 'server', phase: 'model-request', method: 'chat-completions',
+            modelName: body.model, reasoningEffort: body.reasoning_effort || 'omitted',
+            userId: run.identity?.userId, profile: run.identity?.profile })
+        } catch { /* Diagnostics must not prevent inference. */ }
+        return requestCustomModel(endpoint, request).catch(error => { throw /HTTP (401|403)；/.test(error.message)
         ? new Error(`${error.message}；Studio 侧 API Key ${apiKey ? '已设置但上游拒绝' : '未设置'}，请在 Deva → 模型保存该提供方的有效 Key；桌面密钥不会自动复制`)
-        : effortRejected(error, reasoningEffort) }),
+        : effortRejected(error, reasoningEffort) })
+      },
       onDelta: text?.emit ?? onDelta,
       onReasoning: reasoning?.emit ?? onReasoning,
     })

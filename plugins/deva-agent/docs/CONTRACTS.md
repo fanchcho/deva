@@ -365,3 +365,5 @@ model-ui-trace RPC 接收 uiTraceInput 并返回 uiTraceResult。日志写安装
 phase=geometry 每个element单独记录：root/candidates/diagnostic/status/iframe；present、top/left/width/height、offsetHeight/clientHeight、viewportHeight/documentHeight、display/visibility/opacity/overflow、inViewport及最近滚动祖先clientHeight(scrollHeight字段)。inViewport只表示矩形相交，不证明没被遮罩；点击hit和父文档iframe几何须一起看。渲染、resize、scroll后采样。固定状态区使用iframe内sticky，不能越过宿主遮罩或保证零高度iframe内可见。不能把无点击事件作为用户没点击的充分证据。
 
 几何诊断的 element=candidate-buttons 指普通按钮列表，native-select 指折叠原生选择框；top/bottom/height/inViewport 分别测量，不能跨对象推断可见性。服务端 version 来自安装包清单，clientVersion 来自实际下发模块元数据。
+
+服务端 model-request 诊断只记录序列化后的 modelName/reasoningEffort 与账号/Profile，不记录完整请求体、消息或密钥；不接收客户端指定这些字段。
