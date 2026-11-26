@@ -162,7 +162,7 @@ export async function formatSkillListing({ host, log, loadSkills = listSkills } 
   const enabled = skills.filter(item => item.enabled !== false && item.validationStatus !== 'invalid')
   if (!enabled.length) return ''
   return enabled
-    .map(item => `- ${item.name}：${String(item.description || '').trim() || '（无描述）'}`)
+    .map(item => `- ${item.name}${item.source === 'external' ? '（外部目录）' : ''}：${String(item.description || '').trim() || '（无描述）'}`)
     .join('\n')
 }
 

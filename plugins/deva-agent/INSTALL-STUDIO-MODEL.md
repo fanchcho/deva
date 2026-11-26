@@ -171,7 +171,7 @@ Windows 自检：安装 0.8.25，关闭重开 Studio 的 Deva 模型页；下拉
 
 打开模型页，先核对桌面默认模型下拉和读取诊断，再点「获取模型列表」。该按钮重新读取桌面配置；「刷新远端模型列表」才发起网络请求。无 Key 或远端失败仍可选择已有模型并保存。
 
-Windows 请比较桌面与 Studio 进程的 AI_UPPER_HOME / DEVA_HOME，以及运行账号的用户目录。若 Studio 在另一机器，默认 ~/.deva 指的是 Studio 服务器，无法读取 Windows 本地配置；必须使用在该设备运行的宿主或明确配置其可访问的 sharedDevaHome。核对页面 path、exists、stat、providerCount、modelCount；不存在、权限拒绝或 JSON 错误均按页面诊断处理，不要提交 secrets.json 或 API Key。桌面 Electron 的 safeStorage 密文不由插件解密。
+Windows 请比较桌面与 Studio 进程的 AI_UPPER_HOME / DEVA_HOME，以及运行账号的用户目录。若 Studio 在另一机器，默认 ~/.deva 指的是 Studio 服务器，无法读取 Windows 本地配置；必须使用在该设备运行的宿主或明确配置其可访问的 sharedDevaHome。核对页面 path、exists、stat、providerCount、modelCount；不存在、权限拒绝或 JSON 错误均按页面诊断处理，不要提交 secrets.json 或 API Key。**0.8.44 起**：同一 OS 用户、同一台机器上，插件会在服务端按需只读解密桌面 `secrets.json` 里同一 provider 的密文（Windows DPAPI CurrentUser；明文只在内存、不写回、不进日志、不回前端），因此桌面端存过的 Key 不必在 Studio 再填一遍。跨用户/跨机器仍不可解，页面会给出原因码（`dpapi-failed` 等）与确切路径；此时手填即可。
 
 ### 0.8.27 旧形态核对
 

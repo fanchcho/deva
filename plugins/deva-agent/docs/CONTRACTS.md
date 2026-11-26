@@ -69,7 +69,7 @@ Studio MCP 连接配置保留在宿主，旧桌面 MCP 文件不迁入 Studio。
 
 | RPC | 输入 | 行为 |
 | --- | --- | --- |
-| `get-model-selection` | `null` | 桌面默认的 `modelRef`、地址、模型名、强度、已启用的候选模型及身份绑定；只回显 Studio 密钥是否已设置 |
+| `get-model-selection` | `null` | 桌面默认的 `modelRef`、地址、模型名、强度、已启用的候选模型及身份绑定；回显密钥**状态与来源**（`hasApiKey`/`keySource`/`keySourceReadOnly`/`keyProblem`/`keyDiagnostics`），不回显值 |
 | `save-model-selection` | `{modelRef?,baseUrl,modelName,apiKey?,reasoningEffort?}` | 选择已有的桌面模型，更新所选提供方，或以空 ref 新建独立提供方；地址和模型名均为空可清除默认引用。输入被拒时返回字段级 `error` |
 | `save-persona-model` | `{personaId,modelRef}` | 只改身份文件的 `model`，空 ref 删除覆盖；读回同模型页 |
 
@@ -118,9 +118,9 @@ Studio MCP 连接配置保留在宿主，旧桌面 MCP 文件不迁入 Studio。
 | persona 内容 | `<root>/personas/<id>.md`（frontmatter + 正文） |
 | 默认 persona | `<root>/config.json → personas.selected` |
 | 会话选择 | `<root>/config.json → personas.sessionSelected[sessionId]` |
-| MCP | `<root>/mcp.json → mcpServers` + `config.json → mcp.enabled` |
+| MCP | Studio API 为权威；桌面 mcp.json 仅在 Studio 无同名项时遗留兜底 |
 | 模型 | `<root>/config.json → models.*` |
-| 密钥 | `<root>/secrets.json`（桌面 safeStorage，插件不读写） |
+| 密钥 | `<root>/secrets.json`（桌面 safeStorage 加密；0.8.44 起插件**只读**：按 providerId 取密文并按需 DPAPI 解密，明文只在内存、不写回、不落库、不进日志、不回前端） |
 
 规则：旧 `deva-agent/` 整目录备份到 `~/.deva-backups/` 后迁移并删除；插件不创建任何新的 `.deva` 顶层条目；
 `config.json` 顶层浅合并、段内未知键保留；persona 正文只读写唯一文件、不复制；损坏/权限异常明确报错。
@@ -328,7 +328,7 @@ modelSettingsView.desktopWriteMessage 是可选拒绝提示，含当前调用账
 
 模型页和「获取模型列表」读取桌面 config.json，不依赖 API Key。另设「刷新远端模型列表」作为补充，失败保留桌面候选。modelSettingsView.desktopDiagnostics 为 JSON 文本，包含 path/source/exists/stat/providerCount/modelCount/error；计数未知为 null。credentialError 只说明凭据读取错误，不使桌面列表失效。设置页展示已配置但未启用的模型，运行时启用过滤保持不变。
 
-路径优先级：显式 sharedDevaHome、AI_UPPER_HOME、DEVA_HOME、默认 ~/.deva。当前仓库桌面 config.ts 只支持 DEVA_HOME；AI_UPPER_HOME 是插件兼容项，不能声称桌面此版本已支持。诊断明确标明 env 来源。secrets.json 继续由桌面 safeStorage 管理，插件不解密、不覆盖，不把其不可读视为 config 模型不存在；远端请求使用服务端可用凭据。
+路径优先级：显式 sharedDevaHome、AI_UPPER_HOME、DEVA_HOME、默认 ~/.deva。当前仓库桌面 config.ts 只支持 DEVA_HOME；AI_UPPER_HOME 是插件兼容项，不能声称桌面此版本已支持。诊断明确标明 env 来源。secrets.json 仍由桌面 safeStorage 管理，插件不写回、不覆盖；0.8.44 起插件在服务端**按需只读解密**同一 provider 的密文（Windows DPAPI CurrentUser，密文经 stdin 交给 PowerShell，明文只在短时内存缓存），解密结果不落盘、不写入插件状态、不进日志、不回前端；不可读或解不开时按原因码给出诊断，不把其不可读视为 config 模型不存在。远端请求优先用插件侧保存的凭据，其次用桌面只读来源。
 
 ## 0.8.27 已有配置形态核对
 
@@ -367,3 +367,25 @@ phase=geometry 每个element单独记录：root/candidates/diagnostic/status/ifr
 几何诊断的 element=candidate-buttons 指普通按钮列表，native-select 指折叠原生选择框；top/bottom/height/inViewport 分别测量，不能跨对象推断可见性。服务端 version 来自安装包清单，clientVersion 来自实际下发模块元数据。
 
 服务端 model-request 诊断只记录序列化后的 modelName/reasoningEffort 与账号/Profile，不记录完整请求体、消息或密钥；不接收客户端指定这些字段。
+
+## Skill 页面 RPC
+
+- `get-skills`：读取 Studio 技能清单；输入 `empty`，输出 `skillListPage`。
+- `get-skill`：读取完整技能正文；输入 `skillTarget`，输出 `skillRecord`。
+- `save-skill`：创建或更新技能正文；输入 `skillDraft`，输出 `skillRecord`。
+- `set-skill-enabled`：启停并核对实际状态，不修改过滤规则；输入 `skillEnabled`，输出 `skillRecord`。
+- `delete-skill`：删除宿主技能；输入 `skillTarget`，输出 `skillTarget`。
+- `get-skill-files`：读取支持文件清单；输入 `skillTarget`，输出 `skillFiles`。
+- `read-skill-file`：读取支持文件正文；输入 `skillFile`，输出 `skillContent`。
+- `get-skill-directories`：读取外部目录；输入 `empty`，输出 `skillDirectories`。
+- `save-skill-directories`：保留原目录并注册配置推导的 Deva skills 目录；输入 `empty`，输出 `skillDirectories`。
+
+外部目录 PUT 请求为 `{directories: string[]}`。不新增插件存储。支持文件只读；目录注册不等于文件创建或权限授权。404 保留宿主原因，页面其它技能仍可读取。
+
+## Skill 接口边界与安装可见性
+
+`importSkill` **未支持**：当前宿主 OpenAPI 的 `/api/ekko/skills/import` 没有明确请求体，插件不猜测参数。
+外部目录注册只保存目录清单，不创建目录或技能，也不保证索引成功。请核对目录 exists/isDir 警告与技能列表。实际外部来源可提供 `sourcePath`（来源根目录，不是 SKILL.md 文件路径），页面按宿主原值展示。支持文件只能位于 references/、templates/、scripts/、assets/ 下；技能根目录的其它文件不会列出且读取会被拒绝。
+安装成品应先解压，选择包含 plugin.json/package.json 的 package 目录作为安装来源；不能把 zip/tgz 路径直接作为来源。安装后重新加载设置页面或重启 Studio 客户端，才能让已有界面重新读取包含 Skill 页的 manifest/client；服务端热装不代表其他设备已经加载新页面。
+
+外部技能的 edit/delete 由宿主拒绝（400 Only local skills can be edited/deleted）。新建接口不声明外部目标目录，不能承诺落盘到调用者指定的临时目录；本插件不猜测 path/directory 参数。外部样本的真实验证包含读取、支持文件、启停和拒绝编辑/删除，不等同于 local CRUD 成功。

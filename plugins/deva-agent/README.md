@@ -20,8 +20,7 @@
 - 只暴露一个 Agent：插件不再按身份各注册一个固定 Agent；身份在会话内切换（见下）
 - 通过 **Agent 管理 → Deva → 设置** 打开设置页；插件不注册单独的主导航快捷入口：
   - **身份**（`views: identity`）：新增、编辑身份直接写 `~/.deva/personas/*.md`（保留桌面专属字段）；默认/会话选择写在桌面 `config.json → personas.selected/sessionSelected`
-  - **MCP**（`views: mcp`）：管理与桌面同构的 MCP 服务（`~/.deva/mcp.json` + `config.json.mcp.enabled`）——
-    新增、改配置、启停、测试、删除。Studio 自己的 MCP 列表完全不受影响
+  - **MCP**（`views: mcp`）：读写 Studio `/api/ekko/mcp/servers`；插件只保存本 Agent 勾选的服务名
   - **模型**（`views: model`）：默认「跟随会话当前选择」，也可手填 Base URL、模型名和可选 API Key。
 
 ## 它怎么跑
@@ -161,7 +160,7 @@ Gemini 3 起每步的第一个工具调用必须带思考签名，缺了整个�
 | 默认 persona | `config.json → personas.selected`（personas 段内的扩展键；桌面 `getConfig()` 可读，`writeEnabledMap` 合并保留） |
 | 会话选择 | `config.json → personas.sessionSelected[sessionId]` |
 | persona 启停/排序 | `config.json → personas.enabled/order` |
-| MCP | `mcp.json → mcpServers` + `config.json → mcp.enabled` |
+| MCP | Studio API 为权威；桌面 mcp.json 仅兼容未在 Studio 登记的旧服务 |
 | 模型 | `config.json → models.providers/activeModelId` |
 | 密钥 | 桌面 `secrets.json`（插件不读写密文） |
 
@@ -195,7 +194,7 @@ POST /api/studio/plugins/deva/invoke  {"kind":"rpc","name":"delete-mcp-server","
 `{servers:[{name,transport,managed,enabled}], selected}`（不含连接配置与密钥），
 `save-mcp-selection` 只接受 Studio 规则的服务名（字母或数字开头，可含点、下划线、连字符）、去重、最多 32 个。
 
-MCP 服务 CRUD 走桌面同构文件（`~/.deva/mcp.json` + `config.json.mcp.enabled`），与 Studio「MCP」页互不影响：`get-mcp-server` 是唯一下发连接配置的接口
+MCP 服务 CRUD 以 Studio `/api/ekko/mcp/servers` 为权威来源；插件只保存当前账号/Profile 勾选的服务名：`get-mcp-server` 是唯一下发连接配置的接口
 （编辑回填用），`create-mcp-server` 配置交给 Studio 规范化（只认 `stdio` 与 `streamable_http`），
 `update-mcp-server` 整体替换配置、服务不存在时报错，`set-mcp-server-enabled` 启停，
 `test-mcp-server` 让 Studio 连一次并列工具（停用或连不上时报错，不返回空表），`delete-mcp-server` 删除。
@@ -240,3 +239,17 @@ https://github.com/EKKOLearnAI/ekko-studio/blob/61cda7e6c1d0b7b17f6394a8c4f3822e
 历史附件与本轮附件统一做授权根/预算/过期校验；二进制仅返回明确的 metadata_only 和绝对路径。MCP 配置编辑对 env/headers 采用固定掩码：未改保留、新字符串替换、null 清除。Agent 已实现 checkpoint 恢复，完成调用不重放，结果未知时先核对。
 
 插件设置新增附件预算与显式授权根；高风险工具审批和 Hermes/Ekko 普通单聊 compression **默认关闭**。后者运行时探测宿主接口，不改变 Deva 的历史。详细默认值、错误码、迁移、审批覆盖面、恢复限制与发布条件见 [运行说明](docs/OPERATIONS.md)。真实 Desktop 验证状态见本轮审计报告，未把 mock 测试当作实际挂载通过。
+
+## Skill 设置页
+
+技能页读写 Studio 技能接口，展示来源、真实路径（未提供时明确提示）、诊断和正文。启停后读回确认；过滤规则不会被自动删除。支持文件仍通过 skill_view 读取，不支持写入。外部目录按钮保留已有目录并追加由 sharedDevaHome / DEVA_HOME / 用户 home 推导的 skills 目录。注册不会创建文件或授予文件权限。
+
+MCP 汇总分别为总计、已启用、Studio 托管、工具数；托管是宿主 managed 标志，与启用独立。非托管服务仍在 Studio 保存，不表示插件自存。
+
+## Skill 接口边界与安装可见性
+
+`importSkill` **未支持**：当前宿主 OpenAPI 的 `/api/ekko/skills/import` 没有明确请求体，插件不猜测参数。
+外部目录注册只保存目录清单，不创建目录或技能，也不保证索引成功。请核对目录 exists/isDir 警告与技能列表。实际外部来源可提供 `sourcePath`（来源根目录，不是 SKILL.md 文件路径），页面按宿主原值展示。支持文件只能位于 references/、templates/、scripts/、assets/ 下；技能根目录的其它文件不会列出且读取会被拒绝。
+安装成品应先解压，选择包含 plugin.json/package.json 的 package 目录作为安装来源；不能把 zip/tgz 路径直接作为来源。安装后重新加载设置页面或重启 Studio 客户端，才能让已有界面重新读取包含 Skill 页的 manifest/client；服务端热装不代表其他设备已经加载新页面。
+
+本机 Studio 0.8.32 实测：有效外部目录可以索引 external 技能，正文、references 下支持文件与启停可用；停用后条目仍在清单，enabled=false。外部技能通过宿主 PUT 编辑或 DELETE 删除均返回 400（仅 local 技能可编辑/删除），应在来源目录维护。新建接口没有已确认的目标目录参数，插件不提供向指定外部目录新建文件的能力。

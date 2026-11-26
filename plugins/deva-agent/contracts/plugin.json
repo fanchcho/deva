@@ -84,7 +84,27 @@
         },
         "hasApiKey": {
           "type": "boolean",
-          "description": "是否保存了当前地址的 API Key。"
+          "description": "当前地址是否有可用 API Key：插件侧保存或桌面端只读来源都算；只报状态，不回传值。"
+        },
+        "keySource": {
+          "type": "string",
+          "description": "hasApiKey 为 true 时密钥的来源：plugin=Studio 侧保存；desktop=桌面 secrets.json（只读、按需解密、明文只在内存）。",
+          "enum": [
+            "plugin",
+            "desktop"
+          ]
+        },
+        "keySourceReadOnly": {
+          "type": "boolean",
+          "description": "来源为桌面端 secrets.json：插件不写回、不落库、不返回明文，用户手动填写即覆盖。"
+        },
+        "keyProblem": {
+          "type": "string",
+          "description": "没有可用 Key 时的可操作说明：区分「没保存」「保存了读不回」「桌面有但解不开」，含确切路径、是否存在、大小/结构、失败原因码；不含密钥与明文。"
+        },
+        "keyDiagnostics": {
+          "type": "string",
+          "description": "密钥解析链路诊断 JSON（来源、账户/Profile 作用域、插件侧存储结论、桌面 secrets.json 元数据与解密原因码）；不含密文与明文。"
         },
         "legacyNeedsSetup": {
           "type": "boolean",
@@ -2206,7 +2226,10 @@
           "type": "number",
           "description": "DOM geometry measurement in CSS pixels or presence boolean."
         },
-        "bottom": {"type": "number", "description": "DOM rectangle bottom edge in CSS pixels; measured independently for candidate-buttons and native-select."},
+        "bottom": {
+          "type": "number",
+          "description": "DOM rectangle bottom edge in CSS pixels; measured independently for candidate-buttons and native-select."
+        },
         "viewportHeight": {
           "type": "number",
           "description": "DOM geometry measurement in CSS pixels or presence boolean."
@@ -2303,6 +2326,217 @@
       "required": [
         "ok",
         "logPath"
+      ],
+      "additionalProperties": false
+    },
+    "skillTarget": {
+      "type": "object",
+      "description": "技能目标",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "宿主技能名",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "skillRecord": {
+      "type": "object",
+      "description": "宿主技能元数据；扩展字段原样保留",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "宿主技能名",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": true
+    },
+    "skillDraft": {
+      "type": "object",
+      "description": "创建或更新完整 SKILL.md",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "宿主技能名",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "content": {
+          "type": "string",
+          "description": "完整 frontmatter 与正文"
+        },
+        "create": {
+          "type": "boolean",
+          "description": "true 新建，false 更新"
+        }
+      },
+      "required": [
+        "name",
+        "content",
+        "create"
+      ],
+      "additionalProperties": false
+    },
+    "skillEnabled": {
+      "type": "object",
+      "description": "设置并读回宿主实际启用态",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "宿主技能名",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "目标启用态"
+        }
+      },
+      "required": [
+        "name",
+        "enabled"
+      ],
+      "additionalProperties": false
+    },
+    "skillFile": {
+      "type": "object",
+      "description": "读取支持文件",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "宿主技能名",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "path": {
+          "type": "string",
+          "description": "技能目录内相对路径"
+        }
+      },
+      "required": [
+        "name",
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "skillContent": {
+      "type": "object",
+      "description": "支持文件正文",
+      "properties": {
+        "content": {
+          "type": "string",
+          "description": "文件正文"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "additionalProperties": false
+    },
+    "skillFiles": {
+      "type": "object",
+      "description": "宿主支持文件清单",
+      "properties": {
+        "files": {
+          "type": "array",
+          "description": "文件清单",
+          "items": {
+            "type": "object",
+            "description": "宿主支持文件条目",
+            "properties": {},
+            "required": [],
+            "additionalProperties": true
+          }
+        }
+      },
+      "required": [
+        "files"
+      ],
+      "additionalProperties": false
+    },
+    "skillDirectories": {
+      "type": "object",
+      "description": "宿主外部目录和配置推导的 Deva 路径",
+      "properties": {
+        "directories": {
+          "type": "array",
+          "description": "现有目录",
+          "items": {
+            "type": "string",
+            "description": "目录路径"
+          }
+        },
+        "devaDirectory": {
+          "type": "string",
+          "description": "由 sharedDevaHome / DEVA_HOME / home 推导"
+        },
+        "warnings": {
+          "type": "array",
+          "description": "宿主报告不存在或非目录的条目",
+          "items": {
+            "type": "string",
+            "description": "目录诊断"
+          }
+        }
+      },
+      "required": [
+        "directories",
+        "devaDirectory",
+        "warnings"
+      ],
+      "additionalProperties": false
+    },
+    "skillListPage": {
+      "type": "object",
+      "description": "全部技能与宿主诊断",
+      "properties": {
+        "skills": {
+          "type": "array",
+          "description": "技能列表",
+          "items": {
+            "type": "object",
+            "description": "宿主技能元数据；扩展字段原样保留",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "宿主技能名",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "directory": {
+          "type": "string",
+          "description": "宿主提供的目录，缺失为空串"
+        },
+        "warnings": {
+          "type": "array",
+          "description": "真实诊断",
+          "items": {
+            "type": "string",
+            "description": "诊断"
+          }
+        }
+      },
+      "required": [
+        "skills",
+        "directory",
+        "warnings"
       ],
       "additionalProperties": false
     }
@@ -2412,6 +2646,51 @@
       "description": "Append bounded page lifecycle diagnostics, never model inputs or credentials.",
       "input": "uiTraceInput",
       "output": "uiTraceResult"
+    },
+    "get-skills": {
+      "description": "读取 Studio 技能清单",
+      "input": "empty",
+      "output": "skillListPage"
+    },
+    "get-skill": {
+      "description": "读取完整技能正文",
+      "input": "skillTarget",
+      "output": "skillRecord"
+    },
+    "save-skill": {
+      "description": "创建或更新技能正文",
+      "input": "skillDraft",
+      "output": "skillRecord"
+    },
+    "set-skill-enabled": {
+      "description": "启停并核对实际状态，不修改过滤规则",
+      "input": "skillEnabled",
+      "output": "skillRecord"
+    },
+    "delete-skill": {
+      "description": "删除宿主技能",
+      "input": "skillTarget",
+      "output": "skillTarget"
+    },
+    "get-skill-files": {
+      "description": "读取支持文件清单",
+      "input": "skillTarget",
+      "output": "skillFiles"
+    },
+    "read-skill-file": {
+      "description": "读取支持文件正文",
+      "input": "skillFile",
+      "output": "skillContent"
+    },
+    "get-skill-directories": {
+      "description": "读取外部目录",
+      "input": "empty",
+      "output": "skillDirectories"
+    },
+    "save-skill-directories": {
+      "description": "保留原目录并注册配置推导的 Deva skills 目录",
+      "input": "empty",
+      "output": "skillDirectories"
     }
   },
   "tools": {},
@@ -2450,10 +2729,10 @@
       "scope": "state.profile.namespace(String(run.identity.userId)).modelOptions"
     },
     "desktopModelKey": {
-      "description": "Studio 侧凭据（按 providerId + baseUrl 摘要分键存储）；不参与模型选择，不写桌面 secrets.json。",
+      "description": "Studio 侧凭据（按 providerId + baseUrl 摘要分键存储）；不参与模型选择，不写桌面 secrets.json。0.8.44 起写入账号级 state.user；旧 Profile 级记录只读兼容并在命中时迁移。",
       "model": "desktopModelKey",
       "version": 1,
-      "scope": "state.profile.namespace(String(run.identity.userId), \"desktopModelKeys\")[SHA256(providerId + NUL + baseUrl)]；兼容旧 desktopModelKey 键"
+      "scope": "state.user.namespace(\"desktopModelKeys\")[SHA256(providerId + NUL + baseUrl)]（0.8.43 及更早写在 state.profile.namespace(String(userId), \"desktopModelKeys\")，读取时兼容并迁移；兼容旧 desktopModelKey 键）"
     },
     "modelMode": {
       "description": "0.8.17 及更早的模型来源选择，升级后不参与选模。",

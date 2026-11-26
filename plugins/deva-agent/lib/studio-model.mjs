@@ -43,9 +43,26 @@ function approvalHint(error, baseUrl) {
 }
 
 /** Uses only the selected endpoint and its own key, never the scoped lease or Studio Model API. */
-export function createCustomModel(run, { baseUrl, modelName, apiKey, reasoningEffort = '' }) {
+export function createCustomModel(run, { baseUrl, modelName, apiKey, reasoningEffort = '', credentialSource = '', credentialDiagnostics = null }) {
   let endpoint
   try { endpoint = resolveCustomEndpoint(run, baseUrl) } catch (error) { throw approvalHint(error, baseUrl) }
+  // 401 报错要说清「Key 从哪来」：插件侧、桌面只读、还是根本没有——三者的下一步完全不同。
+  const authHint = () => {
+    if (!apiKey) {
+      const desktop = credentialDiagnostics?.desktop
+      const where = desktop?.path ? `桌面 secrets.json 已读取（${desktop.path}，条目=${desktop.entryCount ?? 0}）` : '桌面 secrets.json 未读取到'
+      const why = credentialDiagnostics?.reason === 'decrypt-failed'
+        ? `桌面有该提供方密文但解不开（${desktop?.decryptCode || '未知原因'}）；DPAPI 密文只属于保存它的同一 Windows 用户与机器`
+        : credentialDiagnostics?.reason === 'desktop-unreadable'
+          ? `桌面 secrets.json 不可用（${desktop?.code || '未知'}）`
+          : '插件侧与桌面端都没有该提供方的密钥'
+      return `${why}；${where}。请在 Deva → 模型填写该提供方的 API Key（会保存到 Studio 自己这一侧）`
+    }
+    if (credentialSource === 'desktop') {
+      return '本次使用的 Key 来自桌面端 secrets.json（只读、未复制进 Studio），上游拒绝了它：请在桌面端更新该提供方的 Key，或在此处手动覆盖'
+    }
+    return '本次使用的 Key 由 Studio 侧保存，上游拒绝了它：请在 Deva → 模型更新该提供方的 Key'
+  }
   return async ({ onDelta = noop, onReasoning = noop, ...options }) => {
     const text = apiKey ? protectDelta(onDelta, apiKey) : null
     const reasoning = apiKey ? protectDelta(onReasoning, apiKey) : null
@@ -60,7 +77,7 @@ export function createCustomModel(run, { baseUrl, modelName, apiKey, reasoningEf
             userId: run.identity?.userId, profile: run.identity?.profile })
         } catch { /* Diagnostics must not prevent inference. */ }
         return requestCustomModel(endpoint, request).catch(error => { throw /HTTP (401|403)；/.test(error.message)
-        ? new Error(`${error.message}；Studio 侧 API Key ${apiKey ? '已设置但上游拒绝' : '未设置'}，请在 Deva → 模型保存该提供方的有效 Key；桌面密钥不会自动复制`)
+        ? new Error(`${error.message}；${authHint()}`)
         : effortRejected(error, reasoningEffort) })
       },
       onDelta: text?.emit ?? onDelta,

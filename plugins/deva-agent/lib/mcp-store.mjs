@@ -1,3 +1,4 @@
+// 遗留兼容与测试：页面 CRUD 走 Studio API；本模块仅保留旧桌面服务兜底。
 /**
  * 插件管理的 MCP 服务：**与桌面同构**，落在 `~/.deva/mcp.json` 的 `mcpServers`，
  * 启用态落 `~/.deva/config.json → mcp.enabled[id]`（桌面既有位置）。

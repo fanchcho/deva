@@ -22,6 +22,8 @@ class StubElement {
   get innerHTML() { return this._html }
   append(...nodes) { for (const node of nodes) { node.parent = this; this.children.push(node) } }
   remove() { this.parent.children = this.parent.children.filter(node => node !== this) }
+  replaceChildren(...nodes) { this.children = []; this.append(...nodes) }
+  scrollIntoView() {}
   appendChild(node) { this.children.push(node) }
 }
 
@@ -394,7 +396,7 @@ test('model settings show the shared file and per-app credential warning in each
     const texts = findAll(root, node => node.textContent).map(node => node.textContent).join(' ')
     assert.match(texts, /\/fixture\/\.deva\/config\.json/)
     assert.ok(!texts.includes('undefined'))
-    if (locale === 'en') assert.match(texts, /Set API keys separately in each app/)
+    if (locale === 'en') assert.match(texts, /Desktop key read-only/)
   }
 })
 
@@ -418,7 +420,7 @@ test('mcp view lists Studio servers, summarizes them, and saves the checked name
   assert.deepEqual(summary.children.map(card => [card.children[0].textContent, card.children[1].textContent]), [
     ['总计', '3'],
     ['已启用', '2'],
-    ['已禁用', '1'],
+    ['Studio 托管', '1'],
     ['工具', '5'],
   ], '汇总卡与 Studio 原生页一致，固定四张')
 
@@ -869,4 +871,82 @@ test('model form has one label per field and failed reads offer retry in the exi
   await retry.onclick()
   assert.equal(findAll(root, n => n.tag === 'select' && n.size === 5).length, 1)
   assert.equal(findAll(root, n => n.tag === 'select' && n.size === 5)[0].children.length, 1)
+})
+
+
+test('skills page renders sources, missing path, content and visible errors with retry', async () => {
+  let fail = false
+  const root = await mountPage(fakeContext('zh', async (name) => {
+    if (name === 'get-skills') { if (fail) throw new Error('HTTP 401 unauthorized'); return { skills: [{ name: 'demo', source: 'builtin', enabled: true, description: 'Demo' }], warnings: [] } }
+    if (name === 'get-skill') return { name: 'demo', content: 'Skill body' }
+    if (name === 'get-skill-directories') return { directories: [], devaDirectory: '/configured/skills' }
+    throw new Error(name)
+  }, { view: 'skills' }))
+  assert.ok(findAll(root, n => n.textContent.includes('未提供路径')).length)
+  assert.ok(findAll(root, n => n.textContent === '内置').length)
+  await findAll(root, n => n.textContent === '查看正文')[0].onclick()
+  assert.ok(findAll(root, n => n.textContent === 'Skill body').length)
+  fail = true
+  await findAll(root, n => n.textContent === '刷新 / 重试')[0].onclick()
+  assert.ok(findAll(root, n => n.textContent.includes('HTTP 401')).length)
+})
+
+test('all twelve Skill locales have every key and render without English fallback', async () => {
+  const { skillLabels } = await import('../client.mjs')
+  const locales = ['zh', 'zh-TW', 'en', 'ja', 'ko', 'fr', 'es', 'de', 'pt', 'ru', 'ar', 'tr']
+  const keys = Object.keys(skillLabels.en).sort()
+  assert.equal(Object.keys(skillLabels).length, 12)
+  for (const locale of locales) {
+    const copy = skillLabels[locale.toLowerCase()]
+    assert.deepEqual(Object.keys(copy).sort(), keys, locale)
+    for (const key of keys) {
+      assert.equal(typeof copy[key], 'string', `${locale}.${key}`)
+      assert.ok(copy[key].trim(), `${locale}.${key}`)
+      if (locale !== 'en') assert.notEqual(copy[key], skillLabels.en[key], `${locale}.${key} must be translated`)
+    }
+    const root = await mountPage(fakeContext(locale, async name => name === 'get-skills' ? { skills: [], warnings: [] } : { directories: [], warnings: [], devaDirectory: '/test/skills' }, { view: 'skills' }))
+    assert.ok(findAll(root, n => n.textContent === copy.title).length, locale)
+    assert.ok(findAll(root, n => n.textContent === copy.empty).length, locale)
+    assert.ok(findAll(root, n => n.textContent === copy.retry).length, locale)
+  }
+})
+
+test('Skill page displays real external sourcePath and actual warnings', async () => {
+  const root = await mountPage(fakeContext('zh', async name => name === 'get-skills'
+    ? { skills: [{ name: 'proof', source: 'external', sourcePath: '/workspace/proof', warnings: ['actual warning'], enabled: false }], warnings: [] }
+    : { directories: ['/missing'], warnings: ['/missing: exists=false, isDir=false'], devaDirectory: '/missing' }, { view: 'skills' }))
+  assert.ok(findAll(root, n => n.textContent === '外部目录 · /workspace/proof').length)
+  assert.ok(findAll(root, n => n.textContent === '警告: actual warning').length)
+  assert.ok(findAll(root, n => n.textContent.includes('exists=false, isDir=false')).length)
+})
+
+test('model page shows the key source status only, never a value, and separates the three failure kinds', async () => {
+  const base = {
+    baseUrl: 'https://example.com/v1', modelName: 'm', modelRef: 'p:m', providerName: 'p', legacyNeedsSetup: false,
+    desktopModels: [{ ref: 'p:m', baseUrl: 'https://example.com/v1', modelName: 'm', providerId: 'p' }],
+    desktopConfigPath: '/fixture/.deva/config.json', desktopConfigExists: true,
+  }
+  // ① 桌面来源：显示「已设置（桌面端 Secrets，只读）」，且正文里不出现任何密钥值。
+  const desktopKey = 'desktop-secret-value-should-never-render'
+  const root = await mountPage(fakeContext('zh', async () => ({ ...base, hasApiKey: true, keySource: 'desktop', keySourceReadOnly: true }), { view: 'model' }))
+  const key = findAll(root, node => node.type === 'password')[0]
+  // 输入框占位只给短状态；完整来源在状态行（两处都不含值）。
+  assert.equal(key.placeholder, '已设置')
+  assert.match(findAll(root, node => node.className === 'deva-status')[0].textContent, /已设置（桌面端 Secrets，只读）/)
+  const texts = findAll(root, node => node.textContent).map(node => node.textContent).join(' ')
+  assert.equal(texts.includes(desktopKey), false)
+  // ② 插件来源：文案不同。
+  const pluginRoot = await mountPage(fakeContext('zh', async () => ({ ...base, hasApiKey: true, keySource: 'plugin' }), { view: 'model' }))
+  assert.match(findAll(pluginRoot, node => node.className === 'deva-status')[0].textContent, /已设置（插件）/)
+  // ③ 三种「没有 Key」的原因各说一件不同的事，不是同一句「未设置」。
+  const kinds = [
+    [{ hasApiKey: false, keyProblem: '插件侧和桌面端都没有 providerId=p 的密钥；桌面 secrets.json 已读取但没有这一条（C:\\Users\\x\\.deva\\secrets.json，条目=2）。' }, /都没有 providerId=p 的密钥/],
+    [{ hasApiKey: false, keyProblem: '插件侧保存的凭据记录已损坏（Profile studio-web-1）；请在下方重新填写一次 API Key 覆盖。' }, /凭据记录已损坏/],
+    [{ hasApiKey: false, keyProblem: '桌面端已保存 providerId=p 的密钥，但本次无法解密（dpapi-failed）。' }, /无法解密/],
+  ]
+  for (const [extra, pattern] of kinds) {
+    const page = await mountPage(fakeContext('zh', async () => ({ ...base, legacyNeedsSetup: false, ...extra }), { view: 'model' }))
+    const body = findAll(page, node => node.textContent).map(node => node.textContent).join(' ')
+    assert.match(body, pattern)
+  }
 })

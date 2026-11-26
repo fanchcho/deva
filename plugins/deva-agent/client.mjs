@@ -1,3 +1,330 @@
+export const skillLabels = {
+  "zh": {
+    "title": "Deva · 技能",
+    "retry": "刷新 / 重试",
+    "hint": "技能与启停由 Studio 管理。支持文件通过 skill_view 读取，此页不写支持文件。注册目录不保证技能可用，请核对清单与警告。",
+    "timeout": "请求超时（20 秒）；写入结果未知，请刷新核对",
+    "failed": "操作失败：",
+    "directories": "外部目录：",
+    "none": "无",
+    "register": "注册 Deva 技能目录：",
+    "unavailable": "外部目录不可用：",
+    "description": "无描述",
+    "path": "未提供路径",
+    "enable": "启用",
+    "disable": "停用",
+    "view": "查看正文",
+    "enabled": "已启用",
+    "loading": "正在读取技能…",
+    "invalid": "接口返回非 JSON 或缺少 skills 数组",
+    "count": "个技能",
+    "empty": "宿主返回空技能列表。可重试；请核对来源与过滤规则。",
+    "builtin": "内置",
+    "external": "外部目录",
+    "other": "其他来源",
+    "warnings": "警告",
+    "unauthorized": "未授权（401），请检查登录与权限：",
+    "directoryWarning": "目录状态警告；注册不代表目录存在或技能可用："
+  },
+  "zh-tw": {
+    "title": "Deva · 技能",
+    "retry": "重新整理 / 重試",
+    "hint": "技能與啟停由 Studio 管理。支援檔案透過 skill_view 讀取，此頁不寫入支援檔案。註冊目錄不保證技能可用，請核對清單與警告。",
+    "timeout": "請求逾時（20 秒）；寫入結果未知，請重新整理核對",
+    "failed": "操作失敗：",
+    "directories": "外部目錄：",
+    "none": "無",
+    "register": "註冊 Deva 技能目錄：",
+    "unavailable": "外部目錄無法使用：",
+    "description": "無描述",
+    "path": "未提供路徑",
+    "enable": "啟用",
+    "disable": "停用",
+    "view": "查看正文",
+    "enabled": "已啟用",
+    "loading": "正在讀取技能…",
+    "invalid": "介面傳回非 JSON 或缺少 skills 陣列",
+    "count": "個技能",
+    "empty": "宿主傳回空技能清單。可重試；請核對來源與篩選規則。",
+    "builtin": "內建",
+    "external": "外部目錄",
+    "other": "其他來源",
+    "warnings": "警告",
+    "unauthorized": "未授權（401），請檢查登入與權限：",
+    "directoryWarning": "目錄狀態警告；註冊不代表目錄存在或技能可用："
+  },
+  "en": {
+    "title": "Deva · Skills",
+    "retry": "Refresh / Retry",
+    "hint": "Studio manages skills and toggles. Read support files with skill_view; this page cannot write them. Registration does not guarantee availability; check the list and warnings.",
+    "timeout": "Request timed out (20s); write outcome unknown, refresh to verify",
+    "failed": "Failed: ",
+    "directories": "External directories: ",
+    "none": "None",
+    "register": "Register Deva skills directory: ",
+    "unavailable": "External directories unavailable: ",
+    "description": "No description",
+    "path": "Path not provided",
+    "enable": "Enable",
+    "disable": "Disable",
+    "view": "View content",
+    "enabled": "Enabled",
+    "loading": "Loading skills…",
+    "invalid": "Non-JSON response or missing skills array",
+    "count": "skills",
+    "empty": "The host returned an empty skill list. Retry and check sources and filters.",
+    "builtin": "Built-in",
+    "external": "External directories",
+    "other": "Other sources",
+    "warnings": "Warnings",
+    "unauthorized": "Unauthorized (401); check login and permissions: ",
+    "directoryWarning": "Directory warning; registration does not imply existence or skill availability: "
+  },
+  "ja": {
+    "title": "Deva · スキル",
+    "retry": "更新 / 再試行",
+    "hint": "スキルと有効状態は Studio が管理します。補助ファイルは skill_view で読み取れますが、この画面では書き込めません。登録後は一覧と警告を確認してください。",
+    "timeout": "要求がタイムアウトしました（20 秒）。書き込み結果は不明です。更新して確認してください",
+    "failed": "操作失敗：",
+    "directories": "外部ディレクトリ：",
+    "none": "なし",
+    "register": "Deva スキルディレクトリを登録：",
+    "unavailable": "外部ディレクトリを利用できません：",
+    "description": "説明なし",
+    "path": "パス未提供",
+    "enable": "有効にする",
+    "disable": "無効にする",
+    "view": "本文を表示",
+    "enabled": "有効",
+    "loading": "スキルを読み込み中…",
+    "invalid": "JSON 以外の応答、または skills 配列がありません",
+    "count": "個のスキル",
+    "empty": "ホストのスキル一覧は空です。再試行し、ソースとフィルターを確認してください。",
+    "builtin": "組み込み",
+    "external": "外部ディレクトリ",
+    "other": "その他のソース",
+    "warnings": "警告",
+    "unauthorized": "未認証（401）。ログインと権限を確認してください：",
+    "directoryWarning": "ディレクトリの警告。登録は存在やスキルの利用を保証しません："
+  },
+  "ko": {
+    "title": "Deva · 스킬",
+    "retry": "새로 고침 / 재시도",
+    "hint": "Studio가 스킬과 활성 상태를 관리합니다. 지원 파일은 skill_view로 읽으며 이 페이지에서는 쓰지 않습니다. 등록 후 목록과 경고를 확인하세요.",
+    "timeout": "요청 시간 초과(20초). 쓰기 결과를 알 수 없으므로 새로 고침하여 확인하세요",
+    "failed": "작업 실패: ",
+    "directories": "외부 디렉터리: ",
+    "none": "없음",
+    "register": "Deva 스킬 디렉터리 등록: ",
+    "unavailable": "외부 디렉터리를 사용할 수 없음: ",
+    "description": "설명 없음",
+    "path": "경로가 제공되지 않음",
+    "enable": "활성화",
+    "disable": "비활성화",
+    "view": "본문 보기",
+    "enabled": "활성화됨",
+    "loading": "스킬 읽는 중…",
+    "invalid": "JSON이 아닌 응답 또는 skills 배열 누락",
+    "count": "개 스킬",
+    "empty": "호스트가 빈 스킬 목록을 반환했습니다. 재시도하고 출처 및 필터를 확인하세요.",
+    "builtin": "내장",
+    "external": "외부 디렉터리",
+    "other": "기타 출처",
+    "warnings": "경고",
+    "unauthorized": "인증되지 않음(401). 로그인과 권한을 확인하세요: ",
+    "directoryWarning": "디렉터리 경고. 등록은 경로 존재나 스킬 사용을 보장하지 않습니다: "
+  },
+  "fr": {
+    "title": "Deva · Compétences",
+    "retry": "Actualiser / Réessayer",
+    "hint": "Studio gère les compétences et leur activation. Lisez les fichiers annexes avec skill_view ; cette page ne les écrit pas. Vérifiez la liste et les avertissements après inscription.",
+    "timeout": "Délai dépassé (20 s) ; résultat de l’écriture inconnu, actualisez pour vérifier",
+    "failed": "Échec : ",
+    "directories": "Dossiers externes : ",
+    "none": "Aucun",
+    "register": "Inscrire le dossier de compétences Deva : ",
+    "unavailable": "Dossiers externes indisponibles : ",
+    "description": "Sans description",
+    "path": "Chemin non fourni",
+    "enable": "Activer",
+    "disable": "Désactiver",
+    "view": "Voir le contenu",
+    "enabled": "Activé",
+    "loading": "Chargement des compétences…",
+    "invalid": "Réponse non JSON ou tableau skills absent",
+    "count": "compétences",
+    "empty": "La liste renvoyée est vide. Réessayez et vérifiez les sources et les filtres.",
+    "builtin": "Intégrées",
+    "external": "Dossiers externes",
+    "other": "Autres sources",
+    "warnings": "Avertissements",
+    "unauthorized": "Non autorisé (401) ; vérifiez la connexion et les droits : ",
+    "directoryWarning": "Avertissement : inscrire un dossier ne garantit ni son existence ni la disponibilité des compétences : "
+  },
+  "es": {
+    "title": "Deva · Habilidades",
+    "retry": "Actualizar / Reintentar",
+    "hint": "Studio gestiona las habilidades y su activación. Lea archivos auxiliares con skill_view; esta página no los escribe. Compruebe la lista y los avisos tras registrar.",
+    "timeout": "Tiempo agotado (20 s); resultado de escritura desconocido, actualice para comprobar",
+    "failed": "Error: ",
+    "directories": "Directorios externos: ",
+    "none": "Ninguno",
+    "register": "Registrar directorio de habilidades Deva: ",
+    "unavailable": "Directorios externos no disponibles: ",
+    "description": "Sin descripción",
+    "path": "Ruta no proporcionada",
+    "enable": "Activar",
+    "disable": "Desactivar",
+    "view": "Ver contenido",
+    "enabled": "Activado",
+    "loading": "Cargando habilidades…",
+    "invalid": "Respuesta no JSON o falta el arreglo skills",
+    "count": "habilidades",
+    "empty": "El servidor devolvió una lista vacía. Reintente y compruebe fuentes y filtros.",
+    "builtin": "Integradas",
+    "external": "Directorios externos",
+    "other": "Otras fuentes",
+    "warnings": "Avisos",
+    "unauthorized": "No autorizado (401); compruebe la sesión y los permisos: ",
+    "directoryWarning": "Aviso: registrar un directorio no garantiza su existencia ni la disponibilidad de habilidades: "
+  },
+  "de": {
+    "title": "Deva · Fähigkeiten",
+    "retry": "Aktualisieren / Erneut versuchen",
+    "hint": "Studio verwaltet Fähigkeiten und Aktivierung. Zusatzdateien sind über skill_view lesbar; diese Seite schreibt sie nicht. Prüfen Sie nach der Registrierung Liste und Warnungen.",
+    "timeout": "Zeitüberschreitung (20 s); Schreibergebnis unbekannt, zur Prüfung aktualisieren",
+    "failed": "Fehlgeschlagen: ",
+    "directories": "Externe Verzeichnisse: ",
+    "none": "Keine",
+    "register": "Deva-Fähigkeitenverzeichnis registrieren: ",
+    "unavailable": "Externe Verzeichnisse nicht verfügbar: ",
+    "description": "Keine Beschreibung",
+    "path": "Kein Pfad angegeben",
+    "enable": "Aktivieren",
+    "disable": "Deaktivieren",
+    "view": "Inhalt anzeigen",
+    "enabled": "Aktiviert",
+    "loading": "Fähigkeiten werden geladen…",
+    "invalid": "Antwort ist kein JSON oder das skills-Array fehlt",
+    "count": "Fähigkeiten",
+    "empty": "Der Host hat eine leere Liste geliefert. Erneut versuchen und Quellen sowie Filter prüfen.",
+    "builtin": "Integriert",
+    "external": "Externe Verzeichnisse",
+    "other": "Andere Quellen",
+    "warnings": "Warnungen",
+    "unauthorized": "Nicht autorisiert (401); Anmeldung und Rechte prüfen: ",
+    "directoryWarning": "Verzeichniswarnung: Registrierung garantiert weder Existenz noch Verfügbarkeit der Fähigkeiten: "
+  },
+  "pt": {
+    "title": "Deva · Habilidades",
+    "retry": "Atualizar / Tentar novamente",
+    "hint": "O Studio gere habilidades e ativação. Leia arquivos de apoio com skill_view; esta página não os grava. Verifique a lista e os avisos após o registro.",
+    "timeout": "Tempo esgotado (20 s); resultado da gravação desconhecido, atualize para verificar",
+    "failed": "Falha: ",
+    "directories": "Diretórios externos: ",
+    "none": "Nenhum",
+    "register": "Registrar diretório de habilidades Deva: ",
+    "unavailable": "Diretórios externos indisponíveis: ",
+    "description": "Sem descrição",
+    "path": "Caminho não fornecido",
+    "enable": "Ativar",
+    "disable": "Desativar",
+    "view": "Ver conteúdo",
+    "enabled": "Ativado",
+    "loading": "Carregando habilidades…",
+    "invalid": "Resposta não JSON ou lista skills ausente",
+    "count": "habilidades",
+    "empty": "O servidor retornou uma lista vazia. Tente novamente e verifique fontes e filtros.",
+    "builtin": "Integradas",
+    "external": "Diretórios externos",
+    "other": "Outras fontes",
+    "warnings": "Avisos",
+    "unauthorized": "Não autorizado (401); verifique a sessão e as permissões: ",
+    "directoryWarning": "Aviso: registrar um diretório não garante sua existência nem a disponibilidade das habilidades: "
+  },
+  "ru": {
+    "title": "Deva · Навыки",
+    "retry": "Обновить / Повторить",
+    "hint": "Studio управляет навыками и их включением. Дополнительные файлы читаются через skill_view; эта страница их не записывает. После регистрации проверьте список и предупреждения.",
+    "timeout": "Время ожидания истекло (20 с); результат записи неизвестен, обновите для проверки",
+    "failed": "Ошибка: ",
+    "directories": "Внешние каталоги: ",
+    "none": "Нет",
+    "register": "Зарегистрировать каталог навыков Deva: ",
+    "unavailable": "Внешние каталоги недоступны: ",
+    "description": "Нет описания",
+    "path": "Путь не указан",
+    "enable": "Включить",
+    "disable": "Выключить",
+    "view": "Показать содержимое",
+    "enabled": "Включено",
+    "loading": "Загрузка навыков…",
+    "invalid": "Ответ не JSON или отсутствует массив skills",
+    "count": "навыков",
+    "empty": "Хост вернул пустой список. Повторите запрос и проверьте источники и фильтры.",
+    "builtin": "Встроенные",
+    "external": "Внешние каталоги",
+    "other": "Другие источники",
+    "warnings": "Предупреждения",
+    "unauthorized": "Нет авторизации (401); проверьте вход и права: ",
+    "directoryWarning": "Предупреждение: регистрация не гарантирует существование каталога или доступность навыков: "
+  },
+  "ar": {
+    "title": "Deva · المهارات",
+    "retry": "تحديث / إعادة المحاولة",
+    "hint": "يدير Studio المهارات وتفعيلها. اقرأ الملفات المساعدة عبر skill_view؛ لا تكتبها هذه الصفحة. تحقق من القائمة والتحذيرات بعد التسجيل.",
+    "timeout": "انتهت مهلة الطلب (20 ثانية)؛ نتيجة الكتابة غير معروفة، حدّث للتحقق",
+    "failed": "فشلت العملية: ",
+    "directories": "المجلدات الخارجية: ",
+    "none": "لا يوجد",
+    "register": "تسجيل مجلد مهارات Deva: ",
+    "unavailable": "المجلدات الخارجية غير متاحة: ",
+    "description": "لا يوجد وصف",
+    "path": "المسار غير متوفر",
+    "enable": "تفعيل",
+    "disable": "تعطيل",
+    "view": "عرض المحتوى",
+    "enabled": "مفعّل",
+    "loading": "جارٍ تحميل المهارات…",
+    "invalid": "الاستجابة ليست JSON أو مصفوفة skills مفقودة",
+    "count": "مهارات",
+    "empty": "أعاد المضيف قائمة فارغة. أعد المحاولة وتحقق من المصادر والمرشحات.",
+    "builtin": "مدمجة",
+    "external": "مجلدات خارجية",
+    "other": "مصادر أخرى",
+    "warnings": "تحذيرات",
+    "unauthorized": "غير مصرح (401)؛ تحقق من تسجيل الدخول والصلاحيات: ",
+    "directoryWarning": "تحذير المجلد: التسجيل لا يضمن وجوده أو توفر المهارات: "
+  },
+  "tr": {
+    "title": "Deva · Beceriler",
+    "retry": "Yenile / Yeniden dene",
+    "hint": "Becerileri ve etkinleştirmeyi Studio yönetir. Destek dosyalarını skill_view ile okuyun; bu sayfa dosya yazmaz. Kayıttan sonra listeyi ve uyarıları kontrol edin.",
+    "timeout": "İstek zaman aşımı (20 sn); yazma sonucu bilinmiyor, doğrulamak için yenileyin",
+    "failed": "İşlem başarısız: ",
+    "directories": "Harici dizinler: ",
+    "none": "Yok",
+    "register": "Deva beceri dizinini kaydet: ",
+    "unavailable": "Harici dizinler kullanılamıyor: ",
+    "description": "Açıklama yok",
+    "path": "Yol belirtilmedi",
+    "enable": "Etkinleştir",
+    "disable": "Devre dışı bırak",
+    "view": "İçeriği görüntüle",
+    "enabled": "Etkin",
+    "loading": "Beceriler yükleniyor…",
+    "invalid": "Yanıt JSON değil veya skills dizisi eksik",
+    "count": "beceri",
+    "empty": "Sunucu boş liste döndürdü. Yeniden deneyip kaynakları ve filtreleri kontrol edin.",
+    "builtin": "Yerleşik",
+    "external": "Harici dizinler",
+    "other": "Diğer kaynaklar",
+    "warnings": "Uyarılar",
+    "unauthorized": "Yetkisiz (401); oturumu ve izinleri kontrol edin: ",
+    "directoryWarning": "Dizin uyarısı: kayıt, dizinin varlığını veya becerilerin kullanılabilirliğini garanti etmez: "
+  }
+}
+
 /** Deva 设置页：按宿主 ctx.view 渲染身份、模型和 MCP。 */
 const identityLabels = {
   "zh": ["选择 Deva 的默认身份，或新增、编辑与桌面端共用的身份。", "设为默认", "新增身份", "编辑身份", "名称", "描述", "提示词正文", "已保存身份：{name}", "请填写名称和提示词正文。", "无提示词；请先编辑。", "已在桌面启用"],
@@ -29,7 +356,7 @@ const labels = {
     "openStudio": "在 Studio 中打开",
     "summaryTotal": "总计",
     "summaryEnabled": "已启用",
-    "summaryManaged": "插件自带",
+    "summaryManaged": "Studio 托管",
     "summaryTools": "工具",
     "selectionCount": "已勾选 {count} 个服务",
     "connectedStatus": "已连接",
@@ -88,7 +415,7 @@ const labels = {
     "openStudio": "Open in Studio",
     "summaryTotal": "Total",
     "summaryEnabled": "Enabled",
-    "summaryManaged": "Plugin-owned",
+    "summaryManaged": "Studio managed",
     "summaryTools": "Tools",
     "selectionCount": "Selected {count} of them",
     "connectedStatus": "Connected",
@@ -147,7 +474,7 @@ const labels = {
     "openStudio": "在 Studio 中開啟",
     "summaryTotal": "總計",
     "summaryEnabled": "已啟用",
-    "summaryManaged": "外掛內建",
+    "summaryManaged": "Studio managed",
     "summaryTools": "工具",
     "selectionCount": "已勾選 {count} 個服務",
     "connectedStatus": "已連線",
@@ -206,7 +533,7 @@ const labels = {
     "openStudio": "Studio で開く",
     "summaryTotal": "合計",
     "summaryEnabled": "有効",
-    "summaryManaged": "プラグイン内蔵",
+    "summaryManaged": "Studio managed",
     "summaryTools": "ツール",
     "selectionCount": "{count} 件選択",
     "connectedStatus": "接続済み",
@@ -265,7 +592,7 @@ const labels = {
     "openStudio": "Studio에서 열기",
     "summaryTotal": "전체",
     "summaryEnabled": "사용 중",
-    "summaryManaged": "플러그인 내장",
+    "summaryManaged": "Studio managed",
     "summaryTools": "도구",
     "selectionCount": "{count}개 선택",
     "connectedStatus": "연결됨",
@@ -324,7 +651,7 @@ const labels = {
     "openStudio": "Ouvrir dans Studio",
     "summaryTotal": "Total",
     "summaryEnabled": "Activés",
-    "summaryManaged": "Fourni par le plugin",
+    "summaryManaged": "Studio managed",
     "summaryTools": "Outils",
     "selectionCount": "{count} sélectionnés",
     "connectedStatus": "Connecté",
@@ -383,7 +710,7 @@ const labels = {
     "openStudio": "Abrir en Studio",
     "summaryTotal": "Total",
     "summaryEnabled": "Activados",
-    "summaryManaged": "Incluido en el plugin",
+    "summaryManaged": "Studio managed",
     "summaryTools": "Herramientas",
     "selectionCount": "{count} seleccionados",
     "connectedStatus": "Conectado",
@@ -442,7 +769,7 @@ const labels = {
     "openStudio": "In Studio öffnen",
     "summaryTotal": "Gesamt",
     "summaryEnabled": "Aktiv",
-    "summaryManaged": "Vom Plugin mitgeliefert",
+    "summaryManaged": "Studio managed",
     "summaryTools": "Werkzeuge",
     "selectionCount": "{count} ausgewählt",
     "connectedStatus": "Verbunden",
@@ -501,7 +828,7 @@ const labels = {
     "openStudio": "Abrir no Studio",
     "summaryTotal": "Total",
     "summaryEnabled": "Ativos",
-    "summaryManaged": "Do plugin",
+    "summaryManaged": "Studio managed",
     "summaryTools": "Ferramentas",
     "selectionCount": "{count} selecionados",
     "connectedStatus": "Conectado",
@@ -560,7 +887,7 @@ const labels = {
     "openStudio": "Открыть в Studio",
     "summaryTotal": "Всего",
     "summaryEnabled": "Включено",
-    "summaryManaged": "Встроено в плагин",
+    "summaryManaged": "Studio managed",
     "summaryTools": "Инструменты",
     "selectionCount": "Выбрано: {count}",
     "connectedStatus": "Подключён",
@@ -619,7 +946,7 @@ const labels = {
     "openStudio": "فتح في Studio",
     "summaryTotal": "الإجمالي",
     "summaryEnabled": "المفعّلة",
-    "summaryManaged": "مضمّن في الإضافة",
+    "summaryManaged": "Studio managed",
     "summaryTools": "الأدوات",
     "selectionCount": "المحدد: {count}",
     "connectedStatus": "متصل",
@@ -678,7 +1005,7 @@ const labels = {
     "openStudio": "Studio’da aç",
     "summaryTotal": "Toplam",
     "summaryEnabled": "Etkin",
-    "summaryManaged": "Eklenti ile gelir",
+    "summaryManaged": "Studio managed",
     "summaryTools": "Araçlar",
     "selectionCount": "{count} seçili",
     "connectedStatus": "Bağlı",
@@ -727,7 +1054,7 @@ const labels = {
 
 const desktopModelLabels = {
   en: [
-    "Address and model are shared with Desktop. Quit Desktop before saving here, then reopen it. Set API keys separately in each app.",
+    "Address and model are shared with Desktop. Quit Desktop before saving here, then reopen it. Studio reads the Desktop key read-only; setting a key here overrides it.",
     "Desktop default", "New Chat Completions provider", "Persona model bindings", "Follow Desktop default",
     "No Desktop default selected", "This Studio account is not the Desktop config owner: an administrator must set sharedDevaUserId to account {userId} (currently {configured}) so this page can read {path}.",
     "{baseUrl} is a local, private-network, or HTTP address that Deva may not dial directly yet. Reading Desktop settings is unaffected; to actually use this model from Studio, ask an administrator to add exactly {baseUrl} to the plugin's modelTrustedBases.",
@@ -738,7 +1065,7 @@ const desktopModelLabels = {
     "Desktop has no default model yet. Pick one in Desktop, or enter a Base URL and model below to add a provider here.",
   ],
   zh: [
-    "地址和模型与桌面端共用。请先退出桌面端，保存后再打开。API Key 要在两端分别设置。",
+    "地址和模型与桌面端共用。请先退出桌面端，保存后再打开。Key 以只读方式取用桌面端保存的那一份；在这里填写即覆盖为 Studio 侧密钥。",
     "桌面默认模型", "新增 Chat Completions 提供方", "身份模型绑定", "跟随桌面默认",
     "桌面端未选择默认模型",
     "当前 Studio 账号不是桌面配置所有者：需要 Studio 管理员把插件配置 sharedDevaUserId 设为账号 {userId}（当前 {configured}），本页才能读 {path}。",
@@ -750,7 +1077,7 @@ const desktopModelLabels = {
     "桌面端还没有默认模型。请在桌面端选一个，或在下面填写地址与模型名新增提供方。",
   ],
   "zh-tw": [
-    "位址和模型與桌面端共用。請先退出桌面端，儲存後再開啟。API Key 須在兩端分別設定。",
+    "位址和模型與桌面端共用。請先退出桌面端，儲存後再開啟。金鑰以唯讀方式取用桌面端儲存的那一份；在此填寫即覆蓋為 Studio 側金鑰。",
     "桌面預設模型", "新增 Chat Completions 供應商", "身分模型綁定", "跟隨桌面預設",
     "桌面端未選擇預設模型",
     "目前 Studio 帳號不是桌面設定擁有者：需要 Studio 管理員把外掛設定 sharedDevaUserId 設為帳號 {userId}（目前 {configured}），本頁才能讀取 {path}。",
@@ -869,6 +1196,25 @@ const desktopModelLabels = {
     "Masaüstü yapılandırma yolu çözümlenemedi; sharedDevaHome (veya DEVA_HOME) mutlak bir yol mu kontrol edin.", "Şu anda etkin: {name}",
     "Masaüstünde henüz varsayılan model yok. Orada bir tane seçin veya aşağıda temel URL ve model adı girerek sağlayıcı ekleyin.",
   ],
+}
+
+/**
+ * 密钥来源状态（只显示状态，不显示值）。
+ * 用显式键而不是按位置索引：加一条新文案不会让别处变成 undefined。
+ */
+const keySourceLabels = {
+  en: { plugin: 'Set (Studio)', desktop: 'Set (Desktop secrets.json, read-only)', short: 'Set', none: 'Not set' },
+  zh: { plugin: '已设置（插件）', desktop: '已设置（桌面端 Secrets，只读）', short: '已设置', none: '未设置' },
+  'zh-tw': { plugin: '已設定（外掛）', desktop: '已設定（桌面端 Secrets，唯讀）', short: '已設定', none: '未設定' },
+  ja: { plugin: '設定済み（Studio）', desktop: '設定済み（デスクトップ Secrets・読み取り専用）', short: '設定済み', none: '未設定' },
+  ko: { plugin: '설정됨(Studio)', desktop: '설정됨(데스크톱 Secrets, 읽기 전용)', short: '설정됨', none: '설정되지 않음' },
+  fr: { plugin: 'Configurée (Studio)', desktop: 'Configurée (secrets.json du bureau, lecture seule)', short: 'Configurée', none: 'Non configurée' },
+  es: { plugin: 'Configurada (Studio)', desktop: 'Configurada (secrets.json del escritorio, solo lectura)', short: 'Configurada', none: 'Sin configurar' },
+  de: { plugin: 'Gesetzt (Studio)', desktop: 'Gesetzt (Desktop-secrets.json, schreibgeschützt)', short: 'Gesetzt', none: 'Nicht gesetzt' },
+  pt: { plugin: 'Configurada (Studio)', desktop: 'Configurada (secrets.json do desktop, somente leitura)', short: 'Configurada', none: 'Não configurada' },
+  ru: { plugin: 'Задан (Studio)', desktop: 'Задан (secrets.json приложения, только чтение)', short: 'Задан', none: 'Не задан' },
+  ar: { plugin: 'مضبوط (Studio)', desktop: 'مضبوط (secrets.json لسطح المكتب، للقراءة فقط)', short: 'مضبوط', none: 'غير مضبوط' },
+  tr: { plugin: 'Ayarlı (Studio)', desktop: 'Ayarlı (masaüstü secrets.json, salt okunur)', short: 'Ayarlı', none: 'Ayarlı değil' },
 }
 
 /** 与 lib/model-selection.mjs 的 REASONING_EFFORTS 一致（前端不能引 node 模块）。 */
@@ -1131,7 +1477,7 @@ async function mountTraced(root, ctx) {
   const original = ctx
   const trace = event => {
     if (ctx.signal?.aborted) return
-    const payload = { side: 'client', version: '0.8.43', revision: 'not-exposed-by-sdk', attempt, ...event }
+    const payload = { side: 'client', version: '0.8.46', revision: 'not-exposed-by-sdk', attempt, ...event }
     Promise.resolve().then(() => original.rpc.call('model-ui-trace', payload)).catch(() => {})
   }
   root.innerHTML = ''
@@ -1218,6 +1564,7 @@ async function mountContent(root, ctx) {
 
   // 路由变化会重新挂载，按 view 只渲染对应页面。
   if (ctx.view === 'mcp') await mountMcp(container, ctx, text)
+  else if (ctx.view === 'skills') await mountSkills(container, ctx, text)
   else if (ctx.view === 'model') await mountModel(container, ctx, text, modelLabels[locale], desktopModelLabels[locale])
   else await mountIdentity(container, ctx, text, identityLabels[locale])
 }
@@ -1234,7 +1581,7 @@ export function modelRpcDiagnostics(ctx, output, getKey = () => '', timeoutMs = 
   const safeUrl = value => {
     try { const url = new URL(value); url.search = ''; url.hash = ''; url.username = ''; url.password = ''; return url.href } catch { return 'unavailable' }
   }
-  const state = { version: '0.8.43', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
+  const state = { version: '0.8.46', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
   observeSafely(() => { if (typeof window !== 'undefined') {
     state.url = safeUrl(window.location.href)
     state.origin = window.origin
@@ -1477,12 +1824,13 @@ function mountModelDiscovery(body, ctx, { address, key, name, choose, field, syn
 }
 
 
-async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLabel, configured, clearLabel, legacy, effortLabel, effortDefault],
+async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLabel, , clearLabel, legacy, effortLabel, effortDefault],
   [sharedHint, desktopLabel, newProvider, bindingsLabel, follow, notSelected, accessRequired, confirmNeeded,
     unresolvedRef, unverifiableOwnership, reading, pathUnknown, activeNow, noDesktopModel]) {
   // 桌面标签按位置索引太脆，这里一次命名：文案全部显式引用，漏配会立刻暴露成 undefined。
   container.className += ' deva-model-page'
   const modelCopy = { accessRequired, networkApproval: confirmNeeded, unresolvedRef, unverifiableOwnership, reading, pathUnknown, activeNow, noDesktopModel }
+  const sourceLabels = keySourceLabels[pickLocale(ctx.locale)] || keySourceLabels.en
   const header = el('div', 'deva-header')
   const heading = el('div')
   heading.append(el('p', '', sharedHint))
@@ -1618,11 +1966,14 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
     current = settings
     catalog.textContent = JSON.stringify({ providers: settings.desktopProviders || [], defaultModel: settings.modelRef || '' }, null, 2)
     const models = settings.desktopModels || []
+    // 密钥来源：只显示「已设置（插件）/ 已设置（桌面端 Secrets，只读）/ 未设置」，永不显示值。
+    const sourceText = settings.hasApiKey ? (settings.keySource === 'desktop' ? sourceLabels.desktop : sourceLabels.plugin) : ''
     const fill = model => {
       address.value = model?.baseUrl || ''
       name.value = model?.modelName || ''
       key.value = ''
-      key.placeholder = model?.ref === settings.modelRef && settings.hasApiKey ? configured : ''
+      // 输入框占位短（宽度有限）；完整来源写在状态行，两者都不含值。
+      key.placeholder = model?.ref === settings.modelRef && settings.hasApiKey ? sourceLabels.short : ''
       clear.checked = false
       discovery.reset(model, model?.ref === settings.modelRef && settings.hasApiKey)
       discovery.setDesktop(settings)
@@ -1645,6 +1996,8 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
     shared.hidden = !settings.desktopConfigPath && !settings.desktopDiagnostics
     shared.textContent = settings.desktopConfigPath ? label(modelCopy.reading, { path: settings.desktopConfigPath }) : ''
     if (settings.desktopDiagnostics) shared.textContent += '\n' + settings.desktopDiagnostics
+    if (settings.keyDiagnostics) shared.textContent += '\n密钥来源与解析：\n' + settings.keyDiagnostics
+    if (settings.keyProblem) shared.textContent += '\n' + settings.keyProblem
     if (settings.credentialError) shared.textContent += '\n' + settings.credentialError
     // 每段提示只说一件事：未授权 / 批准 / 引用失效 / 桌面空态。不要把“读取桌面既有选择”判成授权失败。
     if (settings.desktopAccessRequired) {
@@ -1663,8 +2016,15 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
       // 桌面确实没有默认模型时给空态说明；有模型清单却解析不出默认值，属于引用失效而不是“未选择”。
       status.textContent = settings.legacyNeedsSetup ? legacy : (models.length ? notSelected : modelCopy.noDesktopModel)
     } else {
-      // 读出真实生效项时，状态行给出「provider / 模型」，让用户一眼对上桌面的选择。
+      // 读出真实生效项时，状态行给出「provider / 模型」，让用户一眼对上桌面的选择；
+      // 密钥状态只说来源，不显示值——桌面来源是只读的，提示语也要说明这一层。
       status.textContent = label(modelCopy.activeNow, { name: [settings.providerName, settings.modelName].filter(Boolean).join(' / ') || ref })
+      if (sourceText) status.textContent += ` · ${sourceText}`
+      // 没有可用 Key 时把可操作原因直接放状态行，不藏在折叠诊断里：用户要看到「为什么」和「下一步」。
+      if (settings.keyProblem) {
+        status.className = 'deva-status error'
+        status.textContent = settings.keyProblem
+      }
     }
     const emptyReason = emptyDesktopReason(settings)
     if (emptyReason) setError(emptyReason)
@@ -1971,7 +2331,7 @@ async function mountMcp(container, ctx, text) {
   }
   const totalValue = card(text.summaryTotal)
   const enabledValue = card(text.summaryEnabled, 'ok')
-  const managedValue = card(text.disabledStatus)
+  const managedValue = card(text.summaryManaged)
   const toolsValue = card(text.summaryTools)
 
   const toolbar = el('div', 'deva-toolbar')
@@ -2019,7 +2379,7 @@ async function mountMcp(container, ctx, text) {
   function refreshSummary() {
     totalValue.textContent = loaded ? String(servers.length) : '—'
     enabledValue.textContent = loaded ? String(servers.filter(server => server.enabled).length) : '—'
-    managedValue.textContent = loaded ? String(servers.filter(server => !server.enabled).length) : '—'
+    managedValue.textContent = loaded ? String(servers.filter(server => server.managed).length) : '—'
     const toolCount = servers.reduce((count, server) => count + (tools.get(server.name)?.length ?? server.toolCount ?? 0), 0)
     const partial = servers.some(server => server.toolCountUnavailable && !tools.has(server.name))
     toolsValue.textContent = !loaded ? '—' : partial ? `${toolCount}+` : String(toolCount)
@@ -2341,5 +2701,81 @@ async function mountMcp(container, ctx, text) {
     })
   }
 
+  await load()
+}
+
+// Studio delivers this entry as a Blob; relative client imports are unavailable.
+async function mountSkills(container, ctx, text) {
+  const copy = skillLabels[pickLocale(ctx.locale)]
+  const sourceLabel = source => source === 'builtin' ? copy.builtin : source === 'external' ? copy.external : `${copy.other} (${source || 'unknown'})`
+  const header = el('div', 'deva-header')
+  header.append(el('h2', '', copy.title))
+  const retry = button(copy.retry, 'deva-btn')
+  header.append(retry)
+  const status = el('p', 'deva-status')
+  status.setAttribute('role', 'status')
+  const dirs = el('div', 'deva-card')
+  const list = el('div', 'deva-grid')
+  const detail = el('pre', 'deva-value-preview')
+  detail.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere'
+  container.append(header, el('p', 'deva-muted', copy.hint), status, dirs, list, detail)
+  const call = async (name, input = null) => {
+    let timer
+    try {
+      return await Promise.race([ctx.rpc.call(name, input), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${name}: ${copy.timeout}`)), 20000) })])
+    } finally { clearTimeout(timer) }
+  }
+  const fail = error => { status.textContent = `${/401/.test(String(error?.message || error)) ? copy.unauthorized : copy.failed}${error?.message || error}`; status.className = 'deva-status error' }
+  const warningText = value => Array.isArray(value) ? value.map(String).join('\n') : ''
+  async function loadDirectories() {
+    dirs.replaceChildren()
+    try {
+      const data = await call('get-skill-directories')
+      dirs.append(el('p', '', `${copy.directories}${data.directories.join(', ') || copy.none}`))
+      const add = button(`${copy.register}${data.devaDirectory}`, 'deva-btn')
+      add.disabled = data.directories.includes(data.devaDirectory)
+      add.onclick = async () => { add.disabled = true; try { await call('save-skill-directories'); await load() } catch (error) { fail(error); add.disabled = false } }
+      dirs.append(add)
+      if (data.warnings?.length) dirs.append(el('p', 'deva-status error', `${copy.directoryWarning}${data.warnings.join('\n')}`))
+    } catch (error) { dirs.textContent = `${copy.unavailable}${error.message}` }
+  }
+  function renderSkill(skill) {
+    const card = el('div', 'deva-card')
+    const rawPath = skill.path || skill.directory || skill.filePath || skill.sourcePath || ''
+    const absolute = /^(\/|[A-Za-z]:[\\/])/.test(rawPath)
+    card.append(el('h3', '', skill.name), el('p', '', skill.description || copy.description), el('p', 'deva-muted', `${sourceLabel(skill.source)} · ${absolute ? rawPath : copy.path}`))
+    const warnings = warningText(skill.warnings)
+    if (warnings) card.append(el('p', 'deva-status error', `${copy.warnings}: ${warnings}`))
+    if (skill.validationError) card.append(el('p', 'deva-status error', String(skill.validationError)))
+    const toggle = button(skill.enabled === false ? copy.enable : copy.disable, 'deva-btn')
+    toggle.disabled = skill.readOnly === true
+    toggle.onclick = async () => { toggle.disabled = true; try { await call('set-skill-enabled', { name: skill.name, enabled: skill.enabled === false }); await load() } catch (error) { fail(error); toggle.disabled = false } }
+    const view = button(copy.view, 'deva-btn')
+    view.onclick = async () => { try { const data = await call('get-skill', { name: skill.name }); detail.textContent = data.content; detail.scrollIntoView({ block: 'nearest' }) } catch (error) { fail(error) } }
+    card.append(el('p', '', skill.enabled === false ? text.disabledStatus : copy.enabled), toggle, view)
+    return card
+  }
+  async function load() {
+    retry.disabled = true
+    list.replaceChildren(); detail.textContent = ''
+    status.className = 'deva-status'; status.textContent = copy.loading
+    try {
+      const data = await call('get-skills')
+      if (!Array.isArray(data?.skills)) throw new Error(copy.invalid)
+      status.textContent = data.skills.length ? `${data.skills.length} ${copy.count}` : copy.empty
+      if (data.warnings?.length) status.append(el('p', 'deva-status error', `${copy.warnings}: ${warningText(data.warnings)}`))
+      const sources = [...new Set(data.skills.map(skill => skill.source || 'unknown'))]
+      for (const source of sources) {
+        const group = el('section', '')
+        group.style.cssText = 'display:flex;flex-direction:column;gap:12px'
+        group.append(el('h3', '', sourceLabel(source)))
+        for (const skill of data.skills.filter(item => (item.source || 'unknown') === source)) group.append(renderSkill(skill))
+        list.append(group)
+      }
+    } catch (error) { fail(error) }
+    finally { retry.disabled = false }
+    await loadDirectories()
+  }
+  retry.onclick = load
   await load()
 }

@@ -1,6 +1,6 @@
 import { desktopDiagnostics } from './desktop-diagnostics.mjs'
 import { resolveAgentModel } from './agent-model-ref.mjs'
-/** Desktop owns the route and the default; Studio owns only its server-side credentials. */
+/** Desktop owns the route and the default; Studio owns its own credentials, and may read Desktop's read-only ones. */
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { customModelEndpoint, ModelInputError, normalizeBaseUrl } from './custom-model-network.mjs'
@@ -9,6 +9,7 @@ import { getPersona, listPersonas, writePersonaModel } from './persona-store.mjs
 import { resolveDevaRoot } from './deva-fs.mjs'
 import { sharedDevaWritePath, desktopWriteDenial } from './shared-deva-model.mjs'
 import { validateStored, validateStoredModel } from './storage-contracts.mjs'
+import { publicDesktopCredential, resolveDesktopCredential } from './desktop-secrets.mjs'
 
 export const REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const LEGACY_EFFORT = 'minimal'
@@ -19,7 +20,20 @@ function modelStore(run) {
   return run.state.profile.namespace(String(run.identity.userId))
 }
 
-function credentialStore(run) {
+/**
+ * 插件自己保存的 Key 有两个作用域：
+ *  · `user`：按 Studio 账号（`state.user`），**与运行 Profile 无关**——这是修掉「保存过、重开就丢」的存放点；
+ *  · `profile`：0.8.43 及更早按 `state.profile`（userId + profile）存放，作为只读兼容来源，读到后迁移。
+ *
+ * 为什么必须换作用域：宿主给插件 RPC 的 `run.identity.profile` 是**会话**的 Profile，Studio 从配置
+ * 哈希派生（`studio-web-<sha>`，见宿主 dist），与插件安装时的激活 Profile（常为 `default`）不同。
+ * 同一账号在两种 Profile 下保存的 Key 落在两个互不可见的命名空间里，于是「保存成功、下次读回为空」。
+ */
+function userCredentialStore(run) {
+  return run.state.user?.namespace?.('desktopModelKeys') ?? null
+}
+
+function profileCredentialStore(run) {
   return run.state.profile.namespace(String(run.identity.userId), 'desktopModelKeys')
 }
 
@@ -27,6 +41,68 @@ const credentialId = route => createHash('sha256').update(`${route.providerId}\0
 async function readStored(store, key) {
   const value = await store.get(key)
   return value === undefined ? null : validateStored(key, value)
+}
+
+/** 凭据作用域诊断：页面与报错都用它说明「查的是哪个名字空间」。只含 ID，不含密钥。 */
+function credentialScope(run) {
+  return { userId: run.identity?.userId ?? null, profile: run.identity?.profile ?? null }
+}
+
+/**
+ * 读插件侧保存的 Key：先看账号级，再看旧的 Profile 级。
+ * 不抛错：存储不可用/记录损坏都作为结论返回，交给解析层决定继续尝试桌面端还是报错。
+ */
+async function readPluginCredential(run, route) {
+  const id = credentialId(route)
+  const result = { present: false, key: '', scope: 'none', legacyScope: false, storeError: '', corrupt: false }
+  const stores = []
+  const userStore = userCredentialStore(run)
+  if (userStore) stores.push(['user', userStore])
+  try {
+    stores.push(['profile', profileCredentialStore(run)])
+  } catch (error) {
+    // 宿主未提供 profile 作用域或该作用域不可用：记录原因，继续尝试账号级与桌面端。
+    result.storeError = result.storeError || `profile:${error?.code || 'unavailable'}`
+  }
+  for (const [scope, store] of stores) {
+    let record
+    try {
+      record = await store.get(id)
+    } catch (error) {
+      result.storeError = `${scope}:${error?.code || 'unavailable'}`
+      continue
+    }
+    if (record === undefined) continue
+    try {
+      validateStored('desktopModelKey', record)
+    } catch {
+      result.corrupt = true
+      continue
+    }
+    if (record.providerId !== route.providerId || record.baseUrl !== route.baseUrl) continue
+    result.present = Boolean(record.apiKey)
+    result.key = record.apiKey || ''
+    result.scope = scope
+    result.legacyScope = scope === 'profile'
+    return result
+  }
+  return result
+}
+
+/** 把旧 Profile 作用域的 Key 迁到账号级；只在运行/保存路径调用，设置页读取仍然只读。 */
+async function promoteLegacyCredential(run, route) {
+  const userStore = userCredentialStore(run)
+  if (!userStore) return false
+  const record = await profileCredentialStore(run).get(credentialId(route)).catch(() => undefined)
+  if (record === undefined) return false
+  let parsed
+  try {
+    parsed = validateStored('desktopModelKey', record)
+  } catch { return false }
+  if (parsed.providerId !== route.providerId || parsed.baseUrl !== route.baseUrl || !parsed.apiKey) return false
+  await userStore.set(credentialId(route), parsed)
+  await profileCredentialStore(run).delete(credentialId(route)).catch(() => {})
+  return true
 }
 
 function trustedBases(run) {
@@ -37,19 +113,65 @@ export function resolveCustomEndpoint(run, baseUrl) {
   return customModelEndpoint(baseUrl, trustedBases(run))
 }
 
-export async function readCredential(run, route) {
-  if (!route?.baseUrl) return ''
-  const record = await credentialStore(run).get(credentialId(route))
-  if (!record) return ''
-  validateStored('desktopModelKey', record)
-  return record.providerId === route.providerId && record.baseUrl === route.baseUrl ? record.apiKey : ''
+/**
+ * 解析一条路由可用的 Key。顺序固定：
+ *  ① 插件侧显式保存的 Key（账号级 → 旧 Profile 级）
+ *  ② 桌面端 `secrets.json` 里同一 provider 的 Key（只读、按需 DPAPI 解密，明文只留内存）
+ *  ③ 都没有 → 返回原因，由调用方给出可操作报错
+ *
+ * `source` 就是页面要显示的来源（`plugin` / `desktop` / `none`）；`details` 只含元数据。
+ */
+export async function resolveCredential(run, route, options = {}) {
+  const base = { key: '', source: 'none', scope: credentialScope(run), details: {}, plugin: null, desktop: null }
+  if (!route?.providerId || !route?.baseUrl) return { ...base, reason: 'no-route' }
+  let plugin
+  try {
+    plugin = await readPluginCredential(run, route)
+  } catch (error) {
+    plugin = { present: false, key: '', scope: 'unavailable', storeError: String(error?.code || 'store-unavailable') }
+  }
+  if (plugin.present && plugin.key) {
+    return { ...base, key: plugin.key, source: 'plugin', plugin: { scope: plugin.scope, legacyScope: plugin.legacyScope } }
+  }
+  let desktop = null
+  try {
+    desktop = await resolveDesktopCredential({ config: run.config, providerId: route.providerId, decrypt: options.decrypt })
+  } catch {
+    desktop = { status: 'error', code: 'unavailable', present: false, plaintext: '' }
+  }
+  const desktopPublic = publicDesktopCredential(desktop)
+  if (desktop?.status === 'decrypted' && desktop.plaintext) {
+    return { ...base, key: desktop.plaintext, source: 'desktop', plugin: plugin ? { scope: plugin.scope } : null, desktop: desktopPublic }
+  }
+  return {
+    ...base,
+    reason: desktop?.status === 'missing-file' ? 'desktop-file-missing' : desktop?.status === 'missing' ? 'missing-desktop-entry' : desktop?.status === 'undecryptable' ? 'decrypt-failed' : desktop?.status === 'unreadable' ? 'desktop-unreadable' : 'none',
+    plugin: { scope: plugin?.scope ?? 'none', storeError: plugin?.storeError || '', corrupt: Boolean(plugin?.corrupt) },
+    desktop: desktopPublic,
+  }
+}
+
+/** 运行期取 Key（只回明文，不解释来源）。 */
+export async function readCredential(run, route, options = {}) {
+  const resolved = await resolveCredential(run, route, options)
+  if (resolved.key && resolved.source === 'plugin' && resolved.plugin?.legacyScope) {
+    // 旧 Profile 作用域命中：顺手迁到账号级，下次换 Profile 也能读到。迁移失败不影响本轮。
+    await promoteLegacyCredential(run, route).catch(() => {})
+  }
+  return resolved.key
 }
 
 async function writeCredential(run, route, apiKey) {
-  const store = credentialStore(run)
+  const record = validateStored('desktopModelKey', { providerId: route.providerId, baseUrl: route.baseUrl, apiKey })
   const id = credentialId(route)
-  if (apiKey) await store.set(id, validateStored('desktopModelKey', { providerId: route.providerId, baseUrl: route.baseUrl, apiKey }))
-  else await store.delete(id)
+  const userStore = userCredentialStore(run)
+  const target = userStore || profileCredentialStore(run)
+  if (apiKey) await target.set(id, record)
+  else {
+    await target.delete(id)
+    // 清除也要清旧作用域，否则「清除」后又被旧记录复活。
+    if (userStore) await profileCredentialStore(run).delete(id).catch(() => {})
+  }
 }
 
 /** Import only the authorized user's recoverable legacy route. Existing Desktop defaults take priority.
@@ -126,7 +248,19 @@ export async function readCustomModel(run, personaId) {
   if (route.adapter !== 'openai' || !route.baseUrl) {
     throw new Error('当前桌面模型没有可用于 Chat Completions 的地址或适配器；未回退')
   }
-  return { ...route, apiKey: await readCredential(run, route), reasoningEffort: defaultEffort(desktop) }
+  const credential = await resolveCredential(run, route)
+  return { ...route, apiKey: credential.key, credentialSource: credential.source, credentialDiagnostics: credentialDetails(credential), reasoningEffort: defaultEffort(desktop) }
+}
+
+/** 运行期诊断行：只说明「查过哪里、结论是什么」，不含任何密钥片段。 */
+function credentialDetails(credential) {
+  return {
+    source: credential.source,
+    scope: credential.scope,
+    reason: credential.reason || '',
+    plugin: credential.plugin ? { scope: credential.plugin.scope, storeError: credential.plugin.storeError || '', corrupt: Boolean(credential.plugin.corrupt) } : null,
+    desktop: credential.desktop || null,
+  }
 }
 
 /**
@@ -207,15 +341,29 @@ async function readDesktopSelection(run) {
   // Settings reads must never migrate legacy routes or require write authorization.
   const desktop = desktopModelState(run.config, { includeDisabled: true })
   const location = desktopConfigLocation(run.config)
-  let hasApiKey = false, credentialError = ''
-  try { hasApiKey = Boolean(await readCredential(run, desktop.active)) }
-  catch (error) { credentialError = safeReadError(error) + '；凭据读取失败；桌面模型仍可选择，远端刷新需要可用 Key。桌面 secrets.json 不由插件解密。' }
+  let hasApiKey = false, credentialError = '', credential = null
+  try {
+    credential = await resolveCredential(run, desktop.active)
+    hasApiKey = Boolean(credential.key)
+  } catch (error) {
+    credentialError = safeReadError(error) + '；凭据读取失败；桌面模型仍可选择，远端刷新需要可用 Key。'
+  }
+  // 三种情况分开说：没保存 / 保存了读不回 / 桌面有但没解密。页面据此给不同下一步。
+  const keyProblem = !desktop.active || hasApiKey ? '' : credentialProblemMessage(credential, run, desktop.active)
+  // 旧字段保持兼容：凭据存储不可用时继续填 credentialError（它只说明「Key 不可用」，不影响桌面模型显示）。
+  if (!credentialError && credential?.plugin?.storeError) {
+    credentialError = `插件侧凭据存储不可用（${credential.plugin.storeError}）；桌面模型仍可选择，远端刷新需要可用 Key。`
+  }
   const base = {
     ...empty,
     ...desktopRouteView(desktop),
     desktopWriteRequired: !sharedDevaWritePath(run),
     ...(!sharedDevaWritePath(run) ? { desktopWriteMessage: desktopWriteDenial(run) } : {}),
     hasApiKey,
+    ...(hasApiKey ? { keySource: credential?.source || 'plugin' } : {}),
+    ...(hasApiKey && credential?.source === 'desktop' ? { keySourceReadOnly: true } : {}),
+    ...(credential ? { keyDiagnostics: JSON.stringify(credentialDetails(credential), null, 2) } : {}),
+    ...(keyProblem ? { keyProblem } : {}),
     ...(credentialError ? { credentialError } : {}),
     sharedConfigPath: join(root, 'config.json'),
     desktopConfigPath: location.path,
@@ -231,6 +379,39 @@ async function readDesktopSelection(run) {
   }
   try { base.personaModels = listPersonas(run.config).list.map(({ id, name, model }) => ({ id, name, model })) } catch { /* model settings remain available */ }
   return base
+}
+
+/**
+ * 「为什么没有可用 Key」的可操作说明。每种情况对应不同下一步，不能统一回「未设置」：
+ *  · 插件侧记录损坏 / 存储不可用 → 说明作用域，请重填一次
+ *  · 桌面文件不存在或没有该 provider → 给出确切路径与条目数，请到桌面端保存
+ *  · 桌面有条目但解不开 → 说明 DPAPI 密文只能在保存它的同一 Windows 用户/机器解密
+ */
+function credentialProblemMessage(credential, run, route) {
+  const scope = credential?.scope || credentialScope(run)
+  const desktop = credential?.desktop || null
+  const desktopDetail = desktop
+    ? `桌面 secrets.json：${desktop.path}（存在=${desktop.exists}，结构=${desktop.structure}，条目=${desktop.entryCount ?? '未知'}${desktop.decryptCode ? `，解密=${desktop.decryptCode}` : ''}）`
+    : '桌面 secrets.json：路径未能解析'
+  const provider = route?.providerId || '当前模型'
+  if (credential?.plugin?.corrupt) {
+    return `插件侧保存的凭据记录已损坏（Profile ${scope.profile}）；请在下方重新填写一次 API Key 覆盖。${desktopDetail}`
+  }
+  if (credential?.plugin?.storeError) {
+    return `插件侧凭据存储不可用（${credential.plugin.storeError}）；请在下方重新填写一次 API Key。${desktopDetail}`
+  }
+  switch (credential?.reason) {
+    case 'decrypt-failed':
+      return `桌面端已保存 providerId=${provider} 的密钥，但本次无法解密（${desktop?.decryptCode || '未知原因'}）。DPAPI 密文只能由保存它的同一 Windows 用户、在同一台机器上解密：请确认 Studio 与 Deva 桌面端是同一账号、同一台机器；否则请在下方手动填写。${desktopDetail}`
+    case 'desktop-unreadable':
+      return `桌面 secrets.json 存在但不可用（${desktop?.code || '未知'}：${desktop?.path || '路径未知'}）；请检查该文件的类型/大小/JSON 结构，或在下方手动填写 Key。`
+    case 'missing-desktop-entry':
+      return `插件侧和桌面端都没有 providerId=${provider} 的密钥；桌面 secrets.json 已读取但没有这一条（${desktop?.path || '路径未知'}，条目=${desktop?.entryCount ?? 0}）。请在 Deva 桌面端保存一次，或在下方手动填写。`
+    case 'desktop-file-missing':
+      return `插件侧没有保存该提供方的 Key，桌面端也还没写过密钥文件（${desktop?.path || '路径未知'} 不存在）。请在 Deva 桌面端保存一次，或直接在下方手动填写。`
+    default:
+      return `未找到可用的 API Key：插件侧没有保存，桌面端也没有该提供方的条目。${desktopDetail}`
+  }
 }
 
 function checkedRoute(run, { baseUrl, modelName, apiKey, reasoningEffort }) {
