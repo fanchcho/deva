@@ -793,3 +793,11 @@ test('local candidates include other providers and disambiguate identical model 
   assert.equal(findAll(root, n => n.tag === 'select')[0].value, 'q:same')
   assert.equal(findAll(root, n => n.type === 'url')[0].value, rows[1].baseUrl)
 })
+
+ test('host API Error status survives the RPC bridge', async () => {
+  const { modelRpcDiagnostics } = await import('../client.mjs')
+  const output = { value: '' }
+  const call = modelRpcDiagnostics({ rpc: { call: async () => { throw Error('API Error 500: config read failed') } } }, output)
+  await assert.rejects(call('get-model-selection'), /HTTP 500.*config read failed/)
+  assert.match(output.value, /500/)
+})
