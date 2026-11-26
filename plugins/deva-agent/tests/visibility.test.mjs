@@ -18,3 +18,24 @@ test('geometry distinguishes present offscreen candidates and collapsed iframe',
   assert.equal(probeGeometry(node, win).inViewport, 0)
   assert.deepEqual(probeGeometry(null, win), { present: 0 })
 })
+
+test('first render reveals offscreen choices without moving visible or empty lists', async () => {
+  const { revealModelChoices } = await import('../client.mjs')
+  let calls = 0
+  const node = { options: [1], getBoundingClientRect: () => ({ top: 900, bottom: 1020 }), scrollIntoView(options) { assert.equal(options.block, 'nearest'); calls++ } }
+  revealModelChoices(node, 700)
+  assert.equal(calls, 1)
+  node.getBoundingClientRect = () => ({ top: 100, bottom: 220 })
+  revealModelChoices(node, 700)
+  node.options = []
+  revealModelChoices(node, 0)
+  assert.equal(calls, 1)
+})
+
+test('host Unauthorized errors retain the visible HTTP 401 meaning', async () => {
+  const { modelRpcDiagnostics } = await import('../client.mjs')
+  const output = {}
+  const call = modelRpcDiagnostics({ rpc: { call: async () => { throw Error('Unauthorized') } } }, output)
+  await assert.rejects(call('get-model-selection'), /HTTP 401/)
+  assert.equal(JSON.parse(output.value).http, 401)
+})

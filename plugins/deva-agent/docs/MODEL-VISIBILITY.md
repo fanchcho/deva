@@ -28,3 +28,9 @@ DOM 有 option 或 RPC 返回成功单独都不构成可见性通过。测试中
 clientSha256（实际source字节）、HTTP状态和字节数；匿名响应标记0/unauthenticated。
 model-ui-trace 的账号/Profile 由服务端run.identity补入，客户端不能伪造这些字段。
 日志落盘错误不影响资源下发。没有请求日志不能证明用户没有访问；旧缓存和请求未到此实例仍需实际页面证据。
+
+0.8.37 顶部小字常驻显示版本、当前候选数及读取/刷新/失败阶段，0候选也有明确原因。
+首次挂载后仅在已有候选越出视口时scrollIntoView(nearest)，采样/滚动异常仍由observeSafely隔离。
+`scripts/model-ui-selfcheck.ps1` 为Windows只读自检，检查宿主环境变量指定目录及默认用户目录，
+输出安装版本、客户端SHA256和白名单事件字段，不读取配置或凭据。找不到目录会列出查找位置，
+不推断插件未安装。历史版本目录不代表当前运行版本；Windows执行尚需实际设备验证。
