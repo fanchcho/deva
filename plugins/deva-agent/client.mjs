@@ -1097,6 +1097,17 @@ export function revealModelChoices(node, viewportHeight) {
   if (rect.top < 0 || rect.bottom > viewportHeight) node.scrollIntoView({ block: 'nearest' })
 }
 
+export function emptyDesktopReason(settings) {
+  if (!Array.isArray(settings.desktopModels) || settings.desktopModels.length || !settings.desktopDiagnostics || settings.desktopAccessRequired || settings.unresolvedModelRef) return ''
+  let diagnostic = {}
+  try { diagnostic = JSON.parse(settings.desktopDiagnostics || '{}') } catch { /* Show a readable parsing error, never raw diagnostics. */ }
+  const path = settings.desktopConfigPath || diagnostic.path || '未解析出绝对路径'
+  const reason = diagnostic.error || (diagnostic.exists === false ? '配置文件不存在' :
+    diagnostic.providerCount === 0 ? '配置已解析，但没有提供方' :
+      diagnostic.modelCount === 0 ? '配置已解析，但没有模型' : '未读到模型，请检查配置路径与格式')
+  return `本地配置：${path}；${reason}。提供方 ${diagnostic.providerCount ?? '未知'} 个，模型 ${diagnostic.modelCount ?? '未知'} 个。`
+}
+
 export async function mount(root, ctx) {
   try { return await mountTraced(root, ctx) }
   catch {
@@ -1120,7 +1131,7 @@ async function mountTraced(root, ctx) {
   const original = ctx
   const trace = event => {
     if (ctx.signal?.aborted) return
-    const payload = { side: 'client', version: '0.8.42', revision: 'not-exposed-by-sdk', attempt, ...event }
+    const payload = { side: 'client', version: '0.8.43', revision: 'not-exposed-by-sdk', attempt, ...event }
     Promise.resolve().then(() => original.rpc.call('model-ui-trace', payload)).catch(() => {})
   }
   root.innerHTML = ''
@@ -1223,7 +1234,7 @@ export function modelRpcDiagnostics(ctx, output, getKey = () => '', timeoutMs = 
   const safeUrl = value => {
     try { const url = new URL(value); url.search = ''; url.hash = ''; url.username = ''; url.password = ''; return url.href } catch { return 'unavailable' }
   }
-  const state = { version: '0.8.42', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
+  const state = { version: '0.8.43', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
   observeSafely(() => { if (typeof window !== 'undefined') {
     state.url = safeUrl(window.location.href)
     state.origin = window.origin
@@ -1655,6 +1666,8 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
       // 读出真实生效项时，状态行给出「provider / 模型」，让用户一眼对上桌面的选择。
       status.textContent = label(modelCopy.activeNow, { name: [settings.providerName, settings.modelName].filter(Boolean).join(' / ') || ref })
     }
+    const emptyReason = emptyDesktopReason(settings)
+    if (emptyReason) setError(emptyReason)
     if (settings.desktopWriteRequired) status.textContent += ` ${settings.desktopWriteMessage || 'Read-only: host did not return authorization details; reload the plugin.'}`
     ownership.hidden = settings.desktopOwnership !== 'unverifiable'
     ownership.textContent = ownership.hidden ? '' : modelCopy.unverifiableOwnership
