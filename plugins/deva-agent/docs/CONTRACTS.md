@@ -444,3 +444,11 @@ Windows 桌面端的 safeStorage **不是**“明文直接 DPAPI 后写盘”。
 原因码：`local-state-missing`、`encrypted-key-invalid`、`key-unprotect-failed`、`gcm-auth-failed`、`blob-not-dpapi`、`legacy-raw-dpapi-ok`、`v10-detected`、`foreign-blob-proven`（仅当同机不同用户可确证时）。`0x80131501`（.NET 泛化 `MethodInvocationException` / 参数无效）只表示“不是合法 DPAPI blob”，**不得**据此推断跨用户/跨机器。
 
 `lib/safe-storage.mjs` 同时提供 macOS v10 的 AES-128-CBC 实现（IV=16×0x20），macOS 的 Keychain 密钥由 `lib/macos-keychain.mjs` 提供——两端共用同一个 v10 信封解析器，但密码算法不同。
+
+## 0.8.50 macOS 钥匙串发现与密文指纹
+
+- 发现（只读属性）：`security list-keychains -d user`、`security default-keychain -d user`，对每个 keychain 执行 `security dump-keychain <path>`（**不带 `-d`，不读取密码数据**），解析 `class: "genp"` 块的 `svce`/`acct`；过滤 `/deva|safe ?storage|electron/i`；输出 `{paths, defaultKeychain, totalGenericPasswords, matched, entries[service,account,keychain], errors}`。
+- 命中策略：四个 app-name 候选（`Deva` / `deva` / `@deva/desktop` / `Electron`）均 miss 后，对发现到的条目按「精确 service+account」→「仅 service」重试（带 keychain 路径）。
+- 原因码：`mac-keychain-item-missing`（属性里也没有匹配条目）与 `mac-keychain-item-invisible`（属性里能看到、但当前进程读不到密码：Data Protection keychain/access group/ACL 未授权）分开。
+- 指纹：`desktopSecretsStructure` 每条输出 `key/keyLength/valueChars/decodedBytes/prefix/likelyFormat`。`likelyFormat` 仅按 `decodedBytes` 判断：mac-cbc = `(bytes-3)` 为 16 的倍数且 ≥32；win-gcm = `bytes-3-12-16 ≥1`；两者都满足 = `ambiguous`。`win-gcm` 表示这份 v10 在 Windows 生成，macOS 的 AES-128-CBC 解不开，应在本机桌面端重存或模型页手填。
+- `get-keychain-diagnostics` RPC + 模型页「钥匙串诊断」按钮输出可复制文本（路径/用户/条目统计/service/account/长度/前缀/指纹），不含任何 Key 值或密文。

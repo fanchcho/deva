@@ -111,6 +111,23 @@ export function describeValuePrefix(value) {
   }
 }
 
+/**
+ * 仅凭长度判断 v10 载荷更像哪种平台格式：
+ *  · macOS：`v10` + AES-128-CBC(PKCS#7) → (bytes-3) 必须是 16 的倍数；
+ *  · Windows：`v10` + nonce(12) + GCM 密文+tag(16) → (bytes-3-12-16) >= 1；
+ *  · 两者都满足 → ambiguous（必须结合平台/来源判断，不能拍脑袋）。
+ */
+export function likelyV10Format(decodedBytes) {
+  if (!Number.isInteger(decodedBytes) || decodedBytes < 3) return 'invalid'
+  const body = decodedBytes - 3
+  const mac = body >= 32 && body % 16 === 0
+  const win = body >= 29
+  if (mac && win) return 'ambiguous'
+  if (mac) return 'mac-cbc'
+  if (win) return 'win-gcm'
+  return 'invalid'
+}
+
 /** 明文合理性：可打印 UTF-8 / 无控制字符。 */
 export function looksLikeSecret(text) {
   if (typeof text !== 'string' || !text) return false

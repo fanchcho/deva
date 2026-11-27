@@ -43,6 +43,7 @@ export const MAC_CODES = Object.freeze({
   NOT_DARWIN: 'platform-unsupported',
   SECURITY_MISSING: 'mac-keychain-tool-missing',
   ITEM_MISSING: 'mac-keychain-item-missing',
+  ITEM_INVISIBLE: 'mac-keychain-item-invisible',
   DENIED: 'mac-keychain-denied',
   NO_SESSION: 'mac-keychain-no-session',
   TIMEOUT: 'mac-keychain-timeout',
@@ -98,6 +99,67 @@ export function classifySecurityFailure(result) {
 }
 
 /**
+ * 解析 `security dump-keychain` 的**属性**输出（不加 -d，不读取密码数据）。
+ * 只提取 genp（generic password）的 service/account；绝不读取 value。
+ */
+export function parseKeychainDump(text) {
+  const entries = []
+  let current = null
+  for (const line of String(text || '').replace(/\r/g, '').split('\n')) {
+    if (/^\s*class:\s*"genp"/.test(line)) {
+      current = { service: '', account: '' }
+      entries.push(current)
+      continue
+    }
+    if (/^\s*class:\s*"/.test(line)) { current = null; continue }
+    if (!current) continue
+    const match = line.match(/^\s*"([A-Za-z0-9]+)"<[^>]*>="(.*)"\s*$/)
+    if (!match) continue
+    const [, key, value] = match
+    const decoded = value.replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+    if (key === 'svce') current.service = decoded
+    if (key === 'acct') current.account = decoded
+  }
+  return entries.filter(entry => entry.service || entry.account)
+}
+
+function parseKeychainList(text) {
+  return String(text || '').split(/\r?\n/).map(line => line.trim().replace(/^"|"$/g, '')).filter(Boolean)
+}
+
+/**
+ * 只读发现：`security list-keychains -d user` + `default-keychain`，
+ * 对每个 keychain 执行 `dump-keychain`（**不带 -d**，不读取任何密码数据），
+ * 只统计 genp 条目并过滤 /deva|safe ?storage|electron/i。绝不写、不修复、不 upgrade keychain。
+ */
+export function collectKeychainEntries({ runSecurity = defaultRunSecurity, securityBinary = 'security', timeoutMs = 10000 } = {}) {
+  const list = runSecurity(securityBinary, ['list-keychains', '-d', 'user'], timeoutMs)
+  const paths = list && !list.error && list.status === 0 ? parseKeychainList(list.stdout) : []
+  const def = runSecurity(securityBinary, ['default-keychain', '-d', 'user'], timeoutMs)
+  const defaultKeychain = def && !def.error && def.status === 0 ? parseKeychainList(def.stdout)[0] || '' : ''
+  const keychains = [...new Set([...paths, defaultKeychain].filter(Boolean))]
+  const errors = []
+  const all = []
+  for (const keychain of keychains) {
+    const dump = runSecurity(securityBinary, ['dump-keychain', keychain], timeoutMs)
+    if (!dump || dump.error || dump.status !== 0) {
+      errors.push({ keychain, code: classifySecurityFailure(dump) })
+      continue
+    }
+    for (const entry of parseKeychainDump(dump.stdout)) all.push({ ...entry, keychain })
+  }
+  const filtered = all.filter(entry => /deva|safe\s?storage|electron/i.test(`${entry.service} ${entry.account}`))
+  return {
+    paths: keychains,
+    defaultKeychain,
+    totalGenericPasswords: all.length,
+    matched: filtered.length,
+    entries: filtered.slice(0, 20),
+    errors,
+  }
+}
+
+/**
  * 可注入的 macOS 钥匙串解密器。
  *
  * @param {{
@@ -120,26 +182,59 @@ export function createMacKeychainDecoder({
   let selfCheckState = null
   let keyCache = null // { key, service, account, expires }
 
+  function tryPassword(args) {
+    const result = runSecurity(securityBinary, args, timeoutMs)
+    if (result && !result.error && result.status === 0) {
+      // `security -w` 输出末尾有换行；base64 密码本身不含空白。
+      const password = String(result.stdout || '').replace(/\r?\n$/, '')
+      if (password) return { ok: true, password }
+      return { ok: false, code: MAC_CODES.KEYCHAIN_ERROR }
+    }
+    return { ok: false, code: classifySecurityFailure(result) }
+  }
+
   function findPassword() {
     const attempts = []
     for (const candidate of candidates) {
       const service = `${candidate.app} Safe Storage`
       const account = candidate.app
-      const result = runSecurity(securityBinary, ['find-generic-password', '-s', service, '-a', account, '-w'], timeoutMs)
-      if (result && !result.error && result.status === 0) {
-        // `security -w` 输出末尾有换行；base64 密码本身不含空白。
-        const password = String(result.stdout || '').replace(/\r?\n$/, '')
-        if (password) {
-          attempts.push({ service, account, ok: true })
-          return { ok: true, password, service, account, attempts }
-        }
+      const got = tryPassword(['find-generic-password', '-s', service, '-a', account, '-w'])
+      if (got.ok) {
+        attempts.push({ service, account, ok: true })
+        return { ok: true, password: got.password, service, account, attempts }
       }
-      const code = classifySecurityFailure(result)
-      attempts.push({ service, account, ok: false, code })
+      attempts.push({ service, account, ok: false, code: got.code })
       // 只有“条目不存在”才继续换候选；授权被拒/无会话/超时是环境结论，继续试也没用。
-      if (code !== MAC_CODES.ITEM_MISSING) return { ok: false, code, attempts }
+      if (got.code !== MAC_CODES.ITEM_MISSING) return { ok: false, code: got.code, attempts }
     }
-    return { ok: false, code: MAC_CODES.ITEM_MISSING, attempts }
+    // 四个候选全 miss：只读枚举钥匙串属性，看看是否“条目存在但当前进程看不到/名字不同”。
+    const discovery = collectKeychainEntries({ runSecurity, securityBinary, timeoutMs })
+    const seen = new Set()
+    for (const entry of discovery.entries) {
+      const id = `${entry.keychain}\0${entry.service}\0${entry.account}`
+      if (seen.has(id)) continue
+      seen.add(id)
+      if (entry.service && entry.account) {
+        const got = tryPassword(['find-generic-password', '-s', entry.service, '-a', entry.account, '-w', entry.keychain])
+        if (got.ok) {
+          attempts.push({ service: entry.service, account: entry.account, keychain: entry.keychain, ok: true })
+          return { ok: true, password: got.password, service: entry.service, account: entry.account, attempts, discovery }
+        }
+        attempts.push({ service: entry.service, account: entry.account, keychain: entry.keychain, ok: false, code: got.code })
+        if (got.code !== MAC_CODES.ITEM_MISSING) return { ok: false, code: got.code, attempts, discovery }
+      }
+      if (entry.service) {
+        const got = tryPassword(['find-generic-password', '-s', entry.service, '-w', entry.keychain])
+        if (got.ok) {
+          attempts.push({ service: entry.service, account: entry.account || '', keychain: entry.keychain, ok: true, serviceOnly: true })
+          return { ok: true, password: got.password, service: entry.service, account: entry.account || '', attempts, discovery, serviceOnly: true }
+        }
+        attempts.push({ service: entry.service, account: entry.account || '', keychain: entry.keychain, ok: false, code: got.code, serviceOnly: true })
+        if (got.code !== MAC_CODES.ITEM_MISSING) return { ok: false, code: got.code, attempts, discovery }
+      }
+    }
+    const code = discovery.matched > 0 ? MAC_CODES.ITEM_INVISIBLE : MAC_CODES.ITEM_MISSING
+    return { ok: false, code, attempts, discovery }
   }
 
   function deriveKey(password) {
@@ -157,7 +252,7 @@ export function createMacKeychainDecoder({
     if (!found.ok) return found
     const key = deriveKey(found.password)
     keyCache = { key, service: found.service, account: found.account, expires: Date.now() + cacheTtlMs }
-    return { ok: true, key, service: found.service, account: found.account, cached: false, attempts: found.attempts }
+    return { ok: true, key, service: found.service, account: found.account, cached: false, attempts: found.attempts, discovery: found.discovery || null }
   }
 
   /** 自检：security 是否可用、候选 service 是否存在、PBKDF2+AES 往返是否可用。不碰用户密文。 */
@@ -195,6 +290,7 @@ export function createMacKeychainDecoder({
       service: keychain.service || '',
       account: keychain.account || '',
       roundtrip,
+      ...(keychain.discovery ? { keychain: keychain.discovery } : {}),
       variants,
     }
     return selfCheckState

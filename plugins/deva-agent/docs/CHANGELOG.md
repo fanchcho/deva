@@ -1,3 +1,11 @@
+# 0.8.50
+
+- macOS 钥匙串诊断：`security list-keychains`/`default-keychain` + `dump-keychain`（**不带 -d，只读属性**）枚举 genp 的 service/account，过滤 `/deva|safe ?storage|electron/i`；四候选 miss 后按「精确 service+account → 仅 service」重试，覆盖条目名与 Electron 默认名不同的情况。
+- 拆分 `mac-keychain-item-missing` 与 `mac-keychain-item-invisible`：后者表示属性里能看到条目、但当前进程读不到密码（Data Protection keychain/access group 或需点「允许」），页面给「允许后重试 + 钥匙串诊断」而不是笼统「没有条目」。
+- 新增「钥匙串诊断」入口（模型页按钮 + `get-keychain-diagnostics` RPC）：输出 keychain 路径、用户、genp 总数、匹配条目 service/account、每条 `key/keyLength/valueChars/decodedBytes/prefix/likelyFormat`；不含任何 Key/密文。
+- 新增密文指纹 `likelyFormat=mac-cbc|win-gcm|ambiguous|invalid`：按 `decodedBytes` 精确判断；`win-gcm` 时明确提示「这份 v10 是 Windows 生成的，macOS 密码学上解不开」，给「桌面端在本机重存」或「模型页填一次」两条出路。
+- 依据：Electron 33 `electron_browser_main_parts.cc:539-540`（service=`<app_name> Safe Storage`，account=`<app_name>`）；Chromium 130 `os_crypt_mac.mm`（AES-128-CBC v10）与 `os_crypt_win.cc`（AES-256-GCM v10）；`crypto/apple_keychain_mac.cc:56-68` 仍是 `SecKeychainFindGenericPassword`（传统 login keychain，跨进程读取受 ACL/用户授权约束）。
+
 # 0.8.49
 
 - 统一 safeStorage 解码器：Windows 与 macOS 共用 `lib/safe-storage.mjs` 的 v10 格式层（Windows=AES-256-GCM，macOS=AES-128-CBC，二者前缀同为 v10 但密码不同）。

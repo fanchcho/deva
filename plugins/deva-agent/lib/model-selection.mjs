@@ -449,6 +449,11 @@ function credentialProblemMessage(credential, run, route) {
           : '密文既不是 v10（safeStorage）也不是合法 DPAPI blob（参数无效），归属未确认'
         return `桌面端已保存 providerId=${provider} 的密钥，但${tail}${who}。请在本页填一次 API Key（账号级永久）。${desktopDetail}`
       }
+      if (code === MAC_CODES.ITEM_INVISIBLE) {
+        const kc = health?.keychain
+        const found = (kc?.entries || []).map(item => `${item.service || ''}${item.account ? ` / ${item.account}` : ''}`).filter(Boolean).join('、') || '已发现匹配条目'
+        return `macOS 钥匙串里发现了匹配的 Safe Storage 条目（${found}），但当前 Studio 进程读不到它的密码：可能被 Data Protection keychain / access group 隔离，或需要你在弹出的系统提示中点一次「允许」。请点「钥匙串诊断」查看详情，允许后重试；也可在本页填一次 API Key（账号级永久）。${desktopDetail}`
+      }
       if (code === MAC_CODES.ITEM_MISSING) {
         return `桌面端已保存 providerId=${provider} 的密钥，但 macOS 钥匙串里没有对应的 Safe Storage 条目（尝试过：${(health?.variants || []).map(v => v.service).filter(Boolean).join(' / ') || '多个应用名候选'}）。这通常意味着桌面端的钥匙串条目被删过、或桌面包名与当前候选不同；请在本页填一次 API Key（账号级永久）。${desktopDetail}`
       }

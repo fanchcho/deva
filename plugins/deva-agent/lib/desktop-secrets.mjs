@@ -20,9 +20,9 @@ import { createHash } from 'node:crypto'
 import { accessSync, constants, lstatSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveDevaRoot } from './deva-fs.mjs'
-import { MAC_CODES, createMacKeychainDecoder, isMacToolchainFailure } from './macos-keychain.mjs'
+import { MAC_CODES, collectKeychainEntries, createMacKeychainDecoder, isMacToolchainFailure } from './macos-keychain.mjs'
 import { createWindowsSafeStorageDecoder, WIN_CODES } from './windows-safe-storage.mjs'
-import { classifyOwnership, describeValuePrefix, normalizeAccount } from './safe-storage.mjs'
+import { classifyOwnership, describeValuePrefix, likelyV10Format, normalizeAccount } from './safe-storage.mjs'
 import { hostname, userInfo } from 'node:os'
 
 export const DESKTOP_SECRETS_MAX_BYTES = 1024 * 1024
@@ -169,7 +169,8 @@ export function desktopSecretsStructure(file) {
         keyLength: key.length,
         valueChars: value.length,
         decodedBytes: described.bytes,
-        prefix: described.kind === 'v10' ? 'v10' : described.kind
+        prefix: described.kind === 'v10' ? 'v10' : described.kind,
+        likelyFormat: described.kind === 'v10' ? likelyV10Format(described.bytes) : 'invalid'
       }
     })
   }
@@ -661,6 +662,7 @@ export function credentialHealth(selfCheck) {
     code: selfCheck.code || '',
     runtime: selfCheck.runtime || '',
     ...(selfCheck.localState ? { localState: selfCheck.localState } : {}),
+    ...(selfCheck.keychain ? { keychain: selfCheck.keychain } : {}),
     ...(selfCheck.localStateTried ? { localStateTried: selfCheck.localStateTried } : {}),
     ...(selfCheck.dpapi ? { dpapi: selfCheck.dpapi } : {}),
     ...(selfCheck.service ? { service: selfCheck.service } : {}),
@@ -670,6 +672,47 @@ export function credentialHealth(selfCheck) {
     machine: usable.machine || '',
     variants,
   }
+}
+
+/**
+ * 一键钥匙串诊断：只读枚举 + 密文指纹，输出可复制文本。
+ * 只包含路径、用户名、条目统计、service/account、长度与前缀类型；绝不读取/输出任何 Key 值或密文。
+ */
+export function readKeychainDiagnostics(config = {}, { platform = process.platform, runSecurity } = {}) {
+  const file = readDesktopSecrets(config)
+  const structure = desktopSecretsStructure(file)
+  const lines = []
+  let user = ''
+  let machine = ''
+  try { user = userInfo().username } catch { /* diagnostics only */ }
+  try { machine = hostname() } catch { /* diagnostics only */ }
+  lines.push(`platform: ${platform}`)
+  lines.push(`user: ${user || 'unknown'}`)
+  lines.push(`machine: ${machine || 'unknown'}`)
+  lines.push(`secrets: ${file.path} (exists=${file.exists}, size=${file.size ?? 'unknown'}, structure=${file.structure}, entries=${structure?.entryCount ?? 'unknown'})`)
+  if (structure) {
+    for (const entry of structure.entries) {
+      lines.push(`entry: key=${entry.key} keyLength=${entry.keyLength} valueChars=${entry.valueChars} decodedBytes=${entry.decodedBytes ?? 'unknown'} prefix=${entry.prefix} likelyFormat=${entry.likelyFormat}`)
+    }
+  }
+  if (platform !== 'darwin') {
+    lines.push('keychain: (not macOS; skipped)')
+    return { text: lines.join('\n') }
+  }
+  const keychain = collectKeychainEntries({ ...(runSecurity ? { runSecurity } : {}) })
+  lines.push(`keychains: ${keychain.paths.length ? keychain.paths.join(' | ') : '(none)'}`)
+  lines.push(`defaultKeychain: ${keychain.defaultKeychain || '(unknown)'}`)
+  lines.push(`genericPasswordsTotal: ${keychain.totalGenericPasswords}`)
+  lines.push(`matchedDevaSafeStorage: ${keychain.matched}`)
+  for (const entry of keychain.entries) lines.push(`keychainEntry: service=${entry.service || ''} account=${entry.account || ''} keychain=${entry.keychain}`)
+  for (const error of keychain.errors) lines.push(`keychainError: ${error.keychain} code=${error.code}`)
+  const formats = (structure?.entries || []).map(entry => entry.likelyFormat)
+  if (formats.includes('win-gcm')) {
+    lines.push('fingerprint: v10 payload looks like Windows AES-256-GCM; macOS cannot decrypt it (different cipher) — re-save on this Mac or fill once in the model page.')
+  } else if (formats.length && formats.every(format => format === 'ambiguous')) {
+    lines.push('fingerprint: v10 length is ambiguous (mac-cbc/win-gcm both possible); platform + keychain hit decides.')
+  }
+  return { text: lines.join('\n') }
 }
 
 /** 页面/诊断用的**脱敏**视图：只有元数据与结论，绝不含密文或明文。 */

@@ -2575,6 +2575,21 @@
         "warnings"
       ],
       "additionalProperties": false
+    },
+    "keychainDiagnosticsView": {
+      "type": "object",
+      "description": "钥匙串诊断文本（只读、脱敏）：keychain 路径、用户、条目统计、service/account、密文长度与前缀类型；不含 Key 值或密文。",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "可复制的诊断文本。",
+          "maxLength": 20000
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
     }
   },
   "rpc": {
@@ -2727,6 +2742,11 @@
       "description": "保留原目录并注册配置推导的 Deva skills 目录",
       "input": "empty",
       "output": "skillDirectories"
+    },
+    "get-keychain-diagnostics": {
+      "description": "只读枚举 macOS 钥匙串属性并输出密文指纹，不读取任何 Key 值。",
+      "input": "empty",
+      "output": "keychainDiagnosticsView"
     }
   },
   "tools": {},

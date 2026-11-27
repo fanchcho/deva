@@ -70,6 +70,8 @@ export function createCustomModel(run, { baseUrl, modelName, apiKey, reasoningEf
           why = code === 'foreign-blob-proven'
             ? '桌面有该提供方密文，且已确认是同一台机器上另一个 Windows 用户存的密文（DPAPI 无法跨用户解密）'
             : '桌面有该提供方密文，但它既不是 v10（safeStorage）也不是合法 DPAPI blob（参数无效）；归属未确认'
+        } else if (MAC_CODES.ITEM_INVISIBLE === code) {
+          why = '桌面有该提供方密文，且 macOS 钥匙串里能找到匹配条目，但当前 Studio 进程读不到它的密码（Data Protection keychain/access group 或需要点一次「允许」）'
         } else if (MAC_CODES.ITEM_MISSING === code) {
           why = '桌面有该提供方密文，但 macOS 钥匙串里没有对应的 Safe Storage 条目'
         } else if (MAC_CODES.DENIED === code || MAC_CODES.NO_SESSION === code || MAC_CODES.TIMEOUT === code) {

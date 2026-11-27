@@ -75,8 +75,9 @@ test('macOS 4/9 — no Keychain item for any candidate service reports mac-keych
   const security = fakeSecurity({ notFound: true })
   const result = await decoder(security)(encryptV10('x'))
   assert.equal(result.code, MAC_CODES.ITEM_MISSING)
-  assert.ok(security.calls.length >= 4, '会依次尝试多个 app 名候选')
-  assert.equal(security.calls.every(call => call.service.endsWith(' Safe Storage')), true)
+  const findCalls = security.calls.filter(call => call.args[0] === 'find-generic-password')
+  assert.ok(findCalls.length >= 4, '会依次尝试多个 app 名候选')
+  assert.equal(findCalls.every(call => call.args[call.args.indexOf('-s') + 1].endsWith(' Safe Storage')), true)
 })
 
 test('macOS 5/9 — user denied the Keychain prompt reports mac-keychain-denied', async () => {
@@ -149,4 +150,90 @@ test('low-level helpers reject malformed input instead of silently accepting it'
   assert.equal(looksLikeSecret('fixture.good.token'), true)
   assert.equal(looksLikeSecret('bad\u0000token'), false)
   assert.equal(looksLikeSecret('bad\uFFFDtoken'), false)
+})
+
+// ── 钥匙串发现 + 指纹（0.8.50）──
+import { collectKeychainEntries, parseKeychainDump } from '../lib/macos-keychain.mjs'
+import { likelyV10Format } from '../lib/safe-storage.mjs'
+
+const DUMP = `keychain: "/Users/fixture/Library/Keychains/login.keychain-db"
+version: 512
+class: "genp"
+attributes:
+    0x00000007 <blob>="deva Safe Storage"
+    "svce"<blob>="deva Safe Storage"
+    "acct"<blob>="deva"
+class: "inet"
+attributes:
+    "srvr"<blob>="example.com"
+`
+
+function discoverySecurity({ password = PASSWORD, denied = false } = {}) {
+  const calls = []
+  const run = (binary, args) => {
+    calls.push(args)
+    if (args[0] === 'list-keychains') return { status: 0, stdout: '"/Users/fixture/Library/Keychains/login.keychain-db"\n' }
+    if (args[0] === 'default-keychain') return { status: 0, stdout: '"/Users/fixture/Library/Keychains/login.keychain-db"\n' }
+    if (args[0] === 'dump-keychain') return { status: 0, stdout: DUMP }
+    if (args[0] === 'find-generic-password') {
+      if (denied) return { status: 51, stderr: 'The authorization was denied.' }
+      const s = args[args.indexOf('-s') + 1]
+      const a = args.includes('-a') ? args[args.indexOf('-a') + 1] : ''
+      if (s === 'deva Safe Storage' && (a === 'deva' || !a)) return { status: 0, stdout: `${password}\n` }
+      return { status: 44, stderr: 'The specified item could not be found in the keychain.' }
+    }
+    return { status: 1, stderr: 'unexpected' }
+  }
+  return { run, calls }
+}
+
+test('keychain discovery: attributes-only dump parses service/account and filters deva entries', () => {
+  const entries = parseKeychainDump(DUMP)
+  assert.deepEqual(entries.map(e => [e.service, e.account]), [['deva Safe Storage', 'deva']])
+  const security = discoverySecurity()
+  const info = collectKeychainEntries({ runSecurity: security.run })
+  assert.equal(info.paths.length, 1)
+  assert.equal(info.totalGenericPasswords, 1)
+  assert.equal(info.matched, 1)
+  assert.equal(info.entries[0].service, 'deva Safe Storage')
+  assert.equal(JSON.stringify(info).includes(PASSWORD), false, '发现结果不含密码值')
+})
+
+test('keychain discovery: when the four app-name candidates miss, discovered service-only entry still decrypts', async () => {
+  const security = discoverySecurity()
+  // 四个真实候选都 miss（模拟用户机器），强制走“发现后 service-only”路径。
+  const d = createMacKeychainDecoder({ platform: 'darwin', runSecurity: security.run, candidates: [{ app: 'NoSuchApp' }] })
+  const result = await d(encryptV10('fixture.macos.token.3333'))
+  assert.equal(result.ok, true)
+  assert.equal(result.plaintext, 'fixture.macos.token.3333')
+  assert.equal(result.service, 'deva Safe Storage')
+  assert.ok(security.calls.some(args => args[0] === 'dump-keychain' && !args.includes('-d')), '只读属性 dump，不带 -d')
+})
+
+test('keychain discovery: entry exists but retrieval denied gives mac-keychain-denied, not item-missing', async () => {
+  const security = discoverySecurity({ denied: true })
+  const d = createMacKeychainDecoder({ platform: 'darwin', runSecurity: security.run })
+  const result = await d(encryptV10('x'))
+  assert.equal(result.code, MAC_CODES.DENIED)
+})
+
+test('keychain discovery: entry visible in attributes but unavailable to this process gives mac-keychain-item-invisible', async () => {
+  const run = (binary, args) => {
+    if (args[0] === 'list-keychains') return { status: 0, stdout: '"/Users/fixture/Library/Keychains/login.keychain-db"\n' }
+    if (args[0] === 'default-keychain') return { status: 0, stdout: '"/Users/fixture/Library/Keychains/login.keychain-db"\n' }
+    if (args[0] === 'dump-keychain') return { status: 0, stdout: DUMP }
+    return { status: 44, stderr: 'The specified item could not be found in the keychain.' }
+  }
+  const d = createMacKeychainDecoder({ platform: 'darwin', runSecurity: run })
+  const result = await d(encryptV10('x'))
+  assert.equal(result.code, MAC_CODES.ITEM_INVISIBLE)
+  assert.equal(result.selfCheck.keychain.matched, 1)
+})
+
+test('v10 length fingerprint distinguishes mac-cbc / win-gcm / ambiguous', () => {
+  assert.equal(likelyV10Format(63), 'win-gcm')      // 3+12+48：Windows 32B 明文
+  assert.equal(likelyV10Format(51), 'ambiguous')    // 3+48：mac 也成立
+  assert.equal(likelyV10Format(35), 'ambiguous')    // 3+32
+  assert.equal(likelyV10Format(19), 'invalid')
+  assert.equal(likelyV10Format(83), 'ambiguous')    // 3+80：mac 与 win 长度条件都成立
 })

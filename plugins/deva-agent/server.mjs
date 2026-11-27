@@ -12,6 +12,7 @@ import { assertContracts, registerRpc } from './sdk/harness/contracts.mjs'
 import { createAgentDefinition } from './lib/agent.mjs'
 import { listIdentities } from './lib/identities.mjs'
 import { readModelSelection, saveModelSelection, savePersonaModel } from './lib/model-selection.mjs'
+import { readKeychainDiagnostics } from './lib/desktop-secrets.mjs'
 import { readIdentitySnapshot, readSessionIdentityId, writeIdentityId, writeSessionIdentityId } from './lib/selection.mjs'
 import { identityFilePath } from './lib/deva-home.mjs'
 import { addStudioPersona, readStudioPersona, updateStudioPersona } from './lib/persona-store.mjs'
@@ -50,6 +51,7 @@ export function apply(ctx) {
   registerRpc(ctx, contract, 'list-provider-models', tracedModelRpc('list-provider-models', (input, run) => discoverModels(run, input)))
   registerRpc(ctx, contract, 'get-model-selection', tracedModelRpc('get-model-selection', (_input, run) => readModelSelection({ ...run, desktopActivationUserId: activationUserId })))
   registerRpc(ctx, contract, 'save-model-selection', tracedModelRpc('save-model-selection', (input, run) => saveModelSelection({ ...run, desktopActivationUserId: activationUserId }, input)))
+  registerRpc(ctx, contract, 'get-keychain-diagnostics', (_input, run) => readKeychainDiagnostics(run.config))
   registerRpc(ctx, contract, 'save-persona-model', (input, run) => savePersonaModel({ ...run, desktopActivationUserId: activationUserId }, input))
   // ~/.deva/personas 只存内容；默认与会话选择保留在 config.json。
   registerRpc(ctx, contract, 'get-identities', async (_input, run) => {

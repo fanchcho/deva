@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   clearDesktopAclCache, clearDesktopKeyCache, createDpapiDecoder, credentialHealth, DESKTOP_DECRYPT_CODES, detectContainer, MAC_CODES,
-  desktopSecretsPaths, isToolchainFailure, probeFileOwner, publicDesktopCredential, readDesktopSecrets, resolveDesktopCredential,
+  desktopSecretsPaths, isToolchainFailure, probeFileOwner, publicDesktopCredential, readDesktopSecrets, readKeychainDiagnostics, resolveDesktopCredential,
 } from '../lib/desktop-secrets.mjs'
 import { readCustomModel, readModelSelection, resolveCredential, saveModelSelection } from '../lib/model-selection.mjs'
 import { createMacKeychainDecoder } from '../lib/macos-keychain.mjs'
@@ -555,5 +555,27 @@ test('Windows v10 decrypt failure reports a real reason and same-user case diffe
     const view = await readModelSelection({ ...memoryState()(), config: fx.config }, { decrypt: decoder })
     assert.match(view.keyProblem, /AES-GCM 校验失败/)
     assert.equal(/不在那台 Windows|外来|不是当前 Studio 进程/.test(view.keyProblem), false, '不得把普通 GCM 失败说成跨用户/跨机器')
+  } finally { await fx.cleanup() }
+})
+
+test('keychain diagnostics text reports attributes and fingerprint without any secret values', async () => {
+  const fx = await fixture({ desktop: true })
+  try {
+    // 63 bytes = v10(3)+nonce(12)+GCM(48) → likelyFormat=win-gcm，正好覆盖用户的 112B/1 形态
+    const winV10 = Buffer.concat([Buffer.from('v10'), Buffer.alloc(12, 3), Buffer.alloc(48, 4)]).toString('base64')
+    await writeFile(join(fx.home, 'secrets.json'), JSON.stringify({ 'custom-1794366588080': winV10 }), { mode: 0o600 })
+    const runSecurity = (binary, args) => {
+      if (args[0] === 'list-keychains') return { status: 0, stdout: '"/Users/fixture/Library/Keychains/login.keychain-db"\n' }
+      if (args[0] === 'default-keychain') return { status: 0, stdout: '"/Users/fixture/Library/Keychains/login.keychain-db"\n' }
+      if (args[0] === 'dump-keychain') return { status: 0, stdout: 'class: "genp"\n    "svce"<blob>="Deva Safe Storage"\n    "acct"<blob>="Deva"\n' }
+      return { status: 44, stderr: 'not found' }
+    }
+    const diag = readKeychainDiagnostics(fx.config, { platform: 'darwin', runSecurity })
+    assert.match(diag.text, /likelyFormat=win-gcm/)
+    assert.match(diag.text, /service=Deva Safe Storage/)
+    assert.match(diag.text, /entry: key=custom-1794366588080/)
+    assert.match(diag.text, /macOS cannot decrypt it/)
+    assert.equal(diag.text.includes(winV10), false, '诊断不含 base64 密文')
+    assert.equal(diag.text.includes('fixture-dpapi'), false)
   } finally { await fx.cleanup() }
 })

@@ -1477,7 +1477,7 @@ async function mountTraced(root, ctx) {
   const original = ctx
   const trace = event => {
     if (ctx.signal?.aborted) return
-    const payload = { side: 'client', version: '0.8.49', revision: 'not-exposed-by-sdk', attempt, ...event }
+    const payload = { side: 'client', version: '0.8.50', revision: 'not-exposed-by-sdk', attempt, ...event }
     Promise.resolve().then(() => original.rpc.call('model-ui-trace', payload)).catch(() => {})
   }
   root.innerHTML = ''
@@ -1581,7 +1581,7 @@ export function modelRpcDiagnostics(ctx, output, getKey = () => '', timeoutMs = 
   const safeUrl = value => {
     try { const url = new URL(value); url.search = ''; url.hash = ''; url.username = ''; url.password = ''; return url.href } catch { return 'unavailable' }
   }
-  const state = { version: '0.8.49', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
+  const state = { version: '0.8.50', method: '', phase: 'mounted', http: 'unknown', code: '', path: 'unknown', providers: null, models: null }
   observeSafely(() => { if (typeof window !== 'undefined') {
     state.url = safeUrl(window.location.href)
     state.origin = window.origin
@@ -1924,7 +1924,24 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
   cancel.hidden = true
   const actions = el('div', 'deva-model-actions')
   actions.append(save, cancel)
-  body.append(actions, diagnostics)
+  // 钥匙串诊断：一键只读枚举钥匙串属性 + 密文指纹，输出可复制文本；绝不显示任何 Key 值。
+  const keychainBox = el('div', 'deva-card-body deva-model-form')
+  const keychainBtn = button(pickLocale(ctx.locale).startsWith('zh') ? '钥匙串诊断' : 'Keychain diagnostics', 'deva-btn')
+  const keychainOut = el('pre', 'deva-value-preview')
+  keychainOut.hidden = true
+  keychainBtn.onclick = async () => {
+    keychainBtn.disabled = true
+    try {
+      const result = await ctx.rpc.call('get-keychain-diagnostics')
+      keychainOut.textContent = String(result?.text || '')
+      keychainOut.hidden = !keychainOut.textContent
+    } catch (error) {
+      keychainOut.textContent = errorText(error)
+      keychainOut.hidden = false
+    } finally { keychainBtn.disabled = false }
+  }
+  keychainBox.append(keychainBtn, keychainOut)
+  body.append(actions, keychainBox, diagnostics)
   card.append(status, body, bindings)
   cancel.onclick = () => { if (current) { show(current); setBusy(false) } }
   const preview = el('p', 'deva-value-preview')

@@ -970,3 +970,17 @@ test('model page warns that a successful /models fetch does not prove chat works
   await fetch2.onclick()
   assert.match(findAll(rejected, node => node.textContent).map(node => node.textContent).join('\n'), /同一凭据在对话端点被上游拒绝/)
 })
+
+test('model page has a one-click keychain diagnostics panel that renders text without secrets', async () => {
+  const current = { baseUrl: 'https://example.com/v1', modelName: 'm', modelRef: 'p:m', hasApiKey: false, legacyNeedsSetup: false }
+  const page = await mountPage(fakeContext('zh', async name => {
+    if (name === 'get-model-selection') return current
+    if (name === 'get-keychain-diagnostics') return { text: 'platform: darwin\nkeychains: login.keychain-db\nmatchedDevaSafeStorage: 0' }
+    throw new Error(`unexpected ${name}`)
+  }, { view: 'model' }))
+  const diagButton = findAll(page, node => node.tag === 'button' && node.textContent === '钥匙串诊断')[0]
+  assert.ok(diagButton, '存在「钥匙串诊断」按钮')
+  await diagButton.onclick()
+  const texts = findAll(page, node => node.textContent).map(node => node.textContent).join('\n')
+  assert.match(texts, /matchedDevaSafeStorage: 0/)
+})
