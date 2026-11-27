@@ -716,7 +716,7 @@ export async function readKeychainDiagnostics(config = {}, { platform = process.
     const entries = Object.entries(file.entries || {})
     for (const [providerId, value] of entries) {
       const result = await decoder(value)
-      lines.push(`decrypt: key=${providerId} code=${result.ok ? 'ok' : (result.code || 'unknown')}${result.ok && result.passwordFormat ? ` passwordFormat=${result.passwordFormat}` : ''}${result.ok && result.service ? ` service=${result.service}` : ''}${result.ok && result.account ? ` account=${result.account}` : ''}`)
+      lines.push(`decrypt: key=${providerId} decryptCode=${result.ok ? 'ok' : (result.code || 'unknown')}${result.ok && result.passwordFormat ? ` passwordFormat=${result.passwordFormat}` : ''}${result.ok && result.service ? ` service=${result.service}` : ''}${result.ok && result.account ? ` account=${result.account}` : ''}`)
     }
   } catch (error) {
     lines.push(`decrypt: error=${String(error?.code || error?.message || 'unknown').slice(0, 120)}`)
