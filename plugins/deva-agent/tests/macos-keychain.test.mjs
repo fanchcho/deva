@@ -16,7 +16,6 @@ import {
 
 const PASSWORD = Buffer.from('fixture-keychain-password').toString('base64')
 const SERVICE = 'Deva Safe Storage'
-const ACCOUNT = 'Deva'
 
 function derive(password) {
   return pbkdf2Sync(Buffer.from(password, 'utf8'), MAC_OSCRYPT.SALT, MAC_OSCRYPT.ITERATIONS, MAC_OSCRYPT.KEY_BYTES, 'sha1')
@@ -52,7 +51,7 @@ test('macOS 1/9 — v10 blob decrypts with the Keychain password', async () => {
   assert.equal(result.plaintext, 'fixture.macos.token.2222')
   assert.equal(result.prefix, 'v10')
   assert.equal(result.service, SERVICE)
-  assert.equal(result.account, ACCOUNT)
+  assert.equal(result.account, 'Deva Key', 'Electron macOS 账户名是 <app> Key')
   assert.equal(security.calls[0].args.includes('find-generic-password'), true, '使用 security find-generic-password')
   assert.equal(security.calls.some(call => call.args.includes(PASSWORD)), false, '密码从不进命令行参数')
 })
@@ -234,6 +233,48 @@ test('v10 length fingerprint distinguishes mac-cbc / win-gcm / ambiguous', () =>
   assert.equal(likelyV10Format(63), 'win-gcm')      // 3+12+48：Windows 32B 明文
   assert.equal(likelyV10Format(51), 'ambiguous')    // 3+48：mac 也成立
   assert.equal(likelyV10Format(35), 'ambiguous')    // 3+32
-  assert.equal(likelyV10Format(19), 'invalid')
+  assert.equal(likelyV10Format(19), 'mac-cbc', 'v10+16 字节是合法的单块 CBC，不是 invalid')
   assert.equal(likelyV10Format(83), 'ambiguous')    // 3+80：mac 与 win 长度条件都成立
+})
+
+/** 0.8.51：Electron macOS 的 account 是 `<app> Key`（普通）/<app> App Store Key（MAS），不是裸 app 名。 */
+function electronAccountSecurity({ service = '@deva/desktop Safe Storage', account = '@deva/desktop Key', password = Buffer.alloc(16, 7).toString('base64'), onlyAccount = null } = {}) {
+  const calls = []
+  const run = (binary, args) => {
+    calls.push(args)
+    if (args[0] === 'list-keychains' || args[0] === 'default-keychain') return { status: 0, stdout: '"/Users/fixture/Library/Keychains/login.keychain-db"\n' }
+    if (args[0] === 'dump-keychain') return { status: 0, stdout: `class: "genp"\n    "svce"<blob>="${service}"\n    "acct"<blob>="${account}"\n` }
+    if (args[0] === 'find-generic-password') {
+      const s = args[args.indexOf('-s') + 1]
+      const a = args.includes('-a') ? args[args.indexOf('-a') + 1] : ''
+      if (s === service && a === (onlyAccount || account)) return { status: 0, stdout: `${password}\n` }
+      return { status: 44, stderr: 'The specified item could not be found in the keychain.' }
+    }
+    return { status: 1, stderr: 'unexpected' }
+  }
+  return { run, calls }
+}
+
+test('macOS 0.8.51 — only @deva/desktop Safe Storage / @deva/desktop Key matches, both 1-block and 4-block CBC decrypt', async () => {
+  const password = Buffer.alloc(16, 7).toString('base64')
+  const security = electronAccountSecurity({ password })
+  const d = createMacKeychainDecoder({ platform: 'darwin', runSecurity: security.run })
+  const short = await d(encryptV10('fixture.short', password))
+  assert.equal(short.ok, true)
+  assert.equal(short.plaintext, 'fixture.short')
+  assert.equal(short.account, '@deva/desktop Key')
+  assert.equal(short.passwordFormat, 'utf8')
+  const long = 'x'.repeat(50)
+  const longResult = await d(encryptV10(long, password))
+  assert.equal(longResult.ok, true)
+  assert.equal(longResult.plaintext, long)
+})
+
+test('macOS 0.8.51 — an account without the “ Key” suffix is still accepted as the legacy fallback', async () => {
+  const password = Buffer.alloc(16, 8).toString('base64')
+  const security = electronAccountSecurity({ account: '@deva/desktop', password, onlyAccount: '@deva/desktop' })
+  const d = createMacKeychainDecoder({ platform: 'darwin', runSecurity: security.run })
+  const result = await d(encryptV10('fixture.legacy.account', password))
+  assert.equal(result.ok, true)
+  assert.equal(result.account, '@deva/desktop')
 })

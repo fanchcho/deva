@@ -120,7 +120,9 @@ export function describeValuePrefix(value) {
 export function likelyV10Format(decodedBytes) {
   if (!Number.isInteger(decodedBytes) || decodedBytes < 3) return 'invalid'
   const body = decodedBytes - 3
-  const mac = body >= 32 && body % 16 === 0
+  // macOS CBC：一个或多个完整 AES 块（明文 1..16 字节也可，即 body=16）。
+  const mac = body >= 16 && body % 16 === 0
+  // Windows GCM：nonce(12) + 至少 1 字节密文 + tag(16)。
   const win = body >= 29
   if (mac && win) return 'ambiguous'
   if (mac) return 'mac-cbc'

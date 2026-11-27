@@ -1,3 +1,11 @@
+# 0.8.51
+
+- macOS 钥匙串 account 修复：Electron 33 的 Chromium 补丁把 account 从 `<app>` 改为 `<app> Key`（MAS 为 `<app> App Store Key`），旧 `<app>` 作为 legacy 兜底；现在按 `Key` → `App Store Key` → 无后缀 依次尝试，`@deva/desktop Safe Storage` 能命中 `@deva/desktop Key`。
+- 重写密文指纹：按 mac CBC 与 win GCM 分别输出 `cbcCipherBytes` / `cbcBlocks` / `gcmPlausible`，不再把 `v10`+16 字节的单块 CBC 误判为 invalid；`likelyFormat` 只在两种方案都可能时标 `ambiguous`。
+- 诊断新增逐条 `decryptCode` 与 `passwordFormat`（utf8/hex/base64/binary，只报格式与长度，不含密码）；`security -w` 的原始输出按四种编码依次尝试。
+- 撤回上一轮“182 B 文件是 Windows GCM”的结论：用户数据两条分别为 67 B（4 个 CBC 块）与 19 B（1 个 CBC 块），**符合本机 macOS CBC**；`win-gcm` 只在长度确实支持 GCM 时提示。
+- 版本统一为 0.8.51。
+
 # 0.8.50
 
 - macOS 钥匙串诊断：`security list-keychains`/`default-keychain` + `dump-keychain`（**不带 -d，只读属性**）枚举 genp 的 service/account，过滤 `/deva|safe ?storage|electron/i`；四候选 miss 后按「精确 service+account → 仅 service」重试，覆盖条目名与 Electron 默认名不同的情况。

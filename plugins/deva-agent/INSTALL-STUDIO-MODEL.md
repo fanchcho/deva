@@ -173,6 +173,10 @@ Windows 自检：安装 0.8.25，关闭重开 Studio 的 Deva 模型页；下拉
 
 Windows 请比较桌面与 Studio 进程的 AI_UPPER_HOME / DEVA_HOME，以及运行账号的用户目录。若 Studio 在另一机器，默认 ~/.deva 指的是 Studio 服务器，无法读取 Windows 本地配置；必须使用在该设备运行的宿主或明确配置其可访问的 sharedDevaHome。核对页面 path、exists、stat、providerCount、modelCount；不存在、权限拒绝或 JSON 错误均按页面诊断处理，不要提交 secrets.json 或 API Key。**0.8.44 起**：同一 OS 用户、同一台机器上，插件会在服务端按需只读解密桌面 `secrets.json` 里同一 provider 的密文（Windows DPAPI CurrentUser；明文只在内存、不写回、不进日志、不回前端），因此桌面端存过的 Key 不必在 Studio 再填一遍。跨用户/跨机器仍不可解，页面会给出原因码（`dpapi-failed` 等）与确切路径；此时手填即可。
 
+### 0.8.51 macOS 钥匙串 account 后缀
+
+Electron 33 在 macOS 的 Keychain account 实际是 `<app> Key`（MAS 为 `<app> App Store Key`），不是裸 app 名；0.8.50 之前试的是 `@deva/desktop`，所以全部 item-missing。0.8.51 按 `Key` → `App Store Key` → 无后缀 依次匹配，`@deva/desktop Safe Storage` / `@deva/desktop Key` 可命中。诊断文本会显示匹配到的 service/account/keychain 与每条的 `decryptCode`、`cbcBlocks`、`gcmPlausible`、`passwordFormat`。
+
 ### 0.8.50 macOS 钥匙串诊断
 
 模型页新增「钥匙串诊断」按钮：只读枚举 `security list-keychains` / `default-keychain` / `dump-keychain`（不带 -d，只读属性），显示 keychain 路径、用户、genp 总数、匹配的 service/account，以及 `secrets.json` 每条的长度/前缀/`likelyFormat`。若显示 `likelyFormat=win-gcm`，说明这份 v10 密文是 Windows 生成的，macOS 密码学上解不开——请在 Mac 桌面端重存一次，或在模型页填一次。`mac-keychain-item-invisible` 表示条目存在但当前进程读不到密码，请点系统「允许」后重试，或手填。

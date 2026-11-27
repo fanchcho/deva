@@ -5,6 +5,10 @@
  *  · Electron 33 `shell/browser/electron_browser_main_parts.cc:539-540`：
  *      `KeychainPassword::GetServiceName() = app_name + " Safe Storage";`
  *      `KeychainPassword::GetAccountName() = app_name;`
+ *      但 Electron 33 还打了 Chromium 补丁
+ *      `patches/chromium/feat_ensure_mas_builds_of_the_same_application_can_use_safestorage.patch`：
+ *      普通 macOS 版 account 实际是 `<app_name> Key`，MAS 版是 `<app_name> App Store Key`；
+ *      旧的无后缀 `<app_name>` 仍作为 legacy 兜底并被迁移。
  *  · Chromium 130 `components/os_crypt/sync/os_crypt_mac.mm`：
  *      `kSalt = "saltysalt"`（:33）、`kEncryptionIterations = 1003`（:39）、
  *      `kDerivedKeySizeInBits = 128`（:36）、`kEncryptionVersionPrefix = "v10"`（:44）、
@@ -185,51 +189,71 @@ export function createMacKeychainDecoder({
   function tryPassword(args) {
     const result = runSecurity(securityBinary, args, timeoutMs)
     if (result && !result.error && result.status === 0) {
-      // `security -w` 输出末尾有换行；base64 密码本身不含空白。
-      const password = String(result.stdout || '').replace(/\r?\n$/, '')
-      if (password) return { ok: true, password }
+      // 只去掉末尾一个换行；不 trim 其它字节（密码可能是二进制/hex/base64）。
+      const raw = String(result.stdout ?? '').replace(/\r?\n$/, '')
+      if (raw) return { ok: true, raw }
       return { ok: false, code: MAC_CODES.KEYCHAIN_ERROR }
     }
     return { ok: false, code: classifySecurityFailure(result) }
+  }
+
+  /** 把 security -w 的原始输出按 UTF-8 / hex / base64 / binary 依次尝试；不打印内容。 */
+  function passwordCandidates(raw) {
+    const text = String(raw ?? '')
+    const out = []
+    const add = (format, bytes) => {
+      if (!bytes || !bytes.length) return
+      if (!out.some(item => item.bytes.equals(bytes))) out.push({ format, bytes })
+    }
+    add('utf8', Buffer.from(text, 'utf8'))
+    if (/^[0-9a-fA-F]+$/.test(text) && text.length % 2 === 0) add('hex', Buffer.from(text, 'hex'))
+    try {
+      const decoded = Buffer.from(text, 'base64')
+      if (decoded.length) add('base64', decoded)
+    } catch { /* not base64 */ }
+    add('binary', Buffer.from(text, 'latin1'))
+    return out
+  }
+
+  /** Electron 的 account 有后缀：普通 macOS 版 `<app> Key`，MAS 版 `<app> App Store Key`；旧版才是 `<app>`。 */
+  function accountNames(app) {
+    return [`${app} Key`, `${app} App Store Key`, app]
   }
 
   function findPassword() {
     const attempts = []
     for (const candidate of candidates) {
       const service = `${candidate.app} Safe Storage`
-      const account = candidate.app
-      const got = tryPassword(['find-generic-password', '-s', service, '-a', account, '-w'])
-      if (got.ok) {
-        attempts.push({ service, account, ok: true })
-        return { ok: true, password: got.password, service, account, attempts }
+      for (const account of accountNames(candidate.app)) {
+        const got = tryPassword(['find-generic-password', '-s', service, '-a', account, '-w'])
+        if (got.ok) {
+          attempts.push({ service, account, ok: true })
+          return { ok: true, passwords: passwordCandidates(got.raw), service, account, attempts }
+        }
+        attempts.push({ service, account, ok: false, code: got.code })
+        if (got.code !== MAC_CODES.ITEM_MISSING) return { ok: false, code: got.code, attempts }
       }
-      attempts.push({ service, account, ok: false, code: got.code })
-      // 只有“条目不存在”才继续换候选；授权被拒/无会话/超时是环境结论，继续试也没用。
-      if (got.code !== MAC_CODES.ITEM_MISSING) return { ok: false, code: got.code, attempts }
     }
-    // 四个候选全 miss：只读枚举钥匙串属性，看看是否“条目存在但当前进程看不到/名字不同”。
+    // 候选全 miss：只读枚举钥匙串属性，看看是否“条目存在但当前进程看不到/名字不同”。
     const discovery = collectKeychainEntries({ runSecurity, securityBinary, timeoutMs })
     const seen = new Set()
     for (const entry of discovery.entries) {
       const id = `${entry.keychain}\0${entry.service}\0${entry.account}`
       if (seen.has(id)) continue
       seen.add(id)
-      if (entry.service && entry.account) {
-        const got = tryPassword(['find-generic-password', '-s', entry.service, '-a', entry.account, '-w', entry.keychain])
+      const tries = []
+      if (entry.service && entry.account) tries.push({ service: entry.service, account: entry.account, keychain: entry.keychain })
+      if (entry.service) tries.push({ service: entry.service, account: '', keychain: entry.keychain, serviceOnly: true })
+      for (const attempt of tries) {
+        const args = ['find-generic-password', '-s', attempt.service]
+        if (attempt.account) args.push('-a', attempt.account)
+        args.push('-w', attempt.keychain)
+        const got = tryPassword(args)
         if (got.ok) {
-          attempts.push({ service: entry.service, account: entry.account, keychain: entry.keychain, ok: true })
-          return { ok: true, password: got.password, service: entry.service, account: entry.account, attempts, discovery }
+          attempts.push({ ...attempt, ok: true })
+          return { ok: true, passwords: passwordCandidates(got.raw), service: attempt.service, account: attempt.account || '', attempts, discovery, selected: attempt }
         }
-        attempts.push({ service: entry.service, account: entry.account, keychain: entry.keychain, ok: false, code: got.code })
-        if (got.code !== MAC_CODES.ITEM_MISSING) return { ok: false, code: got.code, attempts, discovery }
-      }
-      if (entry.service) {
-        const got = tryPassword(['find-generic-password', '-s', entry.service, '-w', entry.keychain])
-        if (got.ok) {
-          attempts.push({ service: entry.service, account: entry.account || '', keychain: entry.keychain, ok: true, serviceOnly: true })
-          return { ok: true, password: got.password, service: entry.service, account: entry.account || '', attempts, discovery, serviceOnly: true }
-        }
-        attempts.push({ service: entry.service, account: entry.account || '', keychain: entry.keychain, ok: false, code: got.code, serviceOnly: true })
+        attempts.push({ ...attempt, ok: false, code: got.code })
         if (got.code !== MAC_CODES.ITEM_MISSING) return { ok: false, code: got.code, attempts, discovery }
       }
     }
@@ -237,22 +261,28 @@ export function createMacKeychainDecoder({
     return { ok: false, code, attempts, discovery }
   }
 
-  function deriveKey(password) {
-    return pbkdf2Sync(Buffer.from(password, 'utf8'), MAC_OSCRYPT.SALT, MAC_OSCRYPT.ITERATIONS, MAC_OSCRYPT.KEY_BYTES, 'sha1')
+  function deriveKey(passwordBytes) {
+    return pbkdf2Sync(passwordBytes, MAC_OSCRYPT.SALT, MAC_OSCRYPT.ITERATIONS, MAC_OSCRYPT.KEY_BYTES, 'sha1')
   }
 
   function keychainKey(force = false) {
     if (!force && keyCache && keyCache.expires > Date.now()) {
       return {
-        ok: true, key: keyCache.key, service: keyCache.service, account: keyCache.account, cached: true,
+        ok: true, keys: keyCache.keys, service: keyCache.service, account: keyCache.account, cached: true,
         attempts: [{ service: keyCache.service, account: keyCache.account, ok: true }],
+        passwordFormats: keyCache.keys.map(item => item.format),
       }
     }
     const found = findPassword()
     if (!found.ok) return found
-    const key = deriveKey(found.password)
-    keyCache = { key, service: found.service, account: found.account, expires: Date.now() + cacheTtlMs }
-    return { ok: true, key, service: found.service, account: found.account, cached: false, attempts: found.attempts, discovery: found.discovery || null }
+    const keys = (found.passwords || []).map(item => ({ key: deriveKey(item.bytes), format: item.format }))
+    if (!keys.length) return { ok: false, code: MAC_CODES.KEYCHAIN_ERROR, attempts: found.attempts }
+    keyCache = { keys, service: found.service, account: found.account, expires: Date.now() + cacheTtlMs }
+    return {
+      ok: true, keys, service: found.service, account: found.account, cached: false, attempts: found.attempts,
+      discovery: found.discovery || null, selected: found.selected || null,
+      passwordFormats: keys.map(item => item.format),
+    }
   }
 
   /** 自检：security 是否可用、候选 service 是否存在、PBKDF2+AES 往返是否可用。不碰用户密文。 */
@@ -272,9 +302,9 @@ export function createMacKeychainDecoder({
       try {
         const probe = Buffer.from('deva-macos-safe-storage-selfcheck', 'utf8')
         const { createCipheriv } = await import('node:crypto')
-        const cipher = createCipheriv('aes-128-cbc', keychain.key, MAC_OSCRYPT.IV)
+        const cipher = createCipheriv('aes-128-cbc', keychain.keys[0].key, MAC_OSCRYPT.IV)
         const encrypted = Buffer.concat([cipher.update(probe), cipher.final()])
-        const decipher = createDecipheriv('aes-128-cbc', keychain.key, MAC_OSCRYPT.IV)
+        const decipher = createDecipheriv('aes-128-cbc', keychain.keys[0].key, MAC_OSCRYPT.IV)
         const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()])
         roundtrip = decrypted.equals(probe)
         if (!roundtrip) code = MAC_CODES.KEYCHAIN_ERROR
@@ -289,6 +319,8 @@ export function createMacKeychainDecoder({
       code,
       service: keychain.service || '',
       account: keychain.account || '',
+      ...(keychain.passwordFormats ? { passwordFormats: keychain.passwordFormats } : {}),
+      ...(keychain.selected ? { selected: keychain.selected } : {}),
       roundtrip,
       ...(keychain.discovery ? { keychain: keychain.discovery } : {}),
       variants,
@@ -313,15 +345,21 @@ export function createMacKeychainDecoder({
     // 先确认钥匙串可用：拿不到钥匙时，报“钥匙串”比报“密文格式”更接近根因（也更可操作）。
     const keychain = keychainKey()
     if (!keychain.ok) return { ok: false, code: keychain.code, tries: keychain.attempts || [], selfCheck: self }
-    const result = decryptMacV10(envelope, keychain.key)
-    if (!result.ok) {
-      const code = result.code === SAFE_STORAGE_CODES.TRUNCATED ? MAC_CODES.TRUNCATED : MAC_CODES.KEY_MISMATCH
-      return { ok: false, code, tries: [{ service: keychain.service }], selfCheck: self }
+    let lastCode = MAC_CODES.KEY_MISMATCH
+    for (const candidate of keychain.keys) {
+      const result = decryptMacV10(envelope, candidate.key)
+      if (!result.ok) {
+        lastCode = result.code === SAFE_STORAGE_CODES.TRUNCATED ? MAC_CODES.TRUNCATED : MAC_CODES.KEY_MISMATCH
+        continue
+      }
+      if (!result.plaintext) { lastCode = MAC_CODES.EMPTY; continue }
+      if (!looksLikeSecret(result.plaintext)) { lastCode = MAC_CODES.KEY_MISMATCH; continue }
+      return {
+        ok: true, plaintext: result.plaintext, prefix: envelope.prefix,
+        service: keychain.service, account: keychain.account || '', passwordFormat: candidate.format,
+        selfCheck: self, tries: [{ service: keychain.service, account: keychain.account || '', code: MAC_CODES.OK }],
+      }
     }
-    if (!result.plaintext) return { ok: false, code: MAC_CODES.EMPTY, tries: [{ service: keychain.service }], selfCheck: self }
-    if (!looksLikeSecret(result.plaintext)) {
-      return { ok: false, code: MAC_CODES.KEY_MISMATCH, tries: [{ service: keychain.service }], selfCheck: self }
-    }
-    return { ok: true, plaintext: result.plaintext, prefix: envelope.prefix, service: keychain.service, account: keychain.account, selfCheck: self, tries: [{ service: keychain.service, code: MAC_CODES.OK }] }
+    return { ok: false, code: lastCode, tries: [{ service: keychain.service, account: keychain.account || '' }], selfCheck: self }
   }
 }

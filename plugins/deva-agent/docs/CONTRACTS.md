@@ -452,3 +452,11 @@ Windows 桌面端的 safeStorage **不是**“明文直接 DPAPI 后写盘”。
 - 原因码：`mac-keychain-item-missing`（属性里也没有匹配条目）与 `mac-keychain-item-invisible`（属性里能看到、但当前进程读不到密码：Data Protection keychain/access group/ACL 未授权）分开。
 - 指纹：`desktopSecretsStructure` 每条输出 `key/keyLength/valueChars/decodedBytes/prefix/likelyFormat`。`likelyFormat` 仅按 `decodedBytes` 判断：mac-cbc = `(bytes-3)` 为 16 的倍数且 ≥32；win-gcm = `bytes-3-12-16 ≥1`；两者都满足 = `ambiguous`。`win-gcm` 表示这份 v10 在 Windows 生成，macOS 的 AES-128-CBC 解不开，应在本机桌面端重存或模型页手填。
 - `get-keychain-diagnostics` RPC + 模型页「钥匙串诊断」按钮输出可复制文本（路径/用户/条目统计/service/account/长度/前缀/指纹），不含任何 Key 值或密文。
+
+## 0.8.51 macOS account 后缀与逐条解密
+
+- Electron 33 的 `shell/browser/electron_browser_main_parts.cc:539-540` 设置 service=`<app_name> Safe Storage`、account=`<app_name>`，但其 Chromium 补丁 `patches/chromium/feat_ensure_mas_builds_of_the_same_application_can_use_safestorage.patch:23-39` 把实际 account 改为 `<app_name> Key`（普通 macOS）/<app_name> App Store Key（MAS）；无后缀 `<app_name>` 仅作 legacy 兜底并会被迁移。
+- `MAC_KEYCHAIN_CANDIDATES` 对每个 app 名按 `Key` → `App Store Key` → 无后缀 依次尝试；发现模式命中多条时记录 `selected`（service/account/keychain），不只取第一条。
+- `security -w` 原始输出只去掉末尾一个换行，不 trim 其它字节；按 `utf8` / `hex` / `base64` / `binary` 依次派生并尝试，成功时输出 `passwordFormat`（不含密码）。
+- 指纹字段：`cbcCipherBytes = decodedBytes-3`、`cbcBlocks = body/16`（整除时）、`gcmPlausible = body>=29`；`likelyFormat` 由两者组合：仅 mac 成立=`mac-cbc`，仅 win 成立=`win-gcm`，两者都成立=`ambiguous`，都不成立=`invalid`。`v10`+16 字节是合法单块 CBC（不是 invalid）。
+- `keychainDiagnostics` 文本每条追加 `decryptCode` 与 `passwordFormat`；某条解不开不影响其它条目，也不等于整个钥匙串不可用。

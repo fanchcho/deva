@@ -570,7 +570,7 @@ test('keychain diagnostics text reports attributes and fingerprint without any s
       if (args[0] === 'dump-keychain') return { status: 0, stdout: 'class: "genp"\n    "svce"<blob>="Deva Safe Storage"\n    "acct"<blob>="Deva"\n' }
       return { status: 44, stderr: 'not found' }
     }
-    const diag = readKeychainDiagnostics(fx.config, { platform: 'darwin', runSecurity })
+    const diag = await readKeychainDiagnostics(fx.config, { platform: 'darwin', runSecurity })
     assert.match(diag.text, /likelyFormat=win-gcm/)
     assert.match(diag.text, /service=Deva Safe Storage/)
     assert.match(diag.text, /entry: key=custom-1794366588080/)

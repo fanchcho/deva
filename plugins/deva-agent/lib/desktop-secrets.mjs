@@ -164,12 +164,16 @@ export function desktopSecretsStructure(file) {
     entryCount: Object.keys(file.entries).length,
     entries: Object.entries(file.entries).map(([key, value]) => {
       const described = describeValuePrefix(value)
+      const body = Number.isInteger(described.bytes) ? described.bytes - 3 : null
       return {
         key,
         keyLength: key.length,
         valueChars: value.length,
         decodedBytes: described.bytes,
         prefix: described.kind === 'v10' ? 'v10' : described.kind,
+        cbcCipherBytes: body !== null ? Math.max(0, body) : null,
+        cbcBlocks: body !== null && body > 0 && body % 16 === 0 ? body / 16 : null,
+        gcmPlausible: body !== null ? body >= 29 : null,
         likelyFormat: described.kind === 'v10' ? likelyV10Format(described.bytes) : 'invalid'
       }
     })
@@ -678,7 +682,7 @@ export function credentialHealth(selfCheck) {
  * 一键钥匙串诊断：只读枚举 + 密文指纹，输出可复制文本。
  * 只包含路径、用户名、条目统计、service/account、长度与前缀类型；绝不读取/输出任何 Key 值或密文。
  */
-export function readKeychainDiagnostics(config = {}, { platform = process.platform, runSecurity } = {}) {
+export async function readKeychainDiagnostics(config = {}, { platform = process.platform, runSecurity } = {}) {
   const file = readDesktopSecrets(config)
   const structure = desktopSecretsStructure(file)
   const lines = []
@@ -692,7 +696,7 @@ export function readKeychainDiagnostics(config = {}, { platform = process.platfo
   lines.push(`secrets: ${file.path} (exists=${file.exists}, size=${file.size ?? 'unknown'}, structure=${file.structure}, entries=${structure?.entryCount ?? 'unknown'})`)
   if (structure) {
     for (const entry of structure.entries) {
-      lines.push(`entry: key=${entry.key} keyLength=${entry.keyLength} valueChars=${entry.valueChars} decodedBytes=${entry.decodedBytes ?? 'unknown'} prefix=${entry.prefix} likelyFormat=${entry.likelyFormat}`)
+      lines.push(`entry: key=${entry.key} keyLength=${entry.keyLength} valueChars=${entry.valueChars} decodedBytes=${entry.decodedBytes ?? 'unknown'} prefix=${entry.prefix} likelyFormat=${entry.likelyFormat} cbcCipherBytes=${entry.cbcCipherBytes ?? 'unknown'} cbcBlocks=${entry.cbcBlocks ?? 'unknown'} gcmPlausible=${entry.gcmPlausible ?? 'unknown'}`)
     }
   }
   if (platform !== 'darwin') {
@@ -706,6 +710,17 @@ export function readKeychainDiagnostics(config = {}, { platform = process.platfo
   lines.push(`matchedDevaSafeStorage: ${keychain.matched}`)
   for (const entry of keychain.entries) lines.push(`keychainEntry: service=${entry.service || ''} account=${entry.account || ''} keychain=${entry.keychain}`)
   for (const error of keychain.errors) lines.push(`keychainError: ${error.keychain} code=${error.code}`)
+  // 逐条尝试解密：每条给独立 decryptCode/passwordFormat，不因为一条失败就判定整个钥匙串不可用。
+  try {
+    const decoder = createMacKeychainDecoder({ platform: 'darwin', ...(runSecurity ? { runSecurity } : {}) })
+    const entries = Object.entries(file.entries || {})
+    for (const [providerId, value] of entries) {
+      const result = await decoder(value)
+      lines.push(`decrypt: key=${providerId} code=${result.ok ? 'ok' : (result.code || 'unknown')}${result.ok && result.passwordFormat ? ` passwordFormat=${result.passwordFormat}` : ''}${result.ok && result.service ? ` service=${result.service}` : ''}${result.ok && result.account ? ` account=${result.account}` : ''}`)
+    }
+  } catch (error) {
+    lines.push(`decrypt: error=${String(error?.code || error?.message || 'unknown').slice(0, 120)}`)
+  }
   const formats = (structure?.entries || []).map(entry => entry.likelyFormat)
   if (formats.includes('win-gcm')) {
     lines.push('fingerprint: v10 payload looks like Windows AES-256-GCM; macOS cannot decrypt it (different cipher) — re-save on this Mac or fill once in the model page.')
