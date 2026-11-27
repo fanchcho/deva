@@ -1,3 +1,4 @@
+import { createTtlCache } from './bounded-cache.mjs'
 import { createCheckpointController } from './checkpoint.mjs'
 /**
  * Agent 定义：把 Deva 项目 Agent 注册进 Studio（plugin:deva/deva）。
@@ -42,32 +43,6 @@ const SKILLS_TTL = 30000
  * 极小的 TTL 缓存：按 key 缓存异步结果，同一 key 的并发读取只执行一次。
  * 失败不缓存（下次重试），invalidate 清空全部条目。
  */
-function createTtlCache(load, ttl) {
-  const entries = new Map()
-  return {
-    async get(key, input = key) {
-      const now = Date.now()
-      const hit = entries.get(key)
-      if (hit?.pending) return hit.pending
-      if (hit && now - hit.at < ttl) return hit.value
-      const entry = { at: now, pending: null, value: undefined }
-      entry.pending = Promise.resolve()
-        .then(() => load(input))
-        .then(value => {
-          entry.pending = null
-          entry.value = value
-          entry.at = Date.now()
-          return value
-        }, error => {
-          entries.delete(key)
-          throw error
-        })
-      entries.set(key, entry)
-      return entry.pending
-    },
-    invalidate() { entries.clear() },
-  }
-}
 
 const GLOBAL_NEEDS_MODEL = 'Deva 的「Agent 自带模型」模式需要直连配置：请在 Deva → 设置 → 模型 填写 Base URL 和模型名并保存，或在会话里改用 Studio 模型后重试。'
 const INSTRUCTION = `Deva Agent 需要 Studio 注入的模型（scoped 模式）。在 Agent 管理里为它选择模型，或在会话里切换到一个已配置的模型后重试。`

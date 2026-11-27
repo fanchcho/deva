@@ -1,3 +1,4 @@
+import { markCorrupt } from './corrupt-files.mjs'
 // 遗留兼容与测试：页面 CRUD 走 Studio API；本模块仅保留旧桌面服务兜底。
 /**
  * 插件管理的 MCP 服务：**与桌面同构**，落在 `~/.deva/mcp.json` 的 `mcpServers`，
@@ -40,8 +41,8 @@ function readStore(config) {
   const file = readStrictText(path)
   if (!file) return { path, raw: null, value: {}, servers: {}, exists: false }
   let value
-  try { value = JSON.parse(file.raw) } catch { throw new DevaIdentityError('DEVA_MCP_INVALID_JSON', `桌面 mcp.json 不是合法 JSON：${path}；没有覆盖`, { path }) }
-  if (!object(value)) throw new DevaIdentityError('DEVA_MCP_INVALID_SHAPE', `桌面 mcp.json 顶层应为对象：${path}`, { path })
+  try { value = JSON.parse(file.raw) } catch { throw markCorrupt(path, new DevaIdentityError('DEVA_MCP_INVALID_JSON', `桌面 mcp.json 不是合法 JSON：${path}；没有覆盖`, { path })) }
+  if (!object(value)) throw markCorrupt(path, new DevaIdentityError('DEVA_MCP_INVALID_SHAPE', `桌面 mcp.json 顶层应为对象：${path}`, { path }))
   const servers = object(value.mcpServers) ? value.mcpServers : {}
   return { path, raw: file.raw, value, servers, exists: true }
 }

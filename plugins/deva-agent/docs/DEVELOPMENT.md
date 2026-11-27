@@ -85,3 +85,19 @@ Studio 核心许可保持原范围；插件业务代码的许可由插件作者�
 ## 发布流程：每次改完直接提交并推送（2026-11 起）
 
 `plugins/deva-agent` 的每一次改动完成后：**直接 commit 并 push 到 `git@github.com:fanchcho/deva.git` 的 `develop-agent` 分支**，不再等待额外指令；**不创建任何 tag**（不新增 `deva-agent-v*`，也不删除/改写已有 tag），不 force push，不向 `sqfcyily/deva` 上游做任何写操作。提交前按本文件的检查项跑 `npm test`、`npm run harness:check`、`eslint --max-warnings 0`、`npm pack` 与密钥扫描；只提交 `plugins/deva-agent` 下与本批修复相关的文件，工作树中无关的未跟踪文件不纳入提交。
+
+### 第二轮资源与损坏保护
+
+插件注册的 RPC（包括技能页面）按调用者 `run.identity.userId` 共享默认32个活动处理函数、128个排队请求；MCP出站客户端每连接使用相同默认预算。通过 `DEVA_RPC_MAX_INFLIGHT` / `DEVA_RPC_MAX_QUEUE` 配置。超限抛 `RPC_OVERLOADED`，携带 `retryAfterMs: 1000`；队列取消不执行处理函数，超时不自动重试。入站处理函数超时后响应结束，但如果底层操作尚未返回，继续固定其活动租约，防止放大并发副作用。MCP发送等待背压时取消/超时关闭该连接，拒绝剩余请求，不重发。
+
+JSON持久化只在ENOENT时允许新建。坏JSON、非对象、不可读文件会记路径、SHA256（不可读时null）与错误码；已标记原件禁止原子写覆盖，写入抛 `SESSION_CORRUPT_READ_ONLY`。原有配置读取错误码保留，并携带 `readOnly` 与诊断字段。旧迁移读取失败会中止，不删除旧目录；直接写JSON也在文件锁内验证当前原件。
+
+需要恢复时，显式运行：
+
+```bash
+node scripts/recover-corrupt.mjs /absolute/path/to/file.json --confirm
+```
+
+恢复先用 `copyFile` 独占创建同目录 `.corrupt-<ISO>.json` 字节副本，再建立 UUID 命名的空JSON分支，输出两个路径。不会移动/覆盖原件，也不会自动修改 `sharedDevaHome` 或将分支装载成活动配置。这里是本地配置文件分支，不是宿主聊天会话分支；宿主聊天历史由 `agentSession` 管理，插件没有其原始文件路径。插件设置页维持显示操作失败，恢复入口为上述显式CLI，无新增宿主RPC契约。
+
+异步TTL缓存默认20条，固定pending加载，完成后按LRU收敛；Windows/POSIX文件属主探测缓存也限定20条。密钥明文缓存原有8条/TTL保护保持。插件不拥有业务AuditLog或Web SSE服务端，锁恢复审计仍先落盘再接管，不新增审计保留删除策略。

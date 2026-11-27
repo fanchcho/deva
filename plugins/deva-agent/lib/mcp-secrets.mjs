@@ -26,6 +26,7 @@ export function mergeMcpSecrets(draft, previous = {}) {
 }
 /** Keep known actionable categories only; arbitrary host/process errors may contain credentials. */
 export function safeMcpError(error) {
+  if (error?.code === 'RPC_OVERLOADED') return Object.assign(new Error('RPC_OVERLOADED'), { code: 'RPC_OVERLOADED', retryAfterMs: 1000 })
   const raw = String(error?.body?.error?.message || error?.body?.error || error?.message || '')
   const missing = raw.match(/缺少(?:环境变量|请求头变量)：([A-Za-z_][A-Za-z0-9_]*(?:、[A-Za-z_][A-Za-z0-9_]*)*)/)
   if (missing) return new Error(`缺少环境变量：${missing[1]}`)

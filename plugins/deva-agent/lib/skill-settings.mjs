@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { resolveDevaRoot } from './deva-home.mjs'
-import { registerRpc } from '../sdk/harness/contracts.mjs'
+import { registerRpc } from './rpc-admission.mjs'
 import { readSkill, createSkill, updateSkill, toggleSkill, deleteSkill, listSkillFiles, readSkillFile } from './skills.mjs'
 
 export async function skillRequest(host, path, options = {}) {

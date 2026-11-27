@@ -1,3 +1,5 @@
+import { assertWritable, readJsonFile, markCorrupt } from './corrupt-files.mjs'
+import { acquireFileLock } from './file-lock.mjs'
 /**
  * Deva 根目录、错误类型与严格文件 IO。
  *
@@ -52,7 +54,7 @@ export function statOrNull(path) {
     return lstatSync(path)
   } catch (error) {
     if (error.code === 'ENOENT') return null
-    throw new DevaIdentityError('DEVA_STAT_FAILED', `无法读取 ${path}（${error.code || '未知错误'}）`, { path })
+    throw markCorrupt(path, new DevaIdentityError('DEVA_STAT_FAILED', `无法读取 ${path}（${error.code || '未知错误'}）`, { path, cause: error }))
   }
 }
 
@@ -104,13 +106,13 @@ export function readStrictText(path) {
       chmodSync(path, 0o600)
       repaired = true
     } catch (error) {
-      throw new DevaIdentityError('DEVA_FILE_CHMOD_FAILED', `无法把文件收紧到 0600：${path}（${error.code || '未知错误'}）`, { path })
+      throw markCorrupt(path, new DevaIdentityError('DEVA_FILE_CHMOD_FAILED', `无法把文件收紧到 0600：${path}（${error.code || '未知错误'}）`, { path, cause: error }))
     }
   }
   try {
     return { raw: readFileSync(path, 'utf8'), repaired, stat }
   } catch (error) {
-    throw new DevaIdentityError('DEVA_FILE_UNREADABLE', `文件不可读：${path}（${error.code || '未知错误'}）`, { path })
+    throw markCorrupt(path, new DevaIdentityError('DEVA_FILE_UNREADABLE', `文件不可读：${path}（${error.code || '未知错误'}）`, { path, cause: error }))
   }
 }
 
@@ -119,10 +121,16 @@ export function readStrictText(path) {
  * `expectedRaw`：字符串表示必须是这个内容，null 表示文件必须不存在，省略表示不比对。
  */
 export function writeAtomic(path, content, { expectedRaw } = {}) {
+  assertWritable(path)
   const dir = dirname(path)
   const tmp = join(dir, `.${randomUUID()}.tmp`)
   let pending = false
+  let release
   try {
+    try { release = acquireFileLock(path) } catch {
+      throw new DevaIdentityError('DEVA_CONCURRENT_WRITE', '配置正在被其它进程修改，请重试', { path })
+    }
+    if (path.endsWith('.json')) readJsonFile(path)
     let fd
     try {
       fd = openSync(tmp, 'wx', 0o600)
@@ -148,6 +156,7 @@ export function writeAtomic(path, content, { expectedRaw } = {}) {
     renameSync(tmp, path)
     pending = false
   } finally {
+    release?.()
     if (pending) {
       try { unlinkSync(tmp) } catch { /* 保留原始写入错误 */ }
     }

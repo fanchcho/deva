@@ -1,3 +1,4 @@
+import { readJsonFile } from './corrupt-files.mjs'
 /**
  * 桌面 `.deva` 布局的唯一迁移入口与选择态存储。
  *
@@ -34,11 +35,7 @@ function timestamp() {
 }
 
 function readJsonIfExists(path) {
-  try {
-    return JSON.parse(readFileSync(path, 'utf8'))
-  } catch {
-    return null
-  }
+  return readJsonFile(path)
 }
 
 export function readConfigSelection(config = {}) {
@@ -87,7 +84,8 @@ function mergeMcpFile(config, servers, enabledMap) {
   let current = {}
   const file = readStrictText(path)
   if (file) {
-    try { current = object(JSON.parse(file.raw)?.mcpServers) ? JSON.parse(file.raw).mcpServers : {} } catch { current = {} }
+    const parsed = readJsonFile(path)
+    current = object(parsed?.mcpServers) ? parsed.mcpServers : {}
   }
   const merged = { ...current }
   for (const [name, server] of Object.entries(servers || {})) merged[name] = desktopMcpEntry(name, server)

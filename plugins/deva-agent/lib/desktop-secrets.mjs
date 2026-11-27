@@ -1,3 +1,4 @@
+import { LruMap } from './bounded-cache.mjs'
 /**
  * 桌面端密钥（`<Deva 根>/secrets.json`）的**只读**访问。
  *
@@ -271,7 +272,7 @@ const ACL_SCRIPT = [
   '}',
 ].join('\n')
 
-const ownerCache = new Map()
+const ownerCache = new LruMap(20)
 
 export function probeFileOwner(path, { platform = process.platform, spawn = runPowerShell, binary = 'powershell.exe', timeoutMs = 8000 } = {}) {
   if (!path) return { ok: false, code: 'no-path', owner: '' }

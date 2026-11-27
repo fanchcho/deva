@@ -1,3 +1,4 @@
+import { JsonLineBuffer, writeWithBackpressure } from './stdio-flow.mjs'
 import { safeMcpError } from './mcp-secrets.mjs'
 /**
  * 插件自带的 MCP 客户端：stdio / Streamable HTTP / 旧版 SSE 三种传输。
@@ -155,6 +156,10 @@ class RpcClient {
     this.label = label
     this.seq = 0
     this.pending = new Map()
+    this.maxInflight = Number(process.env.DEVA_RPC_MAX_INFLIGHT ?? 32)
+    this.maxQueue = Number(process.env.DEVA_RPC_MAX_QUEUE ?? 128)
+    if (!Number.isSafeInteger(this.maxInflight) || this.maxInflight < 1 || !Number.isSafeInteger(this.maxQueue) || this.maxQueue < 0) throw new McpError('Invalid RPC budget')
+    this.sending = false
     this.closed = false
   }
 
@@ -174,19 +179,42 @@ class RpcClient {
   request(method, params, { signal, timeout = CALL_TIMEOUT } = {}) {
     if (this.closed) return Promise.reject(new McpError(`${this.label} 已断开`))
     if (signal?.aborted) return Promise.reject(abortError())
+    const entries = [...this.pending.values()]
+    const active = entries.filter(e => e.sent).length
+    const queued = entries.length - active
+    if (entries.length >= this.maxInflight + this.maxQueue || (queued >= this.maxQueue && (this.sending || active >= this.maxInflight))) {
+      return Promise.reject(Object.assign(new McpError('RPC_OVERLOADED'), { code: 'RPC_OVERLOADED', retryAfterMs: 1000 }))
+    }
     const id = this.nextId()
     const promise = new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
-      const onAbort = () => { this.fail(id, abortError()) }
-      signal?.addEventListener?.('abort', onAbort, { once: true })
-      const timer = setTimeout(() => this.fail(id, new McpError(`${this.label} 调用超时（>${Math.round(timeout / 1000)}s）`)), timeout)
-      this.pending.get(id).cleanup = () => {
+      const controller = new AbortController()
+      const onAbort = () => this.fail(id, abortError())
+      const timer = setTimeout(() => this.fail(id, new McpError(`${this.label} 调用超时`)), timeout)
+      const entry = { resolve, reject, method, params, controller, sent: false, cleanup: () => {
         clearTimeout(timer)
         signal?.removeEventListener?.('abort', onAbort)
-      }
+      } }
+      this.pending.set(id, entry)
+      signal?.addEventListener?.('abort', onAbort, { once: true })
     })
-    this.deliver(id, String(method), params || {}, signal).catch(error => this.fail(id, error))
+    this.pump()
     return promise
+  }
+
+  pump() {
+    if (this.closed || this.sending) return
+    const entries = [...this.pending.entries()]
+    if (entries.filter(([,e]) => e.sent).length >= this.maxInflight) return
+    const next = entries.find(([,e]) => !e.sent)
+    if (!next) return
+    const [id, entry] = next
+    entry.sent = true
+    this.sending = true
+    this.sendingId = id
+    Promise.resolve().then(() => {
+      entry.controller.signal.throwIfAborted()
+      return this.deliver(id, String(entry.method), entry.params || {}, entry.controller.signal)
+    }).catch(error => this.fail(id, error)).finally(() => { this.sending = false; this.pump() })
   }
 
   fail(id, error) {
@@ -194,7 +222,10 @@ class RpcClient {
     if (!entry) return
     this.pending.delete(id)
     entry.cleanup?.()
+    entry.controller?.abort()
     entry.reject(error)
+    if (this.sending && this.sendingId === id) { this.close(); return }
+    this.pump()
   }
 
   settle(id, message) {
@@ -204,6 +235,7 @@ class RpcClient {
     entry.cleanup?.()
     if (message.error) entry.reject(new McpError(`${this.label}：${message.error.message || '调用失败'}`))
     else entry.resolve(message.result)
+    this.pump()
   }
 
   handlePayload(payload) {
@@ -218,6 +250,7 @@ class RpcClient {
     for (const [id, entry] of this.pending) {
       this.pending.delete(id)
       entry.cleanup?.()
+      entry.controller?.abort()
       entry.reject(new McpError(`${this.label} 已断开${reason ? `：${reason}` : ''}`))
     }
   }
@@ -239,17 +272,18 @@ class StdioClient extends RpcClient {
       signal,
     })
     this.child = child
-    let buffer = ''
+    this.writeAbort = new AbortController()
+    this.writeQueue = Promise.resolve()
+    this.queuedBytes = 0
+    const frames = new JsonLineBuffer()
     child.stdout.setEncoding('utf8')
     child.stdout.on('data', chunk => {
-      buffer += chunk
-      let index
-      while ((index = buffer.indexOf('\n')) >= 0) {
-        const line = buffer.slice(0, index).trim()
-        buffer = buffer.slice(index + 1)
-        if (!line) continue
-        try { this.handlePayload(JSON.parse(line)) } catch { /* 非 JSON 行（日志）忽略 */ }
-      }
+      try {
+        for (const line of frames.push(chunk)) {
+          if (!line.trim()) continue
+          try { this.handlePayload(JSON.parse(line)) } catch { /* ignore non-JSON logs */ }
+        }
+      } catch (error) { this.shutdown(error.message); this.close() }
     })
     let stderr = ''
     child.stderr?.setEncoding('utf8')
@@ -260,15 +294,30 @@ class StdioClient extends RpcClient {
     return this
   }
 
-  async deliver(id, method, params) {
+  async deliver(id, method, params, signal) {
     if (this.closed || !this.child?.stdin?.writable) throw new McpError(`${this.label} 不可写入`)
-    this.child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`)
+    return this.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`, signal)
   }
 
   notify(method, params) {
     if (!this.closed && this.child?.stdin?.writable) {
-      this.child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method, params })}\n`)
+      void this.write(`${JSON.stringify({ jsonrpc: '2.0', method, params })}\n`).catch(error => this.shutdown(error.message))
     }
+  }
+
+  write(text, signal) {
+    if (Buffer.byteLength(text) > 8 * 1024 * 1024) return Promise.reject(new McpError('MCP_PROTOCOL_LIMIT: outbound frame exceeds limit'))
+    const bytes = Buffer.byteLength(text)
+    if (this.queuedBytes + bytes > 16 * 1024 * 1024) return Promise.reject(new McpError('MCP_PROTOCOL_LIMIT: outbound queue exceeds limit'))
+    this.queuedBytes += bytes
+    const next = this.writeQueue.then(() => writeWithBackpressure(this.child.stdin, text, combineSignals(this.writeAbort.signal, signal))).finally(() => { this.queuedBytes -= bytes })
+    this.writeQueue = next.catch(() => {})
+    return next
+  }
+
+  shutdown(reason) {
+    this.writeAbort?.abort()
+    super.shutdown(reason)
   }
 
   close() {
@@ -391,6 +440,9 @@ class SseClient extends RpcClient {
       } catch (error) {
         this.shutdown(error?.message)
         this.rejectEndpoint?.(error)
+      } finally {
+        try { await reader.cancel() } catch { /* ended */ }
+        try { reader.releaseLock() } catch { /* released */ }
       }
     })()
     await withTimeout(endpointReady, CONNECT_TIMEOUT, `${this.label} 握手`)

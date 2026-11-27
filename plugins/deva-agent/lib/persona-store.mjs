@@ -1,3 +1,4 @@
+import { markCorrupt, assertWritable } from './corrupt-files.mjs'
 /**
  * 桌面端 persona 存储：**身份内容的唯一真源**。
  *
@@ -34,15 +35,16 @@ export function devaConfigPath(config = {}) {
 /** 读 `config.json`：不存在返回空对象；坏 JSON/非对象明确报错（不静默当空配置覆盖用户文件）。 */
 export function readDevaConfig(config = {}) {
   const path = devaConfigPath(config)
+  assertWritable(path)
   const file = readStrictText(path)
   if (!file) return { raw: null, value: {}, exists: false, path, repaired: false }
   let value
   try {
     value = JSON.parse(file.raw)
   } catch {
-    throw new DevaIdentityError('DEVA_CONFIG_INVALID_JSON', `Deva config.json 不是合法 JSON：${path}；没有覆盖，请修正或先备份`, { path })
+    throw markCorrupt(path, new DevaIdentityError('DEVA_CONFIG_INVALID_JSON', `Deva config.json 不是合法 JSON：${path}；没有覆盖，请修正或先备份`, { path }))
   }
-  if (!object(value)) throw new DevaIdentityError('DEVA_CONFIG_INVALID_SHAPE', `Deva config.json 顶层应为对象：${path}`, { path })
+  if (!object(value)) throw markCorrupt(path, new DevaIdentityError('DEVA_CONFIG_INVALID_SHAPE', `Deva config.json 顶层应为对象：${path}`, { path }))
   return { raw: file.raw, value, exists: true, path, repaired: file.repaired }
 }
 
