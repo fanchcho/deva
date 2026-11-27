@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
@@ -305,11 +307,19 @@ test('definition end-to-end: a memory written mid-turn reaches the next step and
   }
 })
 
-test('the memory index is re-read only after a successful memory write or delete', async () => {
+test('the memory index is re-read only after a successful memory write or delete', async t => {
   const { dir, cleanup } = await workspace()
   try {
     const records = new Map()
     let entriesReads = 0
+    let fileReads = 0
+    const originalStat = fs.lstatSync
+    t.mock.method(fs, 'lstatSync', function(path, ...args) {
+      if (String(path).endsWith('/memory.json')) fileReads++
+      return originalStat.call(this, path, ...args)
+    })
+    syncBuiltinESMExports()
+    t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports() })
     const countingStorage = (prefix = 'root') => ({
       namespace: (...parts) => countingStorage(`${prefix}/${parts.join('/')}`),
       get: async key => {
@@ -337,7 +347,8 @@ test('the memory index is re-read only after a successful memory write or delete
     })
     assert.equal(result.finishReason, 'stop')
     // 开场读一次（全局 + 项目两层）；普通工具步不重读；写入后下一步再读一次（两层）。
-    assert.equal(entriesReads, 4)
+    assert.equal(entriesReads, 0, '共享记忆不再读取宿主 entries')
+    assert.equal(fileReads, 4, '开场与成功写后各读全局、项目；普通工具后不重读')
   } finally { await cleanup() }
 })
 

@@ -141,8 +141,8 @@ export async function runAgentTurn({
   const isChild = depth > 0
   // 记忆的规则段只组装一次：条目索引随消息下发（下面 pushMemoryIndex），记忆增删改不动 system 前缀。
   // 子智能体只看自己的系统提示词：主对话的待办与记忆属于另一条上下文，不注入。
-  const memoryCtx = !isChild && run.state?.user?.namespace
-    ? { state: run.state, workspaceDir, identityId, identityName }
+  const memoryCtx = !isChild
+    ? { state: run.state, config: run.config, workspaceDir, identityId, identityName }
     : null
   if (memoryCtx) {
     const layers = await memoryLayers(memoryCtx)
@@ -177,6 +177,7 @@ export async function runAgentTurn({
   if (!initialMessages) await pushMemoryIndex({ force: true })
   const toolCtx = {
     run,
+    config: run.config,
     attachmentReader,
     workspaceDir,
     runtimeDir: run.paths?.runtimeDir,

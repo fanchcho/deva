@@ -1,3 +1,5 @@
+import './support/memory-home.mjs'
+import { writeFileSync, readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
@@ -9,9 +11,11 @@ test('v1 memory read and update preserve original content and unknown fields', a
   let rows = await fixture('memory-v1'); rows[0].extension = { origin: 'v1' }
   const bucket = { get: async () => structuredClone(rows), set: async (_k,v) => { rows = structuredClone(v) } }
   const ctx = { state: { user: { namespace: () => bucket } } }
+  writeFileSync(`${process.env.DEVA_HOME}/memory.json`, JSON.stringify({entries: typeof rows === 'undefined' ? raw : rows}))
   const [entry] = await listMemories('global', ctx)
   assert.equal(entry.body, rows[0].content); assert.deepEqual(entry.extension, { origin: 'v1' })
   await writeMemory({ title: '更新标题' }, ctx, entry.id)
+  rows = JSON.parse(readFileSync(`${process.env.DEVA_HOME}/memory.json`)).entries
   assert.equal(rows[0].content, '用户偏好简体中文。回复要简短。')
   assert.deepEqual(rows[0].extension, { origin: 'v1' })
 })
@@ -38,6 +42,7 @@ test('missing memory fields receive defaults without mutating storage on read', 
   const raw = [{ id: 'm_1', extension: 'keep' }]
   let writes = 0
   const ctx = { state: { user: { namespace: () => ({ get: async () => structuredClone(raw), set: async () => { writes++ } }) } } }
+  writeFileSync(`${process.env.DEVA_HOME}/memory.json`, JSON.stringify({entries: typeof rows === 'undefined' ? raw : rows}))
   const [entry] = await listMemories('global', ctx)
   assert.deepEqual(entry, { id: 'm_1', extension: 'keep', type: 'user', title: '', body: '', createdAt: 0, updatedAt: 0 })
   assert.equal(writes, 0)

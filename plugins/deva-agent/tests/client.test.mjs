@@ -945,3 +945,17 @@ test('model page no longer exposes the temporary keychain diagnostics entry', as
   assert.equal(findAll(root, node => node.textContent === '钥匙串诊断').length, 0)
   assert.equal(findAll(root, node => node.textContent === 'Keychain diagnostics').length, 0)
 })
+
+test('memory page shows empty state and preserves draft on failed save', async () => {
+  const root = await mountPage(fakeContext('zh', async (name, input) => {
+    assert.equal(name, 'memory-page')
+    if (input.action === 'save') throw new Error('MEMORY_CORRUPT')
+    return { entries: [], legacyNotice: 'retained' }
+  }, { view: 'memory' }))
+  assert.ok(findAll(root, n => n.textContent === '暂无记忆').length)
+  findAll(root, n => n.textContent === '新增')[0].onclick()
+  const title = findAll(root, n => n.tag === 'input')[0]; title.value = 'draft'
+  await findAll(root, n => n.textContent === '保存')[0].onclick()
+  assert.equal(title.value, 'draft')
+  assert.ok(findAll(root, n => n.textContent === 'MEMORY_CORRUPT').length)
+})

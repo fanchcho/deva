@@ -2382,6 +2382,115 @@
         "warnings"
       ],
       "additionalProperties": false
+    },
+    "memoryPageInput": {
+      "type": "object",
+      "description": "共享记忆操作；角色与项目从可信运行上下文解析。",
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "list/save/delete",
+          "enum": [
+            "list",
+            "save",
+            "delete"
+          ]
+        },
+        "scope": {
+          "type": "string",
+          "description": "global/role/project",
+          "enum": [
+            "global",
+            "role",
+            "project"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "description": "更新或删除条目 ID"
+        },
+        "type": {
+          "type": "string",
+          "description": "user/feedback/project/reference"
+        },
+        "title": {
+          "type": "string",
+          "description": "标题最多60字"
+        },
+        "body": {
+          "type": "string",
+          "description": "正文最多1500字"
+        }
+      },
+      "required": [
+        "action",
+        "scope"
+      ],
+      "additionalProperties": false
+    },
+    "memoryPageOutput": {
+      "type": "object",
+      "description": "共享文件快照与旧数据保留提示",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "description": "记忆条目数组；不因旧数据超过新增额度而拒绝读取。",
+          "items": {
+            "type": "object",
+            "description": "v2 记忆；兼容 v1 content，扩展字段原样保留。",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "稳定条目 ID。"
+              },
+              "type": {
+                "type": "string",
+                "description": "记忆类型。",
+                "enum": [
+                  "user",
+                  "feedback",
+                  "project",
+                  "reference"
+                ]
+              },
+              "title": {
+                "type": "string",
+                "description": "一句话标题；v1 从 content 派生。"
+              },
+              "body": {
+                "type": "string",
+                "description": "正文；v1 content 原文完整保留。"
+              },
+              "createdAt": {
+                "type": "number",
+                "description": "创建毫秒时间戳；缺省 0。"
+              },
+              "updatedAt": {
+                "type": "number",
+                "description": "更新时间；缺省 createdAt。"
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "title",
+              "body",
+              "createdAt",
+              "updatedAt"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "legacyNotice": {
+          "type": "string",
+          "description": "原样保留与回滚说明"
+        }
+      },
+      "required": [
+        "entries",
+        "legacyNotice"
+      ],
+      "additionalProperties": false
     }
   },
   "rpc": {
@@ -2529,6 +2638,11 @@
       "description": "保留原目录并注册配置推导的 Deva skills 目录",
       "input": "empty",
       "output": "skillDirectories"
+    },
+    "memory-page": {
+      "description": "读写桌面共享记忆；沿用 owner 权限与 RPC 门禁",
+      "input": "memoryPageInput",
+      "output": "memoryPageOutput"
     }
   },
   "tools": {},
@@ -2600,7 +2714,7 @@
       "description": "memory 持久化契约；迁移只补缺省字段，保留全部未知字段，校验失败不覆盖旧数据。",
       "model": "memoryEntries",
       "version": 2,
-      "scope": "state.user.namespace(memory[, role, identityId | project, realpath hash]).entries"
+      "scope": "~/.deva/memory.json | personas/memory/<id>.json | projects/<key>/memory.json"
     },
     "todos": {
       "description": "todos 持久化契约；迁移只补缺省字段，保留全部未知字段，校验失败不覆盖旧数据。",

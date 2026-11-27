@@ -269,6 +269,7 @@ function memoryContext(ctx, workspaceDir) {
   const identity = ctx?.identity
   return {
     state: ctx?.state ?? ctx,
+    config: ctx?.config,
     workspaceDir,
     identityId: identity?.identityId ?? identity?.id ?? null,
     identityName: identity?.identityName ?? identity?.name ?? null,

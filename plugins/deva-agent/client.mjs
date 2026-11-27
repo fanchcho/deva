@@ -1483,7 +1483,8 @@ async function mountContent(root, ctx) {
   root.append(container)
 
   // 路由变化会重新挂载，按 view 只渲染对应页面。
-  if (ctx.view === 'mcp') await mountMcp(container, ctx, text)
+  if (ctx.view === 'memory') await mountMemory(container, ctx, text)
+  else if (ctx.view === 'mcp') await mountMcp(container, ctx, text)
   else if (ctx.view === 'skills') await mountSkills(container, ctx, text)
   else if (ctx.view === 'model') await mountModel(container, ctx, text, modelLabels[locale], desktopModelLabels[locale])
   else await mountIdentity(container, ctx, text, identityLabels[locale])
@@ -2233,6 +2234,63 @@ function mountPersonaEditor(container, ctx, text, [, , addLabel, editLabel, name
   overlay.append(form)
   container.append(overlay)
   name.focus?.()
+}
+
+
+async function mountMemory(container, ctx) {
+  const zh = String(ctx.locale).startsWith('zh')
+  const words = zh
+    ? ['记忆', '全局', '当前角色', '当前项目', '新增', '保存', '删除', '取消', '刷新', '加载中…', '暂无记忆', '确认删除这条记忆？', '旧 Studio 记忆原样保留，未自动合并。当前页面和工具仅使用桌面记忆文件；回滚插件可恢复访问旧数据。']
+    : ['Memory', 'Global', 'Current persona', 'Current project', 'Add', 'Save', 'Delete', 'Cancel', 'Refresh', 'Loading…', 'No memories', 'Delete this memory?', 'Legacy Studio memory is retained without merging. This page and tools use Desktop files only; rolling back the plugin restores access to legacy data.']
+  container.append(el('h2', '', words[0]), el('p', '', words[12]))
+  const scopes = el('select', 'deva-select')
+  for (const [index, value] of ['global', 'role', 'project'].entries()) {
+    const option = el('option', '', words[index + 1]); option.value = value; scopes.append(option)
+  }
+  scopes.value = 'global'
+  const list = el('div', 'deva-memory-list')
+  const error = el('div', 'deva-field-error'); error.setAttribute('role', 'alert')
+  const form = el('div', 'deva-memory-form'); form.hidden = true
+  const title = el('input', 'deva-select'); title.maxLength = 60; title.setAttribute('aria-label', zh ? '标题' : 'Title')
+  const body = el('textarea', 'deva-select'); body.maxLength = 1500; body.setAttribute('aria-label', zh ? '正文' : 'Body')
+  const type = el('select', 'deva-select')
+  for (const value of ['user', 'feedback', 'project', 'reference']) { const option = el('option', '', value); option.value = value; type.append(option) }
+  const add = button(words[4], 'deva-btn'), save = button(words[5], 'deva-btn'), remove = button(words[6], 'deva-btn'), cancel = button(words[7], 'deva-btn'), refresh = button(words[8], 'deva-btn')
+  form.append(type, title, body, save, remove, cancel)
+  container.append(scopes, add, refresh, error, form, list)
+  let current = null, generation = 0, pending = false
+  const busy = value => { pending = value; for (const control of [scopes, add, save, remove, refresh, cancel]) control.disabled = value }
+  const showError = cause => { error.textContent = String(cause?.message || cause) }
+  const edit = entry => {
+    if (pending) return
+    current = entry; title.value = entry?.title || ''; body.value = entry?.body || ''; type.value = entry?.type || 'user'
+    type.hidden = !!entry; remove.hidden = !entry; form.hidden = false; error.textContent = ''
+  }
+  const load = async () => {
+    const request = ++generation; const scope = scopes.value
+    list.textContent = words[9]; error.textContent = ''; busy(true)
+    try {
+      const result = await ctx.rpc.call('memory-page', { action: 'list', scope })
+      if (request !== generation) return
+      list.textContent = result.entries.length ? '' : words[10]
+      for (const entry of result.entries) { const item = button(entry.title, 'deva-btn'); item.onclick = () => edit(entry); list.append(item) }
+    } catch (cause) { if (request === generation) { list.textContent = ''; showError(cause) } }
+    finally { if (request === generation) busy(false) }
+  }
+  const mutate = async action => {
+    if (pending) return
+    if (action === 'delete' && !(await ctx.ui.confirm(words[11]))) return
+    busy(true); error.textContent = ''
+    try {
+      await ctx.rpc.call('memory-page', { action, scope: scopes.value, ...(current ? { id: current.id } : {}), ...(action === 'save' ? { title: title.value, body: body.value, ...(!current ? { type: type.value } : {}) } : {}) })
+      form.hidden = true; await load()
+    } catch (cause) { showError(cause) }
+    finally { busy(false) }
+  }
+  scopes.onchange = () => { form.hidden = true; void load() }
+  add.onclick = () => edit(null); refresh.onclick = () => { void load() }
+  save.onclick = () => mutate('save'); remove.onclick = () => mutate('delete'); cancel.onclick = () => { form.hidden = true }
+  await load()
 }
 
 async function mountMcp(container, ctx, text) {

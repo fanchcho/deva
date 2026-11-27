@@ -436,3 +436,15 @@ Windows 桌面端的 safeStorage **不是**“明文直接 DPAPI 后写盘”。
 - Electron 33 的 `shell/browser/electron_browser_main_parts.cc:539-540` 设置 service=`<app_name> Safe Storage`、account=`<app_name>`，但其 Chromium 补丁 `patches/chromium/feat_ensure_mas_builds_of_the_same_application_can_use_safestorage.patch:23-39` 把实际 account 改为 `<app_name> Key`（普通 macOS）/<app_name> App Store Key（MAS）；无后缀 `<app_name>` 仅作 legacy 兜底并会被迁移。
 - `MAC_KEYCHAIN_CANDIDATES` 对每个 app 名按 `Key` → `App Store Key` → 无后缀 依次尝试；发现模式命中多条时记录 `selected`（service/account），不只取第一条。
 - `security -w` 原始输出只去掉末尾一个换行，不 trim 其它字节；按 `utf8` / `hex` / `base64` / `binary` 依次派生并尝试。
+
+## 共享记忆（第五个设置页 memory）
+
+`memory-page` RPC 使用已有 32/128 门禁及 sharedDevaUserId/激活账号 owner 校验。
+输入 action=list/save/delete、scope=global/role/project；当前角色与工作区从可信 run 获取。
+条目编辑只传 title/body，新增可选 user/feedback/project/reference；沿用 60/1500 字与 100/60 条、4000/3000 索引预算。
+工具、提示词、归纳与页面共享 lib/memory.mjs：根为 sharedDevaHome、DEVA_HOME、~/.deva，三层路径与桌面一致。
+未知 JSON 字段和未修改条目顺序保留。读改写快照在文件锁内比对，冲突明确拒绝；writeAtomic 使用独占临时文件、fsync、rename。
+坏 JSON、空文件或损坏条目进入只读保护，不覆盖原件；修复文件后重启插件。
+旧 state.user memory 命名空间原样保留且不再读取或写入；页面始终提示未自动合并及回滚方法。
+回滚插件可重新访问旧宿主数据；新桌面文件仍保留，不自动反向覆盖旧数据。
+桌面服务不使用插件锁，不能保证两个应用在检查与 rename 的极短窗口内同时写不冲突；未声称分布式事务保证。

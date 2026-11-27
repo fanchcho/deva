@@ -10,7 +10,8 @@
         "identity": "Identity",
         "mcp": "MCP",
         "model": "Model",
-        "skills": "Skills"
+        "skills": "Skills",
+        "memory": "Memory"
       }
     },
     "zh": {
@@ -20,7 +21,8 @@
         "identity": "身份",
         "mcp": "MCP",
         "model": "模型",
-        "skills": "技能"
+        "skills": "技能",
+        "memory": "记忆"
       }
     },
     "zh-TW": {
@@ -30,7 +32,8 @@
         "identity": "身分",
         "mcp": "MCP",
         "model": "模型",
-        "skills": "技能"
+        "skills": "技能",
+        "memory": "记忆"
       }
     },
     "ja": {
@@ -40,7 +43,8 @@
         "identity": "アイデンティティ",
         "mcp": "MCP",
         "model": "モデル",
-        "skills": "スキル"
+        "skills": "スキル",
+        "memory": "Memory"
       }
     },
     "ko": {
@@ -50,7 +54,8 @@
         "identity": "아이덴티티",
         "mcp": "MCP",
         "model": "모델",
-        "skills": "스킬"
+        "skills": "스킬",
+        "memory": "Memory"
       }
     },
     "fr": {
@@ -60,7 +65,8 @@
         "identity": "Identité",
         "mcp": "MCP",
         "model": "Modèle",
-        "skills": "Compétences"
+        "skills": "Compétences",
+        "memory": "Memory"
       }
     },
     "es": {
@@ -70,7 +76,8 @@
         "identity": "Identidad",
         "mcp": "MCP",
         "model": "Modelo",
-        "skills": "Habilidades"
+        "skills": "Habilidades",
+        "memory": "Memory"
       }
     },
     "de": {
@@ -80,7 +87,8 @@
         "identity": "Identität",
         "mcp": "MCP",
         "model": "Modell",
-        "skills": "Fähigkeiten"
+        "skills": "Fähigkeiten",
+        "memory": "Memory"
       }
     },
     "pt": {
@@ -90,7 +98,8 @@
         "identity": "Identidade",
         "mcp": "MCP",
         "model": "Modelo",
-        "skills": "Habilidades"
+        "skills": "Habilidades",
+        "memory": "Memory"
       }
     },
     "ru": {
@@ -100,7 +109,8 @@
         "identity": "Идентичность",
         "mcp": "MCP",
         "model": "Модель",
-        "skills": "Навыки"
+        "skills": "Навыки",
+        "memory": "Memory"
       }
     },
     "ar": {
@@ -110,7 +120,8 @@
         "identity": "الهوية",
         "mcp": "MCP",
         "model": "النموذج",
-        "skills": "المهارات"
+        "skills": "المهارات",
+        "memory": "Memory"
       }
     },
     "tr": {
@@ -120,7 +131,8 @@
         "identity": "Kimlik",
         "mcp": "MCP",
         "model": "Model",
-        "skills": "Beceriler"
+        "skills": "Beceriler",
+        "memory": "Memory"
       }
     }
   },
@@ -176,6 +188,13 @@
       "slot": "agent-settings",
       "icon": "settings",
       "order": 3
+    },
+    {
+      "id": "memory",
+      "title": "记忆",
+      "slot": "agent-settings",
+      "icon": "book",
+      "order": 4
     }
   ],
   "icon": "icon.png",

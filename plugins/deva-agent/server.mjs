@@ -1,3 +1,4 @@
+import { registerMemorySettings } from './lib/memory-settings.mjs'
 import { registerSkillSettings } from './lib/skill-settings.mjs'
 import { discoverModels } from './lib/model-discovery.mjs'
 import { registerCompression } from './lib/compression.mjs'
@@ -42,6 +43,7 @@ function personaOperation(activationUserId, action) {
 export function apply(ctx) {
   const activationUserId = ctx.identity?.userId
   ctx.log.info(`deva: 激活通道 ctx.host.request=${typeof ctx.host?.request === 'function'}`)
+  registerMemorySettings(ctx, contract)
   registerCompression(ctx)
   registerSkillSettings(ctx, contract)
   registerRpc(ctx, contract, 'list-provider-models', (input, run) => discoverModels(run, input))

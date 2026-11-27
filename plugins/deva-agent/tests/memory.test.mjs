@@ -1,3 +1,5 @@
+import './support/memory-home.mjs'
+import { writeFileSync, readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -136,10 +138,7 @@ test('v1 one-liner memories are read as v2 entries with a derived title', async 
   const { dir, cleanup } = await workspace()
   try {
     // 直接写旧格式：只有 id + content。
-    const bucket = state.user.namespace('memory')
-    await bucket.set('entries', [
-      { id: 'm_deadbeef', content: '用户偏好简体中文。回复要简短。', createdAt: 1, updatedAt: 2 },
-    ])
+    writeFileSync(`${process.env.DEVA_HOME}/memory.json`, JSON.stringify({version:1, entries:[{id:'m_deadbeef',content:'用户偏好简体中文。回复要简短。',createdAt:1,updatedAt:2}]}))
     const entries = await listMemories('global', ctxOf(state, dir))
     assert.equal(entries.length, 1)
     assert.equal(entries[0].type, 'user')

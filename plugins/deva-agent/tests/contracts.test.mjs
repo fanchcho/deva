@@ -144,6 +144,7 @@ test('Deva uses the native settings views without registering a main navigation 
     ['mcp', 'agent-settings', 'mcp'],
     ['skills', 'agent-settings', 'book'],
     ['model', 'agent-settings', 'settings'],
+    ['memory', 'agent-settings', 'book'],
   ])
   assert.equal(manifest.configSchema.properties.mcpServers, undefined, 'MCP 配置仍只有 Studio 一份')
   assert.equal(manifest.configSchema.properties.approvalEnabled.default, false)
@@ -154,7 +155,7 @@ test('Deva uses the native settings views without registering a main navigation 
   assert.equal(translations.length, 12)
   for (const locale of translations) {
     assert.equal(locale.navigation, undefined)
-    assert.deepEqual(Object.keys(locale.views).sort(), ['identity', 'mcp', 'model', 'skills'])
+    assert.deepEqual(Object.keys(locale.views).sort(), ['identity', 'mcp', 'memory', 'model', 'skills'])
   }
   const pkg = await readJson('package.json')
   assert.equal(manifest.version, pkg.version)
@@ -175,7 +176,7 @@ test('contracts declare the identity, model and Studio MCP RPCs, the identity co
     'clear-session-identity', 'create-mcp-server', 'create-persona', 'delete-mcp-server', 'get-identities', 'get-mcp-server', 'get-mcp-servers',
     'get-model-selection', 'get-persona-editor', 'get-session-identity', 'list-provider-models', 'save-mcp-selection', 'save-model-selection', 'save-persona-model', 'save-selection', 'save-session-identity',
     'set-mcp-server-enabled', 'test-mcp-server', 'update-mcp-server', 'update-persona',
-    'get-skills', 'get-skill', 'save-skill', 'set-skill-enabled', 'delete-skill', 'get-skill-files', 'read-skill-file', 'get-skill-directories', 'save-skill-directories',
+    'memory-page', 'get-skills', 'get-skill', 'save-skill', 'set-skill-enabled', 'delete-skill', 'get-skill-files', 'read-skill-file', 'get-skill-directories', 'save-skill-directories',
   ].sort())
   assert.deepEqual(Object.keys(contract.commands), ['identity'])
   assert.deepEqual(Object.keys(contract.storage).sort(), ['attachments', 'checkpoint', 'customModel', 'desktopModelKey', 'identity', 'mcp', 'memory', 'modelMode', 'modelNetworkConsent', 'modelOptions', 'sharedDesktopProvider', 'sharedModelKey', 'subagents', 'todos'])
@@ -191,7 +192,7 @@ test('apply registers the Agent, all RPCs and the identity command, and disposes
     'clear-session-identity', 'create-mcp-server', 'create-persona', 'delete-mcp-server', 'get-identities', 'get-mcp-server', 'get-mcp-servers',
     'get-model-selection', 'get-persona-editor', 'get-session-identity', 'list-provider-models', 'save-mcp-selection', 'save-model-selection', 'save-persona-model', 'save-selection', 'save-session-identity',
     'set-mcp-server-enabled', 'test-mcp-server', 'update-mcp-server', 'update-persona',
-    'get-skills', 'get-skill', 'save-skill', 'set-skill-enabled', 'delete-skill', 'get-skill-files', 'read-skill-file', 'get-skill-directories', 'save-skill-directories',
+    'memory-page', 'get-skills', 'get-skill', 'save-skill', 'set-skill-enabled', 'delete-skill', 'get-skill-files', 'read-skill-file', 'get-skill-directories', 'save-skill-directories',
   ].sort())
   assert.deepEqual([...commands.keys()], ['identity'])
   assert.match(commands.get('identity').description, /会话/)

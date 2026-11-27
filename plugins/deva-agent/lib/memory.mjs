@@ -1,3 +1,5 @@
+import { sharedMemoryPath, fileMemoryStore } from './memory-file.mjs'
+import { markCorrupt } from './corrupt-files.mjs'
 /**
  * 记忆（memory_read / memory_write / memory_delete）v2：三层作用域 + 类型与标题。
  *
@@ -9,7 +11,7 @@
  * 随消息下发的只有标题索引，正文由模型用 memory_read 按 id 读取；写满时先自动归纳旧条目再写入
  * （lib/memory-consolidate.mjs）。上限按索引行计，各层独立。
  *
- * 不在插件里另建文件：Studio 已提供按登录用户隔离的 state.user 存储，插件只读它自己的命名空间。
+ * 唯一真源为桌面 ~/.deva 三作用域 JSON；旧 state.user 数据原样保留，不再作为活动存储。
  * 旧版（v1，每条一句话 content）读到时就地转换：标题取第一句、正文保留原文、类型暂记 user。
  */
 import { validateStored } from './storage-contracts.mjs'
@@ -61,7 +63,9 @@ export async function projectMemoryKey(workspaceDir) {
   if (!raw) throw new MemoryError('项目记忆需要已挂载的工作区')
   let real = raw
   try { real = await realpath(raw) } catch { /* 目录已不存在时按原路径算 */ }
-  return createHash('sha1').update(real.replace(/[\\/]+$/, '')).digest('hex').slice(0, 24)
+  let norm = real.replace(/[\\/]+$/, '')
+  if (process.platform === 'win32' || process.platform === 'darwin') norm = norm.toLowerCase()
+  return createHash('sha1').update(norm).digest('hex').slice(0, 24)
 }
 
 /** 规整标题：单行、去首尾空白。 */
@@ -99,17 +103,11 @@ export function memoryUsage(entries) {
 // ── 存储 ────────────────────────────────────────────────────────────────────────
 
 /** 某层对应的存储桶；项目层缺工作区、角色层缺身份时返回 null。 */
-async function memoryStore(state, scope, { workspaceDir, identityId } = {}) {
-  const user = state?.user
-  if (!user?.namespace) return null
-  if (scope === 'global') return user.namespace('memory')
-  if (scope === 'role') {
-    const id = String(identityId ?? '').trim()
-    if (!id) return null
-    return user.namespace('memory', 'role', id)
-  }
-  if (!workspaceDir) return null
-  return user.namespace('memory', 'project', await projectMemoryKey(workspaceDir))
+async function memoryStore(state, scope, ctx = {}) {
+  const { workspaceDir } = ctx
+  const key = scope === 'project' && workspaceDir ? await projectMemoryKey(workspaceDir) : null
+  const path = sharedMemoryPath(scope, ctx, key)
+  return path ? fileMemoryStore(path, scope, ctx) : null
 }
 
 export function newId(scope, existing) {
@@ -148,7 +146,8 @@ async function readEntries(store) {
   const raw = await store.get('entries')
   if (raw == null) return []
   if (!Array.isArray(raw)) throw new MemoryError('记忆存储不是数组，拒绝覆盖')
-  return validateStored('memory', raw.map(parseEntry))
+  try { return validateStored('memory', raw.map(parseEntry)) }
+  catch (error) { throw markCorrupt(store.path, error) }
 }
 
 async function writeEntries(store, entries) {
