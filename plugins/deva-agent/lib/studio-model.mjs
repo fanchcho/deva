@@ -1,4 +1,3 @@
-import { writeUiTrace } from './ui-trace.mjs'
 import { callModel } from './model.mjs'
 import { ModelInputError, requestCustomModel } from './custom-model-network.mjs'
 import { DESKTOP_DECRYPT_CODES, MAC_CODES, WIN_CODES, isToolchainFailure } from './desktop-secrets.mjs'
@@ -103,13 +102,6 @@ export function createCustomModel(run, { baseUrl, modelName, apiKey, reasoningEf
     const result = await callModel({
       ...options, apiMode: 'chat_completions', model: { model: modelName, ...(reasoningEffort ? { reasoningEffort } : {}) }, baseUrl, token: apiKey,
       chatRequest: request => {
-        // Observe only routing metadata from the actual serialized request, never headers or messages.
-        try {
-          const body = JSON.parse(request.body)
-          writeUiTrace({ side: 'server', phase: 'model-request', method: 'chat-completions',
-            modelName: body.model, reasoningEffort: body.reasoning_effort || 'omitted',
-            userId: run.identity?.userId, profile: run.identity?.profile })
-        } catch { /* Diagnostics must not prevent inference. */ }
         return requestCustomModel(endpoint, request).catch(error => { throw /HTTP (401|403)；/.test(error.message)
         ? new Error(`${error.message}；${authHint()}`)
         : effortRejected(error, reasoningEffort) })

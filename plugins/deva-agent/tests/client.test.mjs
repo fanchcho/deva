@@ -822,38 +822,6 @@ test('local candidates precede form fields and expanded JSON never pushes them d
   assert.ok(!nodes.find(n => n.role === 'status').textContent.includes('providerCount'))
 })
 
-test('measurement, listener and observer failures cannot prevent model mount, reload or disposal', async () => {
-  const { mount } = await import('../client.mjs')
-  for (const stage of ['observer', 'listener', 'geometry', 'trace']) {
-    const calls = [], listeners = {}
-    const root = new StubElement('div')
-    const win = { innerHeight: 700, innerWidth: 1000, origin: 'http://localhost', location: { href: 'http://localhost/plugin-frame.html', origin: 'http://localhost', hash: '#/studio/plugin-agent-settings/deva/model' },
-      addEventListener(type, fn) { if (stage === 'listener') throw Error('measurement listener failed'); listeners[type] = fn }, removeEventListener() {},
-      getComputedStyle() { throw Error('geometry unavailable') } }
-    win.parent = win
-    globalThis.window = win
-    globalThis.document = { readyState: 'complete', createElement: tag => new StubElement(tag), addEventListener: win.addEventListener, removeEventListener() {}, documentElement: { scrollHeight: 900 }, elementFromPoint() { throw Error('hit test failed') } }
-    win.document = globalThis.document
-    globalThis.MutationObserver = class { constructor() { if (stage === 'observer') throw Error('observer unavailable') } observe() {} disconnect() {} }
-    // Traversal is deliberately unavailable in the geometry case; rendering uses append.
-    root.querySelector = () => { throw Error('geometry query unavailable') }
-    const settings = { modelRef: 'p:m', baseUrl: 'https://example.com/v1', modelName: 'm', desktopModels: [{ ref: 'p:m', modelName: 'm' }] }
-    const ctx = fakeContext('zh', async method => { calls.push(method); if (method === 'model-ui-trace') { if (stage === 'trace') throw Error('trace rejected'); return {} } return settings }, { view: 'model' })
-    ctx.signal = new AbortController().signal
-    try {
-      const dispose = await mount(root, ctx)
-      const choices = findAll(root, n => n.tag === 'select' && n.size === 5)[0]
-      assert.equal(choices?.children.length, 1, stage)
-      const reload = findAll(root, n => n.tag === 'button' && n.textContent === '获取模型列表')[0]
-      assert.equal(reload.disabled, false, stage)
-      await reload.onclick()
-      assert.equal(calls.filter(m => m === 'get-model-selection').length, 2, stage)
-      listeners.click?.({ type: 'click', clientX: 1, clientY: 1 })
-      dispose()
-    } finally { delete globalThis.window; delete globalThis.MutationObserver }
-  }
-})
-
 test('model form has one label per field and failed reads offer retry in the existing form', async () => {
   let failed = true
   const ctx = fakeContext('zh', async () => {
@@ -971,16 +939,9 @@ test('model page warns that a successful /models fetch does not prove chat works
   assert.match(findAll(rejected, node => node.textContent).map(node => node.textContent).join('\n'), /同一凭据在对话端点被上游拒绝/)
 })
 
-test('model page has a one-click keychain diagnostics panel that renders text without secrets', async () => {
-  const current = { baseUrl: 'https://example.com/v1', modelName: 'm', modelRef: 'p:m', hasApiKey: false, legacyNeedsSetup: false }
-  const page = await mountPage(fakeContext('zh', async name => {
-    if (name === 'get-model-selection') return current
-    if (name === 'get-keychain-diagnostics') return { text: 'platform: darwin\nkeychains: login.keychain-db\nmatchedDevaSafeStorage: 0' }
-    throw new Error(`unexpected ${name}`)
-  }, { view: 'model' }))
-  const diagButton = findAll(page, node => node.tag === 'button' && node.textContent === '钥匙串诊断')[0]
-  assert.ok(diagButton, '存在「钥匙串诊断」按钮')
-  await diagButton.onclick()
-  const texts = findAll(page, node => node.textContent).map(node => node.textContent).join('\n')
-  assert.match(texts, /matchedDevaSafeStorage: 0/)
+test('model page no longer exposes the temporary keychain diagnostics entry', async () => {
+  const ctx = fakeContext('zh', async () => ({ baseUrl: 'https://example.com/v1', modelName: 'm', hasApiKey: true, keySource: 'desktop', keySourceReadOnly: true }), { view: 'model' })
+  const root = await mountPage(ctx)
+  assert.equal(findAll(root, node => node.textContent === '钥匙串诊断').length, 0)
+  assert.equal(findAll(root, node => node.textContent === 'Keychain diagnostics').length, 0)
 })

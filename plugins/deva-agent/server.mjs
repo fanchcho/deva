@@ -1,6 +1,4 @@
 import { registerSkillSettings } from './lib/skill-settings.mjs'
-import { clientDeliveryInterceptor } from './lib/client-delivery.mjs'
-import { writeUiTrace, tracedModelRpc } from './lib/ui-trace.mjs'
 import { discoverModels } from './lib/model-discovery.mjs'
 import { registerCompression } from './lib/compression.mjs'
 /**
@@ -12,7 +10,6 @@ import { assertContracts, registerRpc } from './sdk/harness/contracts.mjs'
 import { createAgentDefinition } from './lib/agent.mjs'
 import { listIdentities } from './lib/identities.mjs'
 import { readModelSelection, saveModelSelection, savePersonaModel } from './lib/model-selection.mjs'
-import { readKeychainDiagnostics } from './lib/desktop-secrets.mjs'
 import { readIdentitySnapshot, readSessionIdentityId, writeIdentityId, writeSessionIdentityId } from './lib/selection.mjs'
 import { identityFilePath } from './lib/deva-home.mjs'
 import { addStudioPersona, readStudioPersona, updateStudioPersona } from './lib/persona-store.mjs'
@@ -44,14 +41,11 @@ function personaOperation(activationUserId, action) {
 export function apply(ctx) {
   const activationUserId = ctx.identity?.userId
   ctx.log.info(`deva: 激活通道 ctx.host.request=${typeof ctx.host?.request === 'function'}`)
-  ctx.lifecycle.add(ctx.extensions.http.register(clientDeliveryInterceptor()))
   registerCompression(ctx)
   registerSkillSettings(ctx, contract)
-  registerRpc(ctx, contract, 'model-ui-trace', (input, run) => writeUiTrace({ ...input, userId: run.identity?.userId ?? 0, profile: run.identity?.profile || 'unknown' }))
-  registerRpc(ctx, contract, 'list-provider-models', tracedModelRpc('list-provider-models', (input, run) => discoverModels(run, input)))
-  registerRpc(ctx, contract, 'get-model-selection', tracedModelRpc('get-model-selection', (_input, run) => readModelSelection({ ...run, desktopActivationUserId: activationUserId })))
-  registerRpc(ctx, contract, 'save-model-selection', tracedModelRpc('save-model-selection', (input, run) => saveModelSelection({ ...run, desktopActivationUserId: activationUserId }, input)))
-  registerRpc(ctx, contract, 'get-keychain-diagnostics', (_input, run) => readKeychainDiagnostics(run.config))
+  registerRpc(ctx, contract, 'list-provider-models', (input, run) => discoverModels(run, input))
+  registerRpc(ctx, contract, 'get-model-selection', (_input, run) => readModelSelection({ ...run, desktopActivationUserId: activationUserId }))
+  registerRpc(ctx, contract, 'save-model-selection', (input, run) => saveModelSelection({ ...run, desktopActivationUserId: activationUserId }, input))
   registerRpc(ctx, contract, 'save-persona-model', (input, run) => savePersonaModel({ ...run, desktopActivationUserId: activationUserId }, input))
   // ~/.deva/personas 只存内容；默认与会话选择保留在 config.json。
   registerRpc(ctx, contract, 'get-identities', async (_input, run) => {

@@ -18,12 +18,12 @@
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { accessSync, constants, lstatSync, readFileSync, statSync } from 'node:fs'
+import { hostname, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { resolveDevaRoot } from './deva-fs.mjs'
-import { MAC_CODES, collectKeychainEntries, createMacKeychainDecoder, isMacToolchainFailure } from './macos-keychain.mjs'
+import { MAC_CODES, createMacKeychainDecoder, isMacToolchainFailure } from './macos-keychain.mjs'
 import { createWindowsSafeStorageDecoder, WIN_CODES } from './windows-safe-storage.mjs'
-import { classifyOwnership, describeValuePrefix, likelyV10Format, normalizeAccount } from './safe-storage.mjs'
-import { hostname, userInfo } from 'node:os'
+import { classifyOwnership, normalizeAccount } from './safe-storage.mjs'
 
 export const DESKTOP_SECRETS_MAX_BYTES = 1024 * 1024
 
@@ -152,34 +152,6 @@ export function readDesktopSecrets(config = {}) {
   return { ...first, source: 'primary', tried: [primary, ...legacy] }
 }
 
-/**
- * 只描述 secrets.json 的**结构**，用于诊断「这 182 字节到底是什么」：
- * 每条只给 key 名、key 长度、value 的 base64 字符数、解码字节数、前 3 字节前缀（v10/v11/other）。
- * **绝不输出 value 或解码后的内容**。macOS 的 v10 密文通常每条 40~90 个 base64 字符；
- * 若 value 很短（<20）或前缀不是 v10/v11，则更像 Keychain 引用/别的东西，而不是 safeStorage 密文。
- */
-export function desktopSecretsStructure(file) {
-  if (!file || file.structure !== 'ok') return null
-  return {
-    entryCount: Object.keys(file.entries).length,
-    entries: Object.entries(file.entries).map(([key, value]) => {
-      const described = describeValuePrefix(value)
-      const body = Number.isInteger(described.bytes) ? described.bytes - 3 : null
-      return {
-        key,
-        keyLength: key.length,
-        valueChars: value.length,
-        decodedBytes: described.bytes,
-        prefix: described.kind === 'v10' ? 'v10' : described.kind,
-        cbcCipherBytes: body !== null ? Math.max(0, body) : null,
-        cbcBlocks: body !== null && body > 0 && body % 16 === 0 ? body / 16 : null,
-        gcmPlausible: body !== null ? body >= 29 : null,
-        likelyFormat: described.kind === 'v10' ? likelyV10Format(described.bytes) : 'invalid'
-      }
-    })
-  }
-}
-
 /** 某一 provider 的密文（桌面按 providerId 存；没有 provider 级前缀）。 */
 export function desktopCiphertext(file, providerId) {
   if (!file || file.structure !== 'ok' || !providerId) return ''
@@ -305,7 +277,7 @@ export function probeFileOwner(path, { platform = process.platform, spawn = runP
   if (!path) return { ok: false, code: 'no-path', owner: '' }
   // POSIX（macOS/Linux）：直接看“当前进程能不能读”，再看属主 uid；不要拿 Windows ACL 去判。
   // 之前这里对非 Windows 一律返回 platform-unsupported，导致 macOS 上明明能读的文件被标成
-  // aclReadable=false（用户在 /Users/fanchunchun/.deva/config.json 上已证明可读）。
+  // aclReadable=false（用户在 /Users/example-user/.deva/config.json 上已证明可读）。
   if (platform !== 'win32') {
     const cachedPosix = ownerCache.get(path)
     if (cachedPosix) return cachedPosix
@@ -593,12 +565,10 @@ export async function resolveDesktopCredential({ config = {}, providerId, decryp
     structure: file.structure,
     code: file.code,
     entryCount: file.structure === 'ok' ? Object.keys(file.entries).length : null,
-    ...(file.structure === 'ok' ? { structureDetail: desktopSecretsStructure(file) } : {}),
   }
   if (!file.exists) return { status: 'missing-file', ...base, present: false, plaintext: '' }
   const acl = probeFileOwner(file.path)
-  base.fileOwner = acl.ok ? acl.owner : ''
-  base.aclReadable = acl.ok
+  const fileOwner = acl.ok ? acl.owner : ''
   if (file.structure !== 'ok') return { status: 'unreadable', ...base, present: false, plaintext: '' }
   const ciphertext = desktopCiphertext(file, providerId)
   if (!ciphertext) return { status: 'missing', ...base, present: false, plaintext: '' }
@@ -617,17 +587,15 @@ export async function resolveDesktopCredential({ config = {}, providerId, decryp
   // `DOMAIN\user` 里的前缀只有等于本机名时才能当 machine 用；域账号不能拿域名当机器名。
   const ownerMachine = acl.owner?.includes('\\') ? acl.owner.split('\\')[0] : ''
   const fileMachine = ownerMachine && normalizeAccount(ownerMachine) === normalizeAccount(processMachine) ? ownerMachine : ''
-  const ownership = classifyOwnership({ fileOwner: acl.owner, processUser, fileMachine, processMachine })
+  const ownership = classifyOwnership({ fileOwner, processUser, fileMachine, processMachine })
   base.selfCheck = health
   base.ownership = ownership
-  base.localStateTried = health?.localStateTried || []
   if (!result?.ok) {
     const finalCode = ownership.sameMachine && ownership.sameUser === false ? 'foreign-blob-proven' : (result?.code || DESKTOP_DECRYPT_CODES.DPAPI_FAILED)
     return {
       status: 'undecryptable', ...base, present: true, cached: false, plaintext: '',
       decryptCode: finalCode,
       toolchainBroken: isToolchainFailure(result?.code),
-      ...(result?.localState ? { localState: result.localState } : {}),
       ...(result?.v10 !== undefined ? { v10: Boolean(result.v10) } : {}),
       ...(ownership.sameMachine && ownership.sameUser === false ? { foreignProven: true } : {}),
       selfCheck: credentialHealth(result?.selfCheck),
@@ -665,10 +633,6 @@ export function credentialHealth(selfCheck) {
     ok: Boolean(selfCheck.ok),
     code: selfCheck.code || '',
     runtime: selfCheck.runtime || '',
-    ...(selfCheck.localState ? { localState: selfCheck.localState } : {}),
-    ...(selfCheck.keychain ? { keychain: selfCheck.keychain } : {}),
-    ...(selfCheck.localStateTried ? { localStateTried: selfCheck.localStateTried } : {}),
-    ...(selfCheck.dpapi ? { dpapi: selfCheck.dpapi } : {}),
     ...(selfCheck.service ? { service: selfCheck.service } : {}),
     ...(selfCheck.account ? { account: selfCheck.account } : {}),
     ...(selfCheck.roundtrip !== undefined ? { roundtrip: Boolean(selfCheck.roundtrip) } : {}),
@@ -676,58 +640,6 @@ export function credentialHealth(selfCheck) {
     machine: usable.machine || '',
     variants,
   }
-}
-
-/**
- * 一键钥匙串诊断：只读枚举 + 密文指纹，输出可复制文本。
- * 只包含路径、用户名、条目统计、service/account、长度与前缀类型；绝不读取/输出任何 Key 值或密文。
- */
-export async function readKeychainDiagnostics(config = {}, { platform = process.platform, runSecurity } = {}) {
-  const file = readDesktopSecrets(config)
-  const structure = desktopSecretsStructure(file)
-  const lines = []
-  let user = ''
-  let machine = ''
-  try { user = userInfo().username } catch { /* diagnostics only */ }
-  try { machine = hostname() } catch { /* diagnostics only */ }
-  lines.push(`platform: ${platform}`)
-  lines.push(`user: ${user || 'unknown'}`)
-  lines.push(`machine: ${machine || 'unknown'}`)
-  lines.push(`secrets: ${file.path} (exists=${file.exists}, size=${file.size ?? 'unknown'}, structure=${file.structure}, entries=${structure?.entryCount ?? 'unknown'})`)
-  if (structure) {
-    for (const entry of structure.entries) {
-      lines.push(`entry: key=${entry.key} keyLength=${entry.keyLength} valueChars=${entry.valueChars} decodedBytes=${entry.decodedBytes ?? 'unknown'} prefix=${entry.prefix} likelyFormat=${entry.likelyFormat} cbcCipherBytes=${entry.cbcCipherBytes ?? 'unknown'} cbcBlocks=${entry.cbcBlocks ?? 'unknown'} gcmPlausible=${entry.gcmPlausible ?? 'unknown'}`)
-    }
-  }
-  if (platform !== 'darwin') {
-    lines.push('keychain: (not macOS; skipped)')
-    return { text: lines.join('\n') }
-  }
-  const keychain = collectKeychainEntries({ ...(runSecurity ? { runSecurity } : {}) })
-  lines.push(`keychains: ${keychain.paths.length ? keychain.paths.join(' | ') : '(none)'}`)
-  lines.push(`defaultKeychain: ${keychain.defaultKeychain || '(unknown)'}`)
-  lines.push(`genericPasswordsTotal: ${keychain.totalGenericPasswords}`)
-  lines.push(`matchedDevaSafeStorage: ${keychain.matched}`)
-  for (const entry of keychain.entries) lines.push(`keychainEntry: service=${entry.service || ''} account=${entry.account || ''} keychain=${entry.keychain}`)
-  for (const error of keychain.errors) lines.push(`keychainError: ${error.keychain} code=${error.code}`)
-  // 逐条尝试解密：每条给独立 decryptCode/passwordFormat，不因为一条失败就判定整个钥匙串不可用。
-  try {
-    const decoder = createMacKeychainDecoder({ platform: 'darwin', ...(runSecurity ? { runSecurity } : {}) })
-    const entries = Object.entries(file.entries || {})
-    for (const [providerId, value] of entries) {
-      const result = await decoder(value)
-      lines.push(`decrypt: key=${providerId} decryptCode=${result.ok ? 'ok' : (result.code || 'unknown')}${result.ok && result.passwordFormat ? ` passwordFormat=${result.passwordFormat}` : ''}${result.ok && result.service ? ` service=${result.service}` : ''}${result.ok && result.account ? ` account=${result.account}` : ''}`)
-    }
-  } catch (error) {
-    lines.push(`decrypt: error=${String(error?.code || error?.message || 'unknown').slice(0, 120)}`)
-  }
-  const formats = (structure?.entries || []).map(entry => entry.likelyFormat)
-  if (formats.includes('win-gcm')) {
-    lines.push('fingerprint: v10 payload looks like Windows AES-256-GCM; macOS cannot decrypt it (different cipher) — re-save on this Mac or fill once in the model page.')
-  } else if (formats.length && formats.every(format => format === 'ambiguous')) {
-    lines.push('fingerprint: v10 length is ambiguous (mac-cbc/win-gcm both possible); platform + keychain hit decides.')
-  }
-  return { text: lines.join('\n') }
 }
 
 /** 页面/诊断用的**脱敏**视图：只有元数据与结论，绝不含密文或明文。 */

@@ -153,7 +153,6 @@ test('low-level helpers reject malformed input instead of silently accepting it'
 
 // ── 钥匙串发现 + 指纹（0.8.50）──
 import { collectKeychainEntries, parseKeychainDump } from '../lib/macos-keychain.mjs'
-import { likelyV10Format } from '../lib/safe-storage.mjs'
 
 const DUMP = `keychain: "/Users/fixture/Library/Keychains/login.keychain-db"
 version: 512
@@ -227,14 +226,6 @@ test('keychain discovery: entry visible in attributes but unavailable to this pr
   const result = await d(encryptV10('x'))
   assert.equal(result.code, MAC_CODES.ITEM_INVISIBLE)
   assert.equal(result.selfCheck.keychain.matched, 1)
-})
-
-test('v10 length fingerprint distinguishes mac-cbc / win-gcm / ambiguous', () => {
-  assert.equal(likelyV10Format(63), 'win-gcm')      // 3+12+48：Windows 32B 明文
-  assert.equal(likelyV10Format(51), 'ambiguous')    // 3+48：mac 也成立
-  assert.equal(likelyV10Format(35), 'ambiguous')    // 3+32
-  assert.equal(likelyV10Format(19), 'mac-cbc', 'v10+16 字节是合法的单块 CBC，不是 invalid')
-  assert.equal(likelyV10Format(83), 'ambiguous')    // 3+80：mac 与 win 长度条件都成立
 })
 
 /** 0.8.51：Electron macOS 的 account 是 `<app> Key`（普通）/<app> App Store Key（MAS），不是裸 app 名。 */

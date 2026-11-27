@@ -98,38 +98,6 @@ export function decryptMacV10(envelope, key) {
   }
 }
 
-/** 诊断用：只给前缀类型，不给值。 */
-export function describeValuePrefix(value) {
-  try {
-    const buffer = strictBase64(value)
-    if (!buffer) return { kind: 'unknown', bytes: null, prefix: '' }
-    const prefix = buffer.subarray(0, 3).toString('ascii')
-    if (SAFE_STORAGE_PREFIXES.includes(prefix)) return { kind: 'v10', bytes: buffer.length, prefix }
-    return { kind: 'raw', bytes: buffer.length, prefix: '' }
-  } catch {
-    return { kind: 'unknown', bytes: null, prefix: '' }
-  }
-}
-
-/**
- * 仅凭长度判断 v10 载荷更像哪种平台格式：
- *  · macOS：`v10` + AES-128-CBC(PKCS#7) → (bytes-3) 必须是 16 的倍数；
- *  · Windows：`v10` + nonce(12) + GCM 密文+tag(16) → (bytes-3-12-16) >= 1；
- *  · 两者都满足 → ambiguous（必须结合平台/来源判断，不能拍脑袋）。
- */
-export function likelyV10Format(decodedBytes) {
-  if (!Number.isInteger(decodedBytes) || decodedBytes < 3) return 'invalid'
-  const body = decodedBytes - 3
-  // macOS CBC：一个或多个完整 AES 块（明文 1..16 字节也可，即 body=16）。
-  const mac = body >= 16 && body % 16 === 0
-  // Windows GCM：nonce(12) + 至少 1 字节密文 + tag(16)。
-  const win = body >= 29
-  if (mac && win) return 'ambiguous'
-  if (mac) return 'mac-cbc'
-  if (win) return 'win-gcm'
-  return 'invalid'
-}
-
 /** 明文合理性：可打印 UTF-8 / 无控制字符。 */
 export function looksLikeSecret(text) {
   if (typeof text !== 'string' || !text) return false

@@ -1,25 +1,25 @@
+# 0.8.52
+
+- 发布前清理排查期调试信息：移除模型页「钥匙串诊断」按钮、`get-keychain-diagnostics` RPC、密文指纹字段与 `model-ui-trace` 调试落盘；移除 `diagnostics/model-ui.jsonl*` 日志与一次性 `model-ui-selfcheck.ps1`。
+- 保留用户可见能力：Key 来源「已设置（插件）」「已设置（桌面 Secrets，只读）」、可操作错误码、`secrets.json` 确切路径、手动填写覆盖；错误提示不再展示机器名/用户名/加密细节。
+- macOS 钥匙串 account 修复保持：`<app> Key`（普通）/<app> App Store Key（MAS）/无后缀 legacy 依次尝试；Windows v10 GCM 路径与 0.8.47/0.8.48 错误码不变。
+- 版本统一为 0.8.52。
+
 # 0.8.51
 
 - macOS 钥匙串 account 修复：Electron 33 的 Chromium 补丁把 account 从 `<app>` 改为 `<app> Key`（MAS 为 `<app> App Store Key`），旧 `<app>` 作为 legacy 兜底；现在按 `Key` → `App Store Key` → 无后缀 依次尝试，`@deva/desktop Safe Storage` 能命中 `@deva/desktop Key`。
-- 重写密文指纹：按 mac CBC 与 win GCM 分别输出 `cbcCipherBytes` / `cbcBlocks` / `gcmPlausible`，不再把 `v10`+16 字节的单块 CBC 误判为 invalid；`likelyFormat` 只在两种方案都可能时标 `ambiguous`。
-- 诊断新增逐条 `decryptCode` 与 `passwordFormat`（utf8/hex/base64/binary，只报格式与长度，不含密码）；`security -w` 的原始输出按四种编码依次尝试。
-- 撤回上一轮“182 B 文件是 Windows GCM”的结论：用户数据两条分别为 67 B（4 个 CBC 块）与 19 B（1 个 CBC 块），**符合本机 macOS CBC**；`win-gcm` 只在长度确实支持 GCM 时提示。
-- 版本统一为 0.8.51。
 
 # 0.8.50
 
-- macOS 钥匙串诊断：`security list-keychains`/`default-keychain` + `dump-keychain`（**不带 -d，只读属性**）枚举 genp 的 service/account，过滤 `/deva|safe ?storage|electron/i`；四候选 miss 后按「精确 service+account → 仅 service」重试，覆盖条目名与 Electron 默认名不同的情况。
-- 拆分 `mac-keychain-item-missing` 与 `mac-keychain-item-invisible`：后者表示属性里能看到条目、但当前进程读不到密码（Data Protection keychain/access group 或需点「允许」），页面给「允许后重试 + 钥匙串诊断」而不是笼统「没有条目」。
-- 新增「钥匙串诊断」入口（模型页按钮 + `get-keychain-diagnostics` RPC）：输出 keychain 路径、用户、genp 总数、匹配条目 service/account、每条 `key/keyLength/valueChars/decodedBytes/prefix/likelyFormat`；不含任何 Key/密文。
-- 新增密文指纹 `likelyFormat=mac-cbc|win-gcm|ambiguous|invalid`：按 `decodedBytes` 精确判断；`win-gcm` 时明确提示「这份 v10 是 Windows 生成的，macOS 密码学上解不开」，给「桌面端在本机重存」或「模型页填一次」两条出路。
-- 依据：Electron 33 `electron_browser_main_parts.cc:539-540`（service=`<app_name> Safe Storage`，account=`<app_name>`）；Chromium 130 `os_crypt_mac.mm`（AES-128-CBC v10）与 `os_crypt_win.cc`（AES-256-GCM v10）；`crypto/apple_keychain_mac.cc:56-68` 仍是 `SecKeychainFindGenericPassword`（传统 login keychain，跨进程读取受 ACL/用户授权约束）。
+- macOS 钥匙串查找：四个 app-name 候选都未命中时，以只读属性枚举（`security dump-keychain`，不带 `-d`）匹配 service/account，再按「精确 service+account → 仅 service」重试；不读取/输出任何 Key 或密文。
+- 拆分 `mac-keychain-item-missing`（属性中也没有条目）与 `mac-keychain-item-invisible`（条目存在但当前进程读不到密码，Data Protection keychain/access group/ACL 未授权）。
 
 # 0.8.49
 
 - 统一 safeStorage 解码器：Windows 与 macOS 共用 `lib/safe-storage.mjs` 的 v10 格式层（Windows=AES-256-GCM，macOS=AES-128-CBC，二者前缀同为 v10 但密码不同）。
 - Windows 真机修复：不再把 `secrets.json` 的 v10 值直接喂 DPAPI。新链路为 `<userData>/Local State` → `os_crypt.encrypted_key`（base64(`DPAPI`+DPAPI(32B key))）→ DPAPI 解出 32B AES key → v10 AES-256-GCM 解密；依据 Chromium 130 `os_crypt_win.cc:42-48,191-240`。
 - 归因修复：`0x80131501`「参数无效」只说明“不是合法 DPAPI blob”，不再推断跨用户/跨机器；新增 `blob-not-dpapi`、`local-state-missing`、`encrypted-key-invalid`、`key-unprotect-failed`、`gcm-auth-failed`、`legacy-raw-dpapi-ok`、`v10-detected`、`foreign-blob-proven`（仅同机不同用户且已确证时）。
-- 用户/机器归属改为规范化比较（域\用户、机器名大小写不敏感；有 SID 比 SID），`XY-L275\XYXNY` 与 `xy-l275\xyxny` 判为同一用户，不再误报。
+- 用户/机器归属改为规范化比较（域\用户、机器名大小写不敏感；有 SID 比 SID），`EXAMPLE-PC\example` 与 `example-pc\example` 判为同一用户，不再误报。
 - 诊断仅输出路径/大小/条目/前缀类型/Local State 是否存在与 encrypted_key 长度和 DPAPI 前缀/owner 对比，不含密文、明文、encrypted_key 值或 SID 原文。
 
 # 0.8.48
@@ -82,3 +82,4 @@
 
 - 获取模型列表一次读取桌面配置并刷新远端，合并去重；远端失败保留本地候选。
 - 候选以普通按钮展示，原生选择器保留在折叠区。顶部保留版本、计数、阶段与失败摘要。
+

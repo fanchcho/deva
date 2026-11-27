@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   clearDesktopAclCache, clearDesktopKeyCache, createDpapiDecoder, credentialHealth, DESKTOP_DECRYPT_CODES, detectContainer, MAC_CODES,
-  desktopSecretsPaths, isToolchainFailure, probeFileOwner, publicDesktopCredential, readDesktopSecrets, readKeychainDiagnostics, resolveDesktopCredential,
+  desktopSecretsPaths, isToolchainFailure, probeFileOwner, publicDesktopCredential, readDesktopSecrets, resolveDesktopCredential,
 } from '../lib/desktop-secrets.mjs'
 import { readCustomModel, readModelSelection, resolveCredential, saveModelSelection } from '../lib/model-selection.mjs'
 import { createMacKeychainDecoder } from '../lib/macos-keychain.mjs'
@@ -352,9 +352,9 @@ test('matrix 5/9 — stdout polluted with BOM and warning lines still decodes th
 test('matrix 6/9 — self-check ok but unprotect fails → blob ownership, with redacted stderr', async () => {
   const result = await decodeMatrix(createDpapiDecoder({ platform: 'win32', spawn: (b, script) => script.includes('selfcheck')
     ? { status: 0, stdout: SELF_OK }
-    : { status: 1, stdout: '', stderr: 'boom at C:\\Users\\XYXNY\\x api_key=abc123 and plaintext fixture.value' } }))
+    : { status: 1, stdout: '', stderr: 'boom at C:\\Users\\fixture\\x api_key=abc123 and plaintext fixture.value' } }))
   assert.equal(result.code, DESKTOP_DECRYPT_CODES.FOREIGN_BLOB, '自检成功时解不开 → 归属问题，不报 dpapi-failed')
-  assert.equal(result.stderr.includes('XYXNY'), false, 'stderr 里的用户路径被脱敏')
+  assert.equal(result.stderr.includes('example'), false, 'stderr 里的用户路径被脱敏')
   assert.equal(result.stderr.includes('abc123'), false)
 })
 
@@ -461,14 +461,14 @@ test('ACL probe reports the desktop file owner without reading its contents', as
   const calls = []
   const spawn = (binary, script, input) => {
     calls.push({ binary, input })
-    return { status: 0, stdout: 'DEVADPAPI aclok\nDESKTOP\\XYXNY' }
+    return { status: 0, stdout: 'DEVADPAPI aclok\nEXAMPLE-PC\\example' }
   }
-  const acl = probeFileOwner('C:\\Users\\XYXNY\\.deva\\secrets.json', { platform: 'win32', spawn })
+  const acl = probeFileOwner('C:\\Users\\fixture\\.deva\\secrets.json', { platform: 'win32', spawn })
   assert.equal(acl.ok, true)
-  assert.equal(acl.owner, 'DESKTOP\\XYXNY')
-  assert.equal(calls[0].input, 'C:\\Users\\XYXNY\\.deva\\secrets.json')
+  assert.equal(acl.owner, 'EXAMPLE-PC\\example')
+  assert.equal(calls[0].input, 'C:\\Users\\fixture\\.deva\\secrets.json')
   // 缓存：同一路径不重复启动 PowerShell。
-  const again = probeFileOwner('C:\\Users\\XYXNY\\.deva\\secrets.json', { platform: 'win32', spawn })
+  const again = probeFileOwner('C:\\Users\\fixture\\.deva\\secrets.json', { platform: 'win32', spawn })
   assert.equal(again.owner, acl.owner)
   assert.equal(calls.length, 1)
   clearDesktopAclCache()
@@ -513,24 +513,6 @@ test('macOS platform reports a real decrypt reason instead of platform-unsupport
   } finally { await fx.cleanup() }
 })
 
-test('secrets structure diagnosis reports key names, lengths and prefix — never values', async () => {
-  const fx = await fixture({ desktop: true })
-  try {
-    clearDesktopKeyCache()
-    const resolved = await resolveCredential({ ...memoryState()(), config: fx.config }, route, { decrypt: failDecoder })
-    const detail = resolved.desktop.structureDetail
-    assert.equal(detail.entryCount, 1)
-    assert.equal(detail.entries[0].key, 'alpha')
-    // 这份夹具是刻意造的“非 v10”密文（用于走解密失败分支），前缀应报 raw 而不是假装 v10。
-    assert.equal(detail.entries[0].prefix, 'raw')
-    assert.ok(detail.entries[0].decodedBytes > 0)
-
-    const serialized = JSON.stringify(detail)
-    assert.equal(serialized.includes(CIPHERTEXT), false, '不含 base64 密文')
-    assert.equal(serialized.includes(PLAIN), false, '不含明文')
-  } finally { await fx.cleanup() }
-})
-
 test('Windows v10 decrypt failure reports a real reason and same-user case differences are not foreign', async () => {
   const fx = await fixture({ desktop: true })
   try {
@@ -543,7 +525,7 @@ test('Windows v10 decrypt failure reports a real reason and same-user case diffe
       candidates: [localPath],
       readLocalState: p => ({ path: p, exists: true, structure: 'ok', encryptedKey: Buffer.concat([Buffer.from('DPAPI'), Buffer.from('blob')]).toString('base64'), encryptedKeyChars: 24, hasDpapiPrefix: true, decodedBytes: 9 }),
       unprotect: () => ({ ok: true, bytes: key }),
-      dpapiSelfCheck: async () => ({ ok: true, code: 'ok', user: 'XY-L275\\XYXNY', machine: 'XY-L275', variants: [{ binary: 'powershell.exe', ok: true, runtime: 'windows-powershell', version: '5.1', user: 'XY-L275\\XYXNY', machine: 'XY-L275', languageMode: 'FullLanguage', assembly: true, roundtrip: true, code: '' }] }),
+      dpapiSelfCheck: async () => ({ ok: true, code: 'ok', user: 'EXAMPLE-PC\\example', machine: 'EXAMPLE-PC', variants: [{ binary: 'powershell.exe', ok: true, runtime: 'windows-powershell', version: '5.1', user: 'EXAMPLE-PC\\example', machine: 'EXAMPLE-PC', languageMode: 'FullLanguage', assembly: true, roundtrip: true, code: '' }] }),
     })
     // 构造一个 v10 blob（内容任意，GCM 必然校验失败）
     const v10 = Buffer.concat([Buffer.from('v10'), Buffer.alloc(12, 1), Buffer.alloc(32, 2)]).toString('base64')
@@ -558,24 +540,3 @@ test('Windows v10 decrypt failure reports a real reason and same-user case diffe
   } finally { await fx.cleanup() }
 })
 
-test('keychain diagnostics text reports attributes and fingerprint without any secret values', async () => {
-  const fx = await fixture({ desktop: true })
-  try {
-    // 63 bytes = v10(3)+nonce(12)+GCM(48) → likelyFormat=win-gcm，正好覆盖用户的 112B/1 形态
-    const winV10 = Buffer.concat([Buffer.from('v10'), Buffer.alloc(12, 3), Buffer.alloc(48, 4)]).toString('base64')
-    await writeFile(join(fx.home, 'secrets.json'), JSON.stringify({ 'custom-1794366588080': winV10 }), { mode: 0o600 })
-    const runSecurity = (binary, args) => {
-      if (args[0] === 'list-keychains') return { status: 0, stdout: '"/Users/fixture/Library/Keychains/login.keychain-db"\n' }
-      if (args[0] === 'default-keychain') return { status: 0, stdout: '"/Users/fixture/Library/Keychains/login.keychain-db"\n' }
-      if (args[0] === 'dump-keychain') return { status: 0, stdout: 'class: "genp"\n    "svce"<blob>="Deva Safe Storage"\n    "acct"<blob>="Deva"\n' }
-      return { status: 44, stderr: 'not found' }
-    }
-    const diag = await readKeychainDiagnostics(fx.config, { platform: 'darwin', runSecurity })
-    assert.match(diag.text, /likelyFormat=win-gcm/)
-    assert.match(diag.text, /service=Deva Safe Storage/)
-    assert.match(diag.text, /entry: key=custom-1794366588080/)
-    assert.match(diag.text, /macOS cannot decrypt it/)
-    assert.equal(diag.text.includes(winV10), false, '诊断不含 base64 密文')
-    assert.equal(diag.text.includes('fixture-dpapi'), false)
-  } finally { await fx.cleanup() }
-})

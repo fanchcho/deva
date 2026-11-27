@@ -14,7 +14,7 @@ test('empty desktop explains path, missing file, schema count and malformed JSON
 })
 
 test('without HOME resolver uses native os.homedir rather than a Linux USERPROFILE override', () => {
-  const env={...process.env,USERPROFILE:String.raw`C:\Users\x`}
+  const env={...process.env,USERPROFILE:String.raw`C:\fixture\home`}
   delete env.HOME; delete env.DEVA_HOME; delete env.AI_UPPER_HOME
   const source=`import{homedir}from'node:os';import{join}from'node:path';import{resolveDevaRoot}from'./lib/deva-fs.mjs';console.log(JSON.stringify({actual:resolveDevaRoot(),expected:join(homedir(),'.deva')}))`
   const result=spawnSync(process.execPath,['--input-type=module','-e',source],{cwd:new URL('..',import.meta.url),env,encoding:'utf8'})

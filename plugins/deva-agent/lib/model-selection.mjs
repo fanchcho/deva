@@ -261,15 +261,17 @@ function credentialDetails(credential) {
     reason: credential.reason || '',
     ...(desktop?.decryptCode ? { decryptCode: desktop.decryptCode } : {}),
     ...(desktop?.toolchainBroken ? { toolchainBroken: true } : {}),
-    ...(desktop?.selfCheck ? { selfCheck: desktop.selfCheck } : {}),
-    ...(desktop?.stderr ? { stderr: desktop.stderr } : {}),
+    ...(desktop?.selfCheck ? { selfCheck: {
+      platform: desktop.selfCheck.platform,
+      ok: Boolean(desktop.selfCheck.ok),
+      code: desktop.selfCheck.code || '',
+      runtime: desktop.selfCheck.runtime || '',
+    } } : {}),
     plugin: credential.plugin ? { scope: credential.plugin.scope, storeError: credential.plugin.storeError || '', corrupt: Boolean(credential.plugin.corrupt) } : null,
     desktop: desktop ? {
       path: desktop.path, source: desktop.source, exists: desktop.exists, size: desktop.size ?? null,
       structure: desktop.structure, code: desktop.code, entryCount: desktop.entryCount ?? null,
       present: Boolean(desktop.present), status: desktop.status || '',
-      ...(desktop.fileOwner ? { fileOwner: desktop.fileOwner } : {}),
-      ...(desktop.aclReadable !== undefined ? { aclReadable: Boolean(desktop.aclReadable) } : {}),
       ...(desktop.decryptCode ? { decryptCode: desktop.decryptCode } : {}),
       ...(desktop.toolchainBroken !== undefined ? { toolchainBroken: Boolean(desktop.toolchainBroken) } : {}),
     } : null,
@@ -416,21 +418,15 @@ function credentialProblemMessage(credential, run, route) {
   switch (credential?.reason) {
     case 'decrypt-failed': {
       const code = desktop?.decryptCode || 'unknown'
-      const health = desktop?.selfCheck
-      const variantText = health?.variants?.length
-        ? `（${health.platform === 'darwin' ? '钥匙串条目' : 'PowerShell 变体'}：${health.variants.map(v => `${v.binary}${v.service ? `:${v.service}` : ''}=${v.ok ? 'ok' : (v.code || 'fail')}`).join('，')}${health.container ? `；运行环境：${health.container}` : ''}）`
-        : ''
+      const variantText = ''
       if (code === DESKTOP_DECRYPT_CODES.FOREIGN_BLOB) {
-        const owner = desktop?.fileOwner ? `文件所有者=${desktop.fileOwner}` : ''
-        const procUser = health?.user ? `当前进程用户=${health.user}` : ''
-        const who = [owner, procUser].filter(Boolean).join('，')
-        return `桌面端已保存 providerId=${provider} 的密钥，但**这份密文不是当前 Studio 进程这个 Windows 用户/这台机器存的**（自检往返成功，说明本机 DPAPI 可用；该 blob 解不开${who ? `；${who}` : ''}）。DPAPI 是用户级加密，跨用户/跨机器在密码学上不可解，Studio 内部绕不过去：请在本页填一次 API Key（会存到 Studio 账号级，换 Profile/重启都保留），或由桌面端做一次显式交接（需改桌面端，本版本未实现）。${desktopDetail}`
+        return `桌面端已保存 providerId=${provider} 的密钥，但**这份密文不是当前 Studio 进程这个 Windows 用户/这台机器存的**（自检往返成功，说明本机 DPAPI 可用；该 blob 解不开）。DPAPI 是用户级加密，跨用户/跨机器在密码学上不可解：请在本页填一次 API Key（会存到 Studio 账号级，换 Profile/重启都保留），或由桌面端做一次显式交接（需改桌面端，本版本未实现）。${desktopDetail}`
       }
       if (isToolchainFailure(code) && code !== DESKTOP_DECRYPT_CODES.NOT_WINDOWS) {
         return `桌面端已保存 providerId=${provider} 的密钥，但本机没有可用的 DPAPI 工具链（${code}）${variantText}。这不是密钥的问题：请让管理员在 Studio 所在 Windows 机器上确认 Windows PowerShell 5.1 或 PowerShell 7 可用、且未被 Constrained Language/组策略限制；也可先在本页手动填写。${desktopDetail}`
       }
       if (code === WIN_CODES.LOCAL_STATE_MISSING) {
-        return `桌面端已保存 providerId=${provider} 的密钥，但没找到桌面端的 Local State 文件（候选：${(desktop?.localStateTried || []).map(x => x.path).filter(Boolean).join(' / ') || '%APPDATA%\\<App>\\Local State'}）。桌面端可能未启动过、应用名不同，或 Studio 与桌面不在同一 Windows 用户下；请在本页填一次 API Key。${desktopDetail}`
+        return `桌面端已保存 providerId=${provider} 的密钥，但没找到桌面端的 Local State 文件（通常在 %APPDATA%\\<App>\\Local State）。桌面端可能未启动过、应用名不同，或 Studio 与桌面不在同一 Windows 用户下；请在本页填一次 API Key。${desktopDetail}`
       }
       if (code === WIN_CODES.ENCRYPTED_KEY_INVALID) {
         return `桌面端已保存 providerId=${provider} 的密钥，但 Local State 里的 os_crypt.encrypted_key 缺失或不是 DPAPI 格式（不是密钥本身的问题）。请在桌面端重新保存一次该 Key，或在本页填一次。${desktopDetail}`
@@ -450,12 +446,10 @@ function credentialProblemMessage(credential, run, route) {
         return `桌面端已保存 providerId=${provider} 的密钥，但${tail}${who}。请在本页填一次 API Key（账号级永久）。${desktopDetail}`
       }
       if (code === MAC_CODES.ITEM_INVISIBLE) {
-        const kc = health?.keychain
-        const found = (kc?.entries || []).map(item => `${item.service || ''}${item.account ? ` / ${item.account}` : ''}`).filter(Boolean).join('、') || '已发现匹配条目'
-        return `macOS 钥匙串里发现了匹配的 Safe Storage 条目（${found}），但当前 Studio 进程读不到它的密码：可能被 Data Protection keychain / access group 隔离，或需要你在弹出的系统提示中点一次「允许」。请点「钥匙串诊断」查看详情，允许后重试；也可在本页填一次 API Key（账号级永久）。${desktopDetail}`
+        return `macOS 钥匙串里发现了匹配的 Safe Storage 条目，但当前 Studio 进程读不到它的密码：可能被 Data Protection keychain / access group 隔离，或需要你在弹出的系统提示中点一次「允许」。请在系统提示中点一次「允许」后重试；也可在本页填一次 API Key（账号级永久）。${desktopDetail}`
       }
       if (code === MAC_CODES.ITEM_MISSING) {
-        return `桌面端已保存 providerId=${provider} 的密钥，但 macOS 钥匙串里没有对应的 Safe Storage 条目（尝试过：${(health?.variants || []).map(v => v.service).filter(Boolean).join(' / ') || '多个应用名候选'}）。这通常意味着桌面端的钥匙串条目被删过、或桌面包名与当前候选不同；请在本页填一次 API Key（账号级永久）。${desktopDetail}`
+        return `桌面端已保存 providerId=${provider} 的密钥，但 macOS 钥匙串里没有对应的 Safe Storage 条目（已检查多个应用名候选）。这通常意味着桌面端的钥匙串条目被删过、或桌面包名与当前候选不同；请在本页填一次 API Key（账号级永久）。${desktopDetail}`
       }
       if (code === MAC_CODES.DENIED || code === MAC_CODES.NO_SESSION) {
         return `桌面端已保存 providerId=${provider} 的密钥，但 macOS 钥匙串需要授权而本次无法弹出/被拒绝（${code}；Studio 可能运行在无图形会话的服务里）。请在本机已登录的桌面会话里打开 Studio，或在系统提示中允许 Deva 访问钥匙串；也可直接在本页填一次 API Key。${desktopDetail}`
@@ -474,9 +468,9 @@ function credentialProblemMessage(credential, run, route) {
       }
       if (code === DESKTOP_DECRYPT_CODES.NOT_WINDOWS) {
         // 只有 Linux 等“既不是 Windows 也不是 macOS”的宿主会走到这里；不要再把它说成“不在那台 Windows 上”。
-        return `桌面端已保存 providerId=${provider} 的密钥，但 Studio 服务端运行在 ${health?.platform || process.platform}，本插件目前只实现了 Windows DPAPI 与 macOS 钥匙串两条解密链路。跨平台在密码学上不可解：请在 Studio 本页填一次 API Key（账号级永久）。${desktopDetail}`
+        return `桌面端已保存 providerId=${provider} 的密钥，但 Studio 服务端运行在 ${desktop?.selfCheck?.platform || process.platform}，本插件目前只实现了 Windows DPAPI 与 macOS 钥匙串两条解密链路。跨平台在密码学上不可解：请在 Studio 本页填一次 API Key（账号级永久）。${desktopDetail}`
       }
-      if (health?.platform === 'darwin') {
+      if (desktop?.selfCheck?.platform === 'darwin') {
         return `桌面端已保存 providerId=${provider} 的密钥，但本次无法解密（${code}）。macOS 上请确认钥匙串可用并允许访问；也可在本页手动填写一次（之后会永久保留）。${desktopDetail}`
       }
       return `桌面端已保存 providerId=${provider} 的密钥，但本次无法解密（${code}）。请在本页手动填写一次（之后会永久保留）。${desktopDetail}`

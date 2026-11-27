@@ -354,20 +354,6 @@ get-model-selection/list-provider-models 等待上限20秒，超时显示 RPC_TI
 
 新增 modelSettingsView.desktopProviders：包括没有模型的 provider，公开 id/name/baseUrl/models(id/name)，不包含 secrets/headers。页面展示完整本地目录与默认引用；远端依旧只按用户明确点击补充。desktopDiagnostics 含 step、json=parsed、路径/stat/条数/具体失败原因。
 
-## 页面取证日志 0.8.32
-
-model-ui-trace RPC 接收 uiTraceInput 并返回 uiTraceResult。日志写安装插件目录 diagnostics/model-ui.jsonl，目录0700、文件0600，当前文件256KiB后滚动到单份.1。只记录阶段/方法/状态/耗时/计数等元数据；不记录RPC输入、配置正文、Key或原始异常文本。client报告不等同于可信HTTP访问日志。revision不是ClientContext公开字段，明确记录not-exposed-by-sdk，需和当时registry快照关联。
-
-宿主client资源GET与iframe初始化发送没有插件SDK钩子，无法在插件内直接记录；mount事件只能证明初始化已到达并执行。无日志不能推出未请求client、未mount或用户点了宿主页面。服务器resolved阶段HTTP由宿主控制，记录host-owned，不伪造200。
-
-0.8.33 的 uiTraceInput 增加点击及几何字段：phase=pointerdown/click 时 scope 区分 iframe-document/host-document，坐标为该document的CSS像素，tag/label与hitTag/hitLabel分别对应target与elementFromPoint。文本仅允许插件固定按钮名称，其他文本写[other]，不读取input值或宿主会话正文。父文档监听仅在浏览器同源策略允许时建立，卸载释放；没有跨源绕过。
-
-phase=geometry 每个element单独记录：root/candidates/diagnostic/status/iframe；present、top/left/width/height、offsetHeight/clientHeight、viewportHeight/documentHeight、display/visibility/opacity/overflow、inViewport及最近滚动祖先clientHeight(scrollHeight字段)。inViewport只表示矩形相交，不证明没被遮罩；点击hit和父文档iframe几何须一起看。渲染、resize、scroll后采样。固定状态区使用iframe内sticky，不能越过宿主遮罩或保证零高度iframe内可见。不能把无点击事件作为用户没点击的充分证据。
-
-几何诊断的 element=candidate-buttons 指普通按钮列表，native-select 指折叠原生选择框；top/bottom/height/inViewport 分别测量，不能跨对象推断可见性。服务端 version 来自安装包清单，clientVersion 来自实际下发模块元数据。
-
-服务端 model-request 诊断只记录序列化后的 modelName/reasoningEffort 与账号/Profile，不记录完整请求体、消息或密钥；不接收客户端指定这些字段。
-
 ## Skill 页面 RPC
 
 - `get-skills`：读取 Studio 技能清单；输入 `empty`，输出 `skillListPage`。
@@ -445,18 +431,8 @@ Windows 桌面端的 safeStorage **不是**“明文直接 DPAPI 后写盘”。
 
 `lib/safe-storage.mjs` 同时提供 macOS v10 的 AES-128-CBC 实现（IV=16×0x20），macOS 的 Keychain 密钥由 `lib/macos-keychain.mjs` 提供——两端共用同一个 v10 信封解析器，但密码算法不同。
 
-## 0.8.50 macOS 钥匙串发现与密文指纹
-
-- 发现（只读属性）：`security list-keychains -d user`、`security default-keychain -d user`，对每个 keychain 执行 `security dump-keychain <path>`（**不带 `-d`，不读取密码数据**），解析 `class: "genp"` 块的 `svce`/`acct`；过滤 `/deva|safe ?storage|electron/i`；输出 `{paths, defaultKeychain, totalGenericPasswords, matched, entries[service,account,keychain], errors}`。
-- 命中策略：四个 app-name 候选（`Deva` / `deva` / `@deva/desktop` / `Electron`）均 miss 后，对发现到的条目按「精确 service+account」→「仅 service」重试（带 keychain 路径）。
-- 原因码：`mac-keychain-item-missing`（属性里也没有匹配条目）与 `mac-keychain-item-invisible`（属性里能看到、但当前进程读不到密码：Data Protection keychain/access group/ACL 未授权）分开。
-- 指纹：`desktopSecretsStructure` 每条输出 `key/keyLength/valueChars/decodedBytes/prefix/likelyFormat`。`likelyFormat` 仅按 `decodedBytes` 判断：mac-cbc = `(bytes-3)` 为 16 的倍数且 ≥32；win-gcm = `bytes-3-12-16 ≥1`；两者都满足 = `ambiguous`。`win-gcm` 表示这份 v10 在 Windows 生成，macOS 的 AES-128-CBC 解不开，应在本机桌面端重存或模型页手填。
-- `get-keychain-diagnostics` RPC + 模型页「钥匙串诊断」按钮输出可复制文本（路径/用户/条目统计/service/account/长度/前缀/指纹），不含任何 Key 值或密文。
-
-## 0.8.51 macOS account 后缀与逐条解密
+## 0.8.51 macOS account 后缀
 
 - Electron 33 的 `shell/browser/electron_browser_main_parts.cc:539-540` 设置 service=`<app_name> Safe Storage`、account=`<app_name>`，但其 Chromium 补丁 `patches/chromium/feat_ensure_mas_builds_of_the_same_application_can_use_safestorage.patch:23-39` 把实际 account 改为 `<app_name> Key`（普通 macOS）/<app_name> App Store Key（MAS）；无后缀 `<app_name>` 仅作 legacy 兜底并会被迁移。
-- `MAC_KEYCHAIN_CANDIDATES` 对每个 app 名按 `Key` → `App Store Key` → 无后缀 依次尝试；发现模式命中多条时记录 `selected`（service/account/keychain），不只取第一条。
-- `security -w` 原始输出只去掉末尾一个换行，不 trim 其它字节；按 `utf8` / `hex` / `base64` / `binary` 依次派生并尝试，成功时输出 `passwordFormat`（不含密码）。
-- 指纹字段：`cbcCipherBytes = decodedBytes-3`、`cbcBlocks = body/16`（整除时）、`gcmPlausible = body>=29`；`likelyFormat` 由两者组合：仅 mac 成立=`mac-cbc`，仅 win 成立=`win-gcm`，两者都成立=`ambiguous`，都不成立=`invalid`。`v10`+16 字节是合法单块 CBC（不是 invalid）。
-- `keychainDiagnostics` 文本每条追加 `decryptCode` 与 `passwordFormat`；某条解不开不影响其它条目，也不等于整个钥匙串不可用。
+- `MAC_KEYCHAIN_CANDIDATES` 对每个 app 名按 `Key` → `App Store Key` → 无后缀 依次尝试；发现模式命中多条时记录 `selected`（service/account），不只取第一条。
+- `security -w` 原始输出只去掉末尾一个换行，不 trim 其它字节；按 `utf8` / `hex` / `base64` / `binary` 依次派生并尝试。

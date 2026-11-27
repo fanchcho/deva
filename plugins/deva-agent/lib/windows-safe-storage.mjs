@@ -16,7 +16,7 @@ import { readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import {
-  SAFE_STORAGE_CODES, decryptWindowsV10, describeValuePrefix, looksLikeSecret,
+  SAFE_STORAGE_CODES, decryptWindowsV10, looksLikeSecret,
   parseSafeStorageEnvelope, strictBase64,
 } from './safe-storage.mjs'
 
@@ -220,6 +220,5 @@ export function createWindowsSafeStorageDecoder({
   decrypt.selfCheck = selfCheck
   decrypt.clearCache = () => { cachedKey = null; selfCheckState = null }
   decrypt.localStateCandidates = candidates
-  decrypt.describeValuePrefix = describeValuePrefix
   return decrypt
 }

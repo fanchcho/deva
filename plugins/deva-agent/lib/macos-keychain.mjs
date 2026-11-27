@@ -270,7 +270,6 @@ export function createMacKeychainDecoder({
       return {
         ok: true, keys: keyCache.keys, service: keyCache.service, account: keyCache.account, cached: true,
         attempts: [{ service: keyCache.service, account: keyCache.account, ok: true }],
-        passwordFormats: keyCache.keys.map(item => item.format),
       }
     }
     const found = findPassword()
@@ -281,7 +280,6 @@ export function createMacKeychainDecoder({
     return {
       ok: true, keys, service: found.service, account: found.account, cached: false, attempts: found.attempts,
       discovery: found.discovery || null, selected: found.selected || null,
-      passwordFormats: keys.map(item => item.format),
     }
   }
 
@@ -319,7 +317,6 @@ export function createMacKeychainDecoder({
       code,
       service: keychain.service || '',
       account: keychain.account || '',
-      ...(keychain.passwordFormats ? { passwordFormats: keychain.passwordFormats } : {}),
       ...(keychain.selected ? { selected: keychain.selected } : {}),
       roundtrip,
       ...(keychain.discovery ? { keychain: keychain.discovery } : {}),

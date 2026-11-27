@@ -39,7 +39,7 @@ function decoderWith({ unprotectResult = { ok: true, bytes: KEY }, local = local
       return { path, exists: true, size: local.length, mode: 0o600, structure: 'ok', encryptedKey: raw, encryptedKeyChars: raw.length, hasDpapiPrefix: decoded.subarray(0, 5).toString('ascii') === 'DPAPI', decodedBytes: decoded.length }
     },
     unprotect: () => unprotectResult,
-    dpapiSelfCheck: async () => ({ ok: true, code: 'ok', user: 'XY-L275\\xyxny', machine: 'XY-L275', variants: [{ binary: 'powershell.exe', ok: true, runtime: 'windows-powershell', version: '5.1', user: 'XY-L275\\xyxny', machine: 'XY-L275', languageMode: 'FullLanguage', assembly: true, roundtrip: true, code: '' }] }),
+    dpapiSelfCheck: async () => ({ ok: true, code: 'ok', user: 'example-pc\\example', machine: 'EXAMPLE-PC', variants: [{ binary: 'powershell.exe', ok: true, runtime: 'windows-powershell', version: '5.1', user: 'example-pc\\example', machine: 'EXAMPLE-PC', languageMode: 'FullLanguage', assembly: true, roundtrip: true, code: '' }] }),
     env: {},
   })
 }
@@ -78,18 +78,18 @@ test('windows 4/6 — v10 but no Local State reports local-state-missing', async
 
 test('windows 5/6 — owner differs only by case is the SAME user (regression for the reported misjudgement)', () => {
   const ownership = classifyOwnership({
-    fileOwner: 'XY-L275\\XYXNY',
-    processUser: 'xy-l275\\xyxny',
-    fileMachine: 'XY-L275',
-    processMachine: 'xy-l275',
+    fileOwner: 'EXAMPLE-PC\\example',
+    processUser: 'example-pc\\example',
+    fileMachine: 'EXAMPLE-PC',
+    processMachine: 'example-pc',
   })
   assert.equal(ownership.sameUser, true)
   assert.equal(ownership.sameMachine, true)
   assert.equal(ownership.method, 'normalized-string')
   assert.equal(ownership.provenDifferent, false)
   // 真正不同的用户/机器才允许 provenDifferent
-  assert.equal(classifyOwnership({ fileOwner: 'XY-L275\\other', processUser: 'xy-l275\\xyxny', fileMachine: 'XY-L275', processMachine: 'xy-l275' }).provenDifferent, true)
-  assert.equal(classifyOwnership({ fileOwner: 'OTHERPC\\other', processUser: 'xy-l275\\xyxny', fileMachine: 'OTHERPC', processMachine: 'XY-L275' }).provenDifferent, false, '不同机器不能仅凭 owner 推断')
+  assert.equal(classifyOwnership({ fileOwner: 'EXAMPLE-PC\\other', processUser: 'example-pc\\example', fileMachine: 'EXAMPLE-PC', processMachine: 'example-pc' }).provenDifferent, true)
+  assert.equal(classifyOwnership({ fileOwner: 'OTHERPC\\other', processUser: 'example-pc\\example', fileMachine: 'OTHERPC', processMachine: 'EXAMPLE-PC' }).provenDifferent, false, '不同机器不能仅凭 owner 推断')
 })
 
 test('windows 6/6 — plugin-saved key wins when both plugin and desktop keys exist', async () => {
