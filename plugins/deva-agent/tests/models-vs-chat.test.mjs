@@ -110,7 +110,7 @@ test('symptom: desktop has a ciphertext but the DPAPI toolchain is broken → 40
   assert.equal(custom.apiKey, '')
   await assert.rejects(
     createCustomModel(run, custom)(chatInput()),
-    error => /HTTP 401；未回退/.test(error.message) && /没有可用的 DPAPI 工具链（decrypt-assembly-unavailable）/.test(error.message),
+    error => /HTTP 401；未回退/.test(error.message) && /没有可用的解密工具链（decrypt-assembly-unavailable）/.test(error.message),
   )
   assert.ok(seen.some(item => item.method === 'POST' && item.url === '/v1/chat/completions' && !item.authorized))
 })

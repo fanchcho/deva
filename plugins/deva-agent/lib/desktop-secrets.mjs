@@ -17,9 +17,10 @@
 
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { lstatSync, readFileSync } from 'node:fs'
+import { accessSync, constants, lstatSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveDevaRoot } from './deva-fs.mjs'
+import { MAC_CODES, createMacKeychainDecoder, isMacToolchainFailure } from './macos-keychain.mjs'
 
 export const DESKTOP_SECRETS_MAX_BYTES = 1024 * 1024
 
@@ -57,8 +58,11 @@ export const TOOLCHAIN_CODES = Object.freeze([
 ])
 
 export function isToolchainFailure(code) {
-  return TOOLCHAIN_CODES.includes(code)
+  return TOOLCHAIN_CODES.includes(code) || isMacToolchainFailure(code)
 }
+
+/** macOS 钥匙串专属原因码（与 DPAPI 那套并列，页面按平台给下一步）。 */
+export { MAC_CODES }
 
 /** Windows DPAPI 的 HRESULT → 原因码。只映射少数能区分「归属」的值，其它一律 DPAPI_FAILED。 */
 const HRESULT_CODES = Object.freeze({
@@ -143,6 +147,37 @@ export function readDesktopSecrets(config = {}) {
     if (next.exists || next.code !== 'missing') return { ...next, source: 'legacy', tried: [primary, candidate] }
   }
   return { ...first, source: 'primary', tried: [primary, ...legacy] }
+}
+
+/**
+ * 只描述 secrets.json 的**结构**，用于诊断「这 182 字节到底是什么」：
+ * 每条只给 key 名、key 长度、value 的 base64 字符数、解码字节数、前 3 字节前缀（v10/v11/other）。
+ * **绝不输出 value 或解码后的内容**。macOS 的 v10 密文通常每条 40~90 个 base64 字符；
+ * 若 value 很短（<20）或前缀不是 v10/v11，则更像 Keychain 引用/别的东西，而不是 safeStorage 密文。
+ */
+export function desktopSecretsStructure(file) {
+  if (!file || file.structure !== 'ok') return null
+  return {
+    entryCount: Object.keys(file.entries).length,
+    entries: Object.entries(file.entries).map(([key, value]) => {
+      let decoded = null
+      try { decoded = strictBase64ForStructure(value) } catch { decoded = null }
+      const prefix = decoded ? decoded.subarray(0, 3).toString('ascii') : ''
+      return {
+        key,
+        keyLength: key.length,
+        valueChars: value.length,
+        decodedBytes: decoded ? decoded.length : null,
+        prefix: ['v10', 'v11', 'v20'].includes(prefix) ? prefix : (decoded ? 'other' : 'invalid-base64')
+      }
+    })
+  }
+}
+
+function strictBase64ForStructure(value) {
+  const text = String(value || '')
+  if (!text || text.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(text)) return null
+  return Buffer.from(text, 'base64')
 }
 
 /** 某一 provider 的密文（桌面按 providerId 存；没有 provider 级前缀）。 */
@@ -267,7 +302,26 @@ const ACL_SCRIPT = [
 const ownerCache = new Map()
 
 export function probeFileOwner(path, { platform = process.platform, spawn = runPowerShell, binary = 'powershell.exe', timeoutMs = 8000 } = {}) {
-  if (platform !== 'win32' || !path) return { ok: false, code: DESKTOP_DECRYPT_CODES.NOT_WINDOWS, owner: '' }
+  if (!path) return { ok: false, code: 'no-path', owner: '' }
+  // POSIX（macOS/Linux）：直接看“当前进程能不能读”，再看属主 uid；不要拿 Windows ACL 去判。
+  // 之前这里对非 Windows 一律返回 platform-unsupported，导致 macOS 上明明能读的文件被标成
+  // aclReadable=false（用户在 /Users/fanchunchun/.deva/config.json 上已证明可读）。
+  if (platform !== 'win32') {
+    const cachedPosix = ownerCache.get(path)
+    if (cachedPosix) return cachedPosix
+    let outcome
+    try {
+      const stat = statSync(path)
+      const uid = typeof process.getuid === 'function' ? process.getuid() : null
+      let readable = false
+      try { accessSync(path, constants.R_OK); readable = true } catch { readable = false }
+      outcome = { ok: readable, readable, owner: `uid:${stat.uid}`, uid: stat.uid, mode: stat.mode & 0o777, self: uid === null ? null : stat.uid === uid }
+    } catch (error) {
+      outcome = { ok: false, readable: false, owner: '', code: error?.code || 'stat-failed' }
+    }
+    ownerCache.set(path, outcome)
+    return outcome
+  }
   const cached = ownerCache.get(path)
   if (cached) return cached
   const result = spawn(binary, ACL_SCRIPT, String(path), timeoutMs)
@@ -469,11 +523,22 @@ function plaintextOf(split) {
   try { return Buffer.from(payloadOf(split), 'base64').toString('utf8') } catch { return '' }
 }
 
-/** 默认解码器的进程级单例：自检与 ACL 探测结果在进程内复用，避免每次解析都重跑 PowerShell。 */
+/**
+ * 默认解码器的进程级单例（按平台选实现）：
+ *  · win32 → DPAPI（PowerShell）
+ *  · darwin → macOS Keychain + Chromium OSCrypt v10（纯 Node：security CLI + PBKDF2 + AES-128-CBC）
+ *  · 其它（Linux）→ 明确的 platform-unsupported（Linux 桌面用 libsecret/kwallet，不在本插件范围）
+ * 自检与 ACL 探测结果在进程内复用，避免每次解析都重跑外部命令。
+ */
 let defaultDecoder = null
 export function defaultDpapiDecoder() {
-  if (!defaultDecoder) defaultDecoder = createDpapiDecoder()
+  if (!defaultDecoder) defaultDecoder = createDefaultDesktopDecoder()
   return defaultDecoder
+}
+
+export function createDefaultDesktopDecoder({ platform = process.platform } = {}) {
+  if (platform === 'darwin') return createMacKeychainDecoder({ platform })
+  return createDpapiDecoder({ platform })
 }
 
 /** 明文只在内存里放一小会儿：按密文摘要缓存，有上限、有失效；进程退出即消失。 */
@@ -522,6 +587,7 @@ export async function resolveDesktopCredential({ config = {}, providerId, decryp
     structure: file.structure,
     code: file.code,
     entryCount: file.structure === 'ok' ? Object.keys(file.entries).length : null,
+    ...(file.structure === 'ok' ? { structureDetail: desktopSecretsStructure(file) } : {}),
   }
   if (!file.exists) return { status: 'missing-file', ...base, present: false, plaintext: '' }
   const acl = probeFileOwner(file.path)
@@ -560,6 +626,8 @@ export function credentialHealth(selfCheck) {
   if (!selfCheck) return null
   const variants = (selfCheck.variants || []).map(item => ({
     binary: item.binary,
+    ...(item.service ? { service: item.service } : {}),
+    ...(item.account ? { account: item.account } : {}),
     ok: Boolean(item.ok),
     runtime: item.runtime || '',
     version: item.version || '',
@@ -577,6 +645,9 @@ export function credentialHealth(selfCheck) {
     ok: Boolean(selfCheck.ok),
     code: selfCheck.code || '',
     runtime: selfCheck.runtime || '',
+    ...(selfCheck.service ? { service: selfCheck.service } : {}),
+    ...(selfCheck.account ? { account: selfCheck.account } : {}),
+    ...(selfCheck.roundtrip !== undefined ? { roundtrip: Boolean(selfCheck.roundtrip) } : {}),
     user: usable.user || '',
     machine: usable.machine || '',
     variants,

@@ -9,7 +9,7 @@ import { getPersona, listPersonas, writePersonaModel } from './persona-store.mjs
 import { resolveDevaRoot } from './deva-fs.mjs'
 import { sharedDevaWritePath, desktopWriteDenial } from './shared-deva-model.mjs'
 import { validateStored, validateStoredModel } from './storage-contracts.mjs'
-import { DESKTOP_DECRYPT_CODES, isToolchainFailure, publicDesktopCredential, resolveDesktopCredential } from './desktop-secrets.mjs'
+import { DESKTOP_DECRYPT_CODES, MAC_CODES, isToolchainFailure, publicDesktopCredential, resolveDesktopCredential } from './desktop-secrets.mjs'
 
 export const REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const LEGACY_EFFORT = 'minimal'
@@ -330,10 +330,10 @@ function isTrustedBase(run, baseUrl) {
   try { return trustedBases(run).includes(normalizeBaseUrl(baseUrl)) } catch { return false }
 }
 
-export async function readModelSelection(run) {
+export async function readModelSelection(run, options = {}) {
   const diagnostic = desktopDiagnostics(run.config)
   try {
-    const result = await readDesktopSelection(run)
+    const result = await readDesktopSelection(run, options)
     return { ...result, desktopDiagnostics: diagnostic }
   } catch (error) {
     return { baseUrl: '', modelName: '', hasApiKey: false, legacyNeedsSetup: false,
@@ -347,7 +347,7 @@ function safeReadError(error) {
   return String(error?.message || error).replace(/(Bearer\s+|(?:api[_-]?key|token|secret|password)["']?\s*[:=]\s*["']?)[^\s"',}]+/gi, '$1[REDACTED]')
 }
 
-async function readDesktopSelection(run) {
+async function readDesktopSelection(run, options = {}) {
   const root = resolveDevaRoot(run.config)
   const empty = { baseUrl: '', modelName: '', hasApiKey: false, legacyNeedsSetup: false }
   try { empty.legacyNeedsSetup = Boolean((await modelStore(run).get('model'))?.modelId) } catch { /* metadata is optional */ }
@@ -356,7 +356,7 @@ async function readDesktopSelection(run) {
   const location = desktopConfigLocation(run.config)
   let hasApiKey = false, credentialError = '', credential = null
   try {
-    credential = await resolveCredential(run, desktop.active)
+    credential = await resolveCredential(run, desktop.active, options)
     hasApiKey = Boolean(credential.key)
   } catch (error) {
     credentialError = safeReadError(error) + '；凭据读取失败；桌面模型仍可选择，远端刷新需要可用 Key。'
@@ -418,7 +418,7 @@ function credentialProblemMessage(credential, run, route) {
       const code = desktop?.decryptCode || 'unknown'
       const health = desktop?.selfCheck
       const variantText = health?.variants?.length
-        ? `（PowerShell 变体：${health.variants.map(v => `${v.binary}=${v.ok ? 'ok' : (v.code || 'fail')}`).join('，')}${health.container ? `；运行环境：${health.container}` : ''}）`
+        ? `（${health.platform === 'darwin' ? '钥匙串条目' : 'PowerShell 变体'}：${health.variants.map(v => `${v.binary}${v.service ? `:${v.service}` : ''}=${v.ok ? 'ok' : (v.code || 'fail')}`).join('，')}${health.container ? `；运行环境：${health.container}` : ''}）`
         : ''
       if (code === DESKTOP_DECRYPT_CODES.FOREIGN_BLOB) {
         const owner = desktop?.fileOwner ? `文件所有者=${desktop.fileOwner}` : ''
@@ -426,13 +426,35 @@ function credentialProblemMessage(credential, run, route) {
         const who = [owner, procUser].filter(Boolean).join('，')
         return `桌面端已保存 providerId=${provider} 的密钥，但**这份密文不是当前 Studio 进程这个 Windows 用户/这台机器存的**（自检往返成功，说明本机 DPAPI 可用；该 blob 解不开${who ? `；${who}` : ''}）。DPAPI 是用户级加密，跨用户/跨机器在密码学上不可解，Studio 内部绕不过去：请在本页填一次 API Key（会存到 Studio 账号级，换 Profile/重启都保留），或由桌面端做一次显式交接（需改桌面端，本版本未实现）。${desktopDetail}`
       }
-      if (isToolchainFailure(code)) {
+      if (isToolchainFailure(code) && code !== DESKTOP_DECRYPT_CODES.NOT_WINDOWS) {
         return `桌面端已保存 providerId=${provider} 的密钥，但本机没有可用的 DPAPI 工具链（${code}）${variantText}。这不是密钥的问题：请让管理员在 Studio 所在 Windows 机器上确认 Windows PowerShell 5.1 或 PowerShell 7 可用、且未被 Constrained Language/组策略限制；也可先在本页手动填写。${desktopDetail}`
       }
-      if (code === DESKTOP_DECRYPT_CODES.NOT_WINDOWS) {
-        return `桌面端已保存 providerId=${provider} 的密钥，但 Studio 服务端不在那台 Windows 上（${health?.container ? `检测到 ${health.container}；` : ''}当前平台 ${health?.platform || process.platform}）。DPAPI 密文只在保存它的 Windows 用户/机器上可解，跨机器/容器在密码学上不可解：请在 Studio 本页填一次，或把 Studio 部署到同一台 Windows。${desktopDetail}`
+      if (code === MAC_CODES.ITEM_MISSING) {
+        return `桌面端已保存 providerId=${provider} 的密钥，但 macOS 钥匙串里没有对应的 Safe Storage 条目（尝试过：${(health?.variants || []).map(v => v.service).filter(Boolean).join(' / ') || '多个应用名候选'}）。这通常意味着桌面端的钥匙串条目被删过、或桌面包名与当前候选不同；请在本页填一次 API Key（账号级永久）。${desktopDetail}`
       }
-      return `桌面端已保存 providerId=${provider} 的密钥，但本次无法解密（${code}）。DPAPI 密文只能由保存它的同一 Windows 用户、在同一台机器上解密；请在本页手动填写一次（之后会永久保留）。${desktopDetail}`
+      if (code === MAC_CODES.DENIED || code === MAC_CODES.NO_SESSION) {
+        return `桌面端已保存 providerId=${provider} 的密钥，但 macOS 钥匙串需要授权而本次无法弹出/被拒绝（${code}；Studio 可能运行在无图形会话的服务里）。请在本机已登录的桌面会话里打开 Studio，或在系统提示中允许 Deva 访问钥匙串；也可直接在本页填一次 API Key。${desktopDetail}`
+      }
+      if (code === MAC_CODES.TIMEOUT) {
+        return `桌面端已保存 providerId=${provider} 的密钥，但读取 macOS 钥匙串超时（可能正等待系统授权框）。请在一台有图形会话的 Mac 上重试并允许访问，或在本页填一次 API Key。${desktopDetail}`
+      }
+      if (code === MAC_CODES.SECURITY_MISSING || code === MAC_CODES.KEYCHAIN_ERROR) {
+        return `桌面端已保存 providerId=${provider} 的密钥，但本机 macOS 钥匙串工具不可用（${code}）。请在单用户图形会话里运行 Studio，或在本页填一次 API Key。${desktopDetail}`
+      }
+      if (code === MAC_CODES.KEY_MISMATCH) {
+        return `桌面端已保存 providerId=${provider} 的密钥，但该密文解不开（${code}）：钥匙串里的 Safe Storage 密钥与这份密文不匹配（桌面端可能重装/更换过签名，钥匙串生成了新密钥）。请在桌面端重新保存一次该 Key，或在本页填一次 API Key。${desktopDetail}`
+      }
+      if (code === MAC_CODES.TRUNCATED || code === MAC_CODES.UNSUPPORTED_FORMAT || code === DESKTOP_DECRYPT_CODES.CIPHERTEXT_INVALID) {
+        return `桌面端已保存 providerId=${provider} 的密钥，但密文格式不是预期的 macOS v10 结构（${code}）。请确认桌面端版本；必要时在桌面端重新保存一次，或在本页填一次 API Key。${desktopDetail}`
+      }
+      if (code === DESKTOP_DECRYPT_CODES.NOT_WINDOWS) {
+        // 只有 Linux 等“既不是 Windows 也不是 macOS”的宿主会走到这里；不要再把它说成“不在那台 Windows 上”。
+        return `桌面端已保存 providerId=${provider} 的密钥，但 Studio 服务端运行在 ${health?.platform || process.platform}，本插件目前只实现了 Windows DPAPI 与 macOS 钥匙串两条解密链路。跨平台在密码学上不可解：请在 Studio 本页填一次 API Key（账号级永久）。${desktopDetail}`
+      }
+      if (health?.platform === 'darwin') {
+        return `桌面端已保存 providerId=${provider} 的密钥，但本次无法解密（${code}）。macOS 上请确认钥匙串可用并允许访问；也可在本页手动填写一次（之后会永久保留）。${desktopDetail}`
+      }
+      return `桌面端已保存 providerId=${provider} 的密钥，但本次无法解密（${code}）。请在本页手动填写一次（之后会永久保留）。${desktopDetail}`
     }
     case 'desktop-unreadable':
       return `桌面 secrets.json 存在但不可用（${desktop?.code || '未知'}：${desktop?.path || '路径未知'}）；请检查该文件的类型/大小/JSON 结构，或在下方手动填写 Key。`

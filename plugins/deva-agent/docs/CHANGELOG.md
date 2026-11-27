@@ -1,3 +1,11 @@
+# 0.8.48
+
+- 修复 macOS：桌面密钥在 darwin 上一律报 `platform-unsupported` —— 现在真正实现 macOS 解密链路（纯 Node：`security find-generic-password` 取 safeStorage 主密钥 → PBKDF2-SHA1(`saltysalt`, 1003, 128bit) → AES-128-CBC(IV=16×0x20) → 去 PKCS#7），依据 Electron 33 与 Chromium 130 源码。
+- 修掉错误归因：`platform-unsupported` 不再被解释成「服务端不在那台 Windows 上」；darwin 失败按钥匙串真实原因给码（`mac-keychain-item-missing` / `mac-keychain-denied` / `mac-keychain-no-session` / `mac-keychain-timeout` / `mac-keychain-tool-missing` / `mac-keychain-error` / `mac-key-mismatch` / `mac-ciphertext-truncated` / `mac-unsupported-format`）。
+- 修掉 `aclReadable:false` 的误判：非 Windows 平台改用真实可读性 + uid 判定（macOS 上 mode=600 且同用户应判为可读），不再拿 Windows ACL 口径套 POSIX。
+- 安全边界不变：明文只留内存（TTL + 上限），不写回 `~/.deva`、不进插件状态、不进日志、不回前端；插件侧 Key 优先，手填可覆盖；账号级 `state.user` 凭据作用域保持（换 Profile/重启仍可读）。
+- 新增 `lib/macos-keychain.mjs` 与 `tests/macos-keychain.test.mjs`（12 条注入式夹具：v10 正确解出、错 key、截断、无条目、拒绝授权、无会话、超时、非 v10、自检往返、非 darwin 不执行命令、失败分类、底层辅助函数）。
+
 # 0.8.47
 
 - 修复 0.8.46 在 Windows 上「读到了桌面 secrets.json、条目也对，但解密仍报 dpapi-failed」：解码器现在**真的把 powershell.exe 与 pwsh.exe 都试到**（0.8.46 在第一个变体非 ENOENT 失败就 break，pwsh 永远轮不到），并按运行时自适应程序集（PS5.1 用 `System.Security`，PS7 用 `System.Security.Cryptography.ProtectedData`）。

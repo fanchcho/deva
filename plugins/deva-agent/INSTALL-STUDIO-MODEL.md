@@ -173,6 +173,15 @@ Windows 自检：安装 0.8.25，关闭重开 Studio 的 Deva 模型页；下拉
 
 Windows 请比较桌面与 Studio 进程的 AI_UPPER_HOME / DEVA_HOME，以及运行账号的用户目录。若 Studio 在另一机器，默认 ~/.deva 指的是 Studio 服务器，无法读取 Windows 本地配置；必须使用在该设备运行的宿主或明确配置其可访问的 sharedDevaHome。核对页面 path、exists、stat、providerCount、modelCount；不存在、权限拒绝或 JSON 错误均按页面诊断处理，不要提交 secrets.json 或 API Key。**0.8.44 起**：同一 OS 用户、同一台机器上，插件会在服务端按需只读解密桌面 `secrets.json` 里同一 provider 的密文（Windows DPAPI CurrentUser；明文只在内存、不写回、不进日志、不回前端），因此桌面端存过的 Key 不必在 Studio 再填一遍。跨用户/跨机器仍不可解，页面会给出原因码（`dpapi-failed` 等）与确切路径；此时手填即可。
 
+### 0.8.48 macOS 桌面密钥解密
+
+macOS 上插件现在能直接从 Keychain 取 Electron safeStorage 主密钥解密 `~/.deva/secrets.json`（`v10` + AES-128-CBC）。看不出来源时按 `decryptCode` 处理：
+
+1. `mac-keychain-item-missing`：钥匙串里没有 `<App> Safe Storage` 条目（桌面端被重装/换签名，或应用名不同）→ 在桌面端重新保存一次 Key，或在模型页手填一次。
+2. `mac-keychain-denied` / `mac-keychain-no-session` / `mac-keychain-timeout`：keychain 需要授权但无法弹框（Studio 可能跑在无图形会话的守护进程里）→ 在已登录的桌面会话里打开 Studio 并在系统提示中允许访问，或手填一次。
+3. `mac-key-mismatch`：钥匙串里的密钥与这份密文不匹配（桌面端重装后生成了新 Safe Storage 密钥）→ 桌面端重新保存该 Key。
+4. `platform-unsupported`：Studio 服务端既不是 Windows 也不是 macOS（例如 Linux 容器），跨平台不可解 → 手填一次。
+
 ### 0.8.47 Windows 桌面密钥解密失败怎么判
 
 模型页报「桌面有该提供方密文但解不开」时，先看 `keyDiagnostics` 里的 `decryptCode`，按三类处理：

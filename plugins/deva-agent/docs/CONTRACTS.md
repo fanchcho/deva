@@ -414,3 +414,19 @@ phase=geometry 每个element单独记录：root/candidates/diagnostic/status/ifr
 `createDpapiDecoder().selfCheck()` 用固定假字符串做 protect→unprotect 往返（**不碰用户密文**），返回 `{platform, container, ok, code, runtime, variants[]}`，每个 variant 含 `binary/runtime/version/languageMode/assembly/roundtrip/code`。容器/WSL 由 `detectContainer()` 从环境变量与 `/proc` 特征只读判断。自检结果只进 `keyDiagnostics`（字符串，脱敏），**不含**密文、明文或 Key 片段；`stderr` 经 `redactStderr()` 去掉用户路径与凭据样式后最多保留 3 行 300 字。
 
 自动迁移与永久性：手动填写的 Key 写在 `state.user.namespace("desktopModelKeys")`（账号级，与 Profile 无关），换 Profile/new run 仍可读；清除同时清账号级与旧 Profile 级记录，旧记录不会复活。
+
+## 0.8.48 macOS 钥匙串解密（darwin）
+
+桌面端在 macOS 用 Electron `safeStorage`，底层是 Chromium OSCrypt。依据（源码，非推测）：
+
+- Electron 33 `shell/browser/electron_browser_main_parts.cc:539-540`：`KeychainPassword::GetServiceName() = app_name + " Safe Storage"`、`GetAccountName() = app_name`。
+- Chromium 130 `components/os_crypt/sync/os_crypt_mac.mm`：`kSalt = "saltysalt"`（:33）、`kEncryptionIterations = 1003`（:39）、`kDerivedKeySizeInBits = 128`（:36）、`kEncryptionVersionPrefix = "v10"`（:44）、IV = 16 个空格（:168），AES-128-CBC + PKCS#7。
+- Chromium `components/os_crypt/sync/keychain_password_mac.mm`：钥匙串里存的是一条**随机 16 字节的 base64 文本**（不是二进制），PBKDF2 的 password 就是这串 base64。
+
+因此 `lib/macos-keychain.mjs` 的链路是：`security find-generic-password -s "<App> Safe Storage" -a "<App>" -w` → PBKDF2-SHA1(password, "saltysalt", 1003, 16) → AES-128-CBC(IV=16×0x20，关闭自动去填充后自校验 PKCS#7) → 明文。候选 app 名依次为 `Deva`（productName）、`deva`（executableName）、`@deva/desktop`（package name）、`Electron`（默认名）；只有「条目不存在」才换下一个候选。
+
+原因码：`mac-keychain-tool-missing`、`mac-keychain-item-missing`、`mac-keychain-denied`、`mac-keychain-no-session`、`mac-keychain-timeout`、`mac-keychain-error`、`mac-key-mismatch`、`mac-ciphertext-truncated`、`mac-unsupported-format`、`ciphertext-invalid`。`platform-unsupported` 仅用于 Linux 等既非 Windows 也非 macOS 的宿主，**不再**被解释成「服务端不在那台 Windows 上」。
+
+自检 `selfCheck()` 输出 `{platform, ok, code, service, account, roundtrip, variants[]}`：`variants` 是每个 app 名候选的 `service/account/ok/code`，`roundtrip` 用真实 PBKDF2+AES 往返验证（不碰用户密文）。
+
+`aclReadable` / `fileOwner` 在 POSIX 平台改为真实可读性（`access(R_OK)`）+ `uid`/`mode`/`self`，不再对非 Windows 返回 `platform-unsupported`。

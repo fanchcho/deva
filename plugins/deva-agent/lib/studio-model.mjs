@@ -1,7 +1,8 @@
 import { writeUiTrace } from './ui-trace.mjs'
 import { callModel } from './model.mjs'
 import { ModelInputError, requestCustomModel } from './custom-model-network.mjs'
-import { DESKTOP_DECRYPT_CODES, isToolchainFailure } from './desktop-secrets.mjs'
+import { DESKTOP_DECRYPT_CODES, MAC_CODES, isToolchainFailure } from './desktop-secrets.mjs'
+import { isMacToolchainFailure } from './macos-keychain.mjs'
 import { resolveCustomEndpoint } from './model-selection.mjs'
 
 const noop = async () => {}
@@ -57,8 +58,18 @@ export function createCustomModel(run, { baseUrl, modelName, apiKey, reasoningEf
       if (credentialDiagnostics?.reason === 'decrypt-failed') {
         if (code === DESKTOP_DECRYPT_CODES.FOREIGN_BLOB) {
           why = `桌面有该提供方密文，但这份密文不是当前 Studio 进程这个 Windows 用户/这台机器存的（本机 DPAPI 自检通过；该 blob 解不开）`
+        } else if (MAC_CODES.ITEM_MISSING === code) {
+          why = '桌面有该提供方密文，但 macOS 钥匙串里没有对应的 Safe Storage 条目'
+        } else if (MAC_CODES.DENIED === code || MAC_CODES.NO_SESSION === code || MAC_CODES.TIMEOUT === code) {
+          why = `桌面有该提供方密文，但读取 macOS 钥匙串需要授权而本次未获允许（${code}）`
+        } else if (MAC_CODES.SECURITY_MISSING === code || MAC_CODES.KEYCHAIN_ERROR === code) {
+          why = `桌面有该提供方密文，但本机 macOS 钥匙串工具不可用（${code}）`
+        } else if (MAC_CODES.KEY_MISMATCH === code) {
+          why = '桌面有该提供方密文，但钥匙串里的 Safe Storage 密钥与它不匹配（桌面端可能重装/换签名后生成了新密钥）'
+        } else if (isMacToolchainFailure(code)) {
+          why = `桌面有该提供方密文，但当前平台无法解密（${code}）`
         } else if (isToolchainFailure(code) || code === DESKTOP_DECRYPT_CODES.NOT_WINDOWS) {
-          why = `桌面有该提供方密文，但本机没有可用的 DPAPI 工具链（${code}）${credentialDiagnostics?.selfCheck?.container ? `；运行环境 ${credentialDiagnostics.selfCheck.container}` : ''}`
+          why = `桌面有该提供方密文，但本机没有可用的解密工具链（${code}）${credentialDiagnostics?.selfCheck?.container ? `；运行环境 ${credentialDiagnostics.selfCheck.container}` : ''}`
         } else {
           why = `桌面有该提供方密文但解不开（${code || '未知原因'}）`
         }

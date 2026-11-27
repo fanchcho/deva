@@ -4,10 +4,11 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  clearDesktopAclCache, clearDesktopKeyCache, createDpapiDecoder, credentialHealth, DESKTOP_DECRYPT_CODES, detectContainer,
+  clearDesktopAclCache, clearDesktopKeyCache, createDpapiDecoder, credentialHealth, DESKTOP_DECRYPT_CODES, detectContainer, MAC_CODES,
   desktopSecretsPaths, isToolchainFailure, probeFileOwner, publicDesktopCredential, readDesktopSecrets, resolveDesktopCredential,
 } from '../lib/desktop-secrets.mjs'
 import { readCustomModel, readModelSelection, resolveCredential, saveModelSelection } from '../lib/model-selection.mjs'
+import { createMacKeychainDecoder } from '../lib/macos-keychain.mjs'
 
 /**
  * 五种夹具：仅插件 Key / 仅桌面 Key（注入假解密器）/ 两者都有（插件优先）/
@@ -473,4 +474,56 @@ test('ACL probe reports the desktop file owner without reading its contents', as
   const fail = probeFileOwner('C:\\x\\secrets.json', { platform: 'win32', spawn: () => ({ status: 2, stdout: 'DEVADPAPI aclfail' }) })
   assert.equal(fail.ok, false)
   assert.equal(fail.owner, '')
+})
+
+test('POSIX readability probe judges macOS/Linux files by real access, not by Windows ACL', async () => {
+  const { writeFile: wf } = await import('node:fs/promises')
+  const dir = await mkdtemp(join(tmpdir(), 'deva-posix-acl-'))
+  const file = join(dir, 'secrets.json')
+  await wf(file, JSON.stringify({ alpha: Buffer.from('fixture').toString('base64') }), { mode: 0o600 })
+  clearDesktopAclCache()
+  const probe = probeFileOwner(file, { platform: 'darwin' })
+  assert.equal(probe.ok, true, 'mode=600 且属于当前用户 → 必须判为可读（之前的 platform-unsupported 是错的）')
+  assert.equal(probe.readable, true)
+  assert.match(probe.owner, /^uid:\d+$/)
+  assert.equal(probe.self, true)
+  const missing = probeFileOwner(join(dir, 'nope.json'), { platform: 'darwin' })
+  assert.equal(missing.ok, false)
+  assert.equal(missing.code, 'ENOENT')
+  await rm(dir, { recursive: true, force: true })
+})
+
+test('macOS platform reports a real decrypt reason instead of platform-unsupported', async () => {
+  const fx = await fixture({ desktop: true })
+  try {
+    clearDesktopKeyCache()
+    const decoder = createMacKeychainDecoder({ platform: 'darwin', runSecurity: () => ({ status: 44, stderr: 'The specified item could not be found in the keychain.' }) })
+    const run = { ...memoryState()(), config: fx.config }
+    const resolved = await resolveCredential(run, route, { decrypt: decoder })
+    assert.equal(resolved.source, 'none')
+    assert.equal(resolved.reason, 'decrypt-failed')
+    assert.equal(resolved.desktop.decryptCode, MAC_CODES.ITEM_MISSING, 'darwin 上必须给出钥匙串具体原因码')
+    // 页面读也要注入同一个 decoder：默认单例按真实 platform（本机 linux）选择实现。
+    const view = await readModelSelection({ ...memoryState()(), config: fx.config }, { decrypt: decoder })
+    assert.match(view.keyProblem, /钥匙串里没有对应的 Safe Storage 条目/)
+    assert.equal(/不在那台 Windows 上/.test(view.keyProblem), false, '不得再出现跨 Windows 的错误归因')
+  } finally { await fx.cleanup() }
+})
+
+test('secrets structure diagnosis reports key names, lengths and prefix — never values', async () => {
+  const fx = await fixture({ desktop: true })
+  try {
+    clearDesktopKeyCache()
+    const resolved = await resolveCredential({ ...memoryState()(), config: fx.config }, route, { decrypt: failDecoder })
+    const detail = resolved.desktop.structureDetail
+    assert.equal(detail.entryCount, 1)
+    assert.equal(detail.entries[0].key, 'alpha')
+    // 这份夹具是刻意造的“非 v10”密文（用于走解密失败分支），前缀应报 other 而不是假装 v10。
+    assert.equal(detail.entries[0].prefix, 'other')
+    assert.ok(detail.entries[0].decodedBytes > 0)
+
+    const serialized = JSON.stringify(detail)
+    assert.equal(serialized.includes(CIPHERTEXT), false, '不含 base64 密文')
+    assert.equal(serialized.includes(PLAIN), false, '不含明文')
+  } finally { await fx.cleanup() }
 })
