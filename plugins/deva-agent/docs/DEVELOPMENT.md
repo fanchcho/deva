@@ -81,3 +81,7 @@ Studio 核心许可保持原范围；插件业务代码的许可由插件作者�
 插件市场列表支持可选的 i18n 名称/描述元数据，旧目录与旧条目仍显示原字段。修改名称、描述或翻译时也应增加插件版本，使目录同步能够识别新清单。
 
 完整语言集合以 SDK 的 PLUGIN_LOCALES 为准，并与 Studio UI 共用。当前为 12 种；新 SDK 检查不能仅提供中英文，也不能用回退替代缺失语言。旧插件及旧语言集保持运行兼容，升级 SDK 时补齐全部翻译。
+
+## 发布流程：每次改完直接提交并推送（2026-11 起）
+
+`plugins/deva-agent` 的每一次改动完成后：**直接 commit 并 push 到 `git@github.com:fanchcho/deva.git` 的 `develop-agent` 分支**，不再等待额外指令；**不创建任何 tag**（不新增 `deva-agent-v*`，也不删除/改写已有 tag），不 force push，不向 `sqfcyily/deva` 上游做任何写操作。提交前按本文件的检查项跑 `npm test`、`npm run harness:check`、`eslint --max-warnings 0`、`npm pack` 与密钥扫描；只提交 `plugins/deva-agent` 下与本批修复相关的文件，工作树中无关的未跟踪文件不纳入提交。

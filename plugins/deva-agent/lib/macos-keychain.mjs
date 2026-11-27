@@ -20,6 +20,12 @@
 
 import { createDecipheriv, pbkdf2Sync } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
+import {
+  MAC_IV, SAFE_STORAGE_CODES, decryptMacV10, looksLikeSecret, parseSafeStorageEnvelope, strictBase64, stripPkcs7,
+} from './safe-storage.mjs'
+
+// 共享格式层的辅助函数从这里再导出，旧 import 路径保持可用。
+export { looksLikeSecret, strictBase64, stripPkcs7 }
 
 /** macOS/Chromium OSCrypt 的固定参数（与上面 file:line 对应）。 */
 export const MAC_OSCRYPT = Object.freeze({
@@ -28,7 +34,7 @@ export const MAC_OSCRYPT = Object.freeze({
   KEY_BYTES: 16,
   PREFIX_V10: 'v10',
   PREFIX_V11: 'v11',
-  IV: Buffer.alloc(16, 0x20),
+  IV: MAC_IV,
 })
 
 /** 解密失败原因码：稳定、可区分、可操作；不含底层异常原文。 */
@@ -89,33 +95,6 @@ export function classifySecurityFailure(result) {
   if (/User interaction is not allowed|interaction is not allowed/i.test(stderr)) return MAC_CODES.NO_SESSION
   if (/The authorization was denied|authorization was denied|User canceled|denied/i.test(stderr)) return MAC_CODES.DENIED
   return MAC_CODES.KEYCHAIN_ERROR
-}
-
-/** 严格 base64：只接受合法字符与正确长度，避免 Node 静默忽略非法字符。 */
-export function strictBase64(value) {
-  const text = String(value || '').replace(/\s+/g, '')
-  if (!text || text.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(text)) return null
-  const buffer = Buffer.from(text, 'base64')
-  return buffer.length ? buffer : null
-}
-
-/** PKCS#7 去填充；不合法返回 null（这就是“密文不属于这把钥匙”的主要证据之一）。 */
-export function stripPkcs7(buffer) {
-  if (!buffer || buffer.length === 0 || buffer.length % 16 !== 0) return null
-  const pad = buffer[buffer.length - 1]
-  if (pad < 1 || pad > 16) return null
-  for (let i = buffer.length - pad; i < buffer.length; i++) {
-    if (buffer[i] !== pad) return null
-  }
-  return buffer.subarray(0, buffer.length - pad)
-}
-
-/** 明文合理性：必须是可打印 UTF-8，且不含控制字符/替换字符。 */
-export function looksLikeSecret(text) {
-  if (typeof text !== 'string' || !text) return false
-  if (text.includes('\uFFFD')) return false
-  // eslint-disable-next-line no-control-regex
-  return !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(text)
 }
 
 /**
@@ -229,36 +208,24 @@ export function createMacKeychainDecoder({
   async function decryptWith(ciphertextBase64) {
     const self = await selfCheck()
     if (platform !== 'darwin') return { ok: false, code: MAC_CODES.NOT_DARWIN, tries: [], selfCheck: self }
-    const blob = strictBase64(ciphertextBase64)
-    if (!blob) return { ok: false, code: MAC_CODES.CIPHERTEXT_INVALID, tries: [], selfCheck: self }
+    const envelope = parseSafeStorageEnvelope(ciphertextBase64)
+    if (!envelope.ok) {
+      const code = envelope.code === SAFE_STORAGE_CODES.CIPHERTEXT_INVALID ? MAC_CODES.CIPHERTEXT_INVALID
+        : envelope.code === SAFE_STORAGE_CODES.TRUNCATED ? MAC_CODES.TRUNCATED : MAC_CODES.UNSUPPORTED_FORMAT
+      return { ok: false, code, tries: [], selfCheck: self }
+    }
     // 先确认钥匙串可用：拿不到钥匙时，报“钥匙串”比报“密文格式”更接近根因（也更可操作）。
     const keychain = keychainKey()
     if (!keychain.ok) return { ok: false, code: keychain.code, tries: keychain.attempts || [], selfCheck: self }
-    const prefix = blob.subarray(0, 3).toString('ascii')
-    if (prefix !== MAC_OSCRYPT.PREFIX_V10 && prefix !== MAC_OSCRYPT.PREFIX_V11) {
-      return { ok: false, code: MAC_CODES.UNSUPPORTED_FORMAT, tries: [{ prefix, service: keychain.service }], selfCheck: self }
+    const result = decryptMacV10(envelope, keychain.key)
+    if (!result.ok) {
+      const code = result.code === SAFE_STORAGE_CODES.TRUNCATED ? MAC_CODES.TRUNCATED : MAC_CODES.KEY_MISMATCH
+      return { ok: false, code, tries: [{ service: keychain.service }], selfCheck: self }
     }
-    const payload = blob.subarray(3)
-    if (payload.length === 0 || payload.length % 16 !== 0) {
-      return { ok: false, code: MAC_CODES.TRUNCATED, tries: [{ prefix, bytes: payload.length, service: keychain.service }], selfCheck: self }
-    }
-    let plaintext = ''
-    try {
-      const decipher = createDecipheriv('aes-128-cbc', keychain.key, MAC_OSCRYPT.IV)
-      // 关掉自动去填充：自己校验 PKCS#7，才能区分“key 不匹配”与“密文被截断/格式不对”。
-      decipher.setAutoPadding(false)
-      const raw = Buffer.concat([decipher.update(payload), decipher.final()])
-      const unpadded = stripPkcs7(raw)
-      if (!unpadded) return { ok: false, code: MAC_CODES.KEY_MISMATCH, tries: [{ service: keychain.service }], selfCheck: self }
-      plaintext = unpadded.toString('utf8')
-    } catch {
-      // 错 key / 坏填充：AES-CBC 的 final() 会抛 bad decrypt；也可能解出乱码后 PKCS#7 不合法。
+    if (!result.plaintext) return { ok: false, code: MAC_CODES.EMPTY, tries: [{ service: keychain.service }], selfCheck: self }
+    if (!looksLikeSecret(result.plaintext)) {
       return { ok: false, code: MAC_CODES.KEY_MISMATCH, tries: [{ service: keychain.service }], selfCheck: self }
     }
-    if (!plaintext) return { ok: false, code: MAC_CODES.EMPTY, tries: [{ service: keychain.service }], selfCheck: self }
-    if (!looksLikeSecret(plaintext)) {
-      return { ok: false, code: MAC_CODES.KEY_MISMATCH, tries: [{ service: keychain.service }], selfCheck: self }
-    }
-    return { ok: true, plaintext, prefix, service: keychain.service, account: keychain.account, selfCheck: self, tries: [{ service: keychain.service, code: MAC_CODES.OK }] }
+    return { ok: true, plaintext: result.plaintext, prefix: envelope.prefix, service: keychain.service, account: keychain.account, selfCheck: self, tries: [{ service: keychain.service, code: MAC_CODES.OK }] }
   }
 }

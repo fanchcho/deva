@@ -1,7 +1,7 @@
 import { writeUiTrace } from './ui-trace.mjs'
 import { callModel } from './model.mjs'
 import { ModelInputError, requestCustomModel } from './custom-model-network.mjs'
-import { DESKTOP_DECRYPT_CODES, MAC_CODES, isToolchainFailure } from './desktop-secrets.mjs'
+import { DESKTOP_DECRYPT_CODES, MAC_CODES, WIN_CODES, isToolchainFailure } from './desktop-secrets.mjs'
 import { isMacToolchainFailure } from './macos-keychain.mjs'
 import { resolveCustomEndpoint } from './model-selection.mjs'
 
@@ -58,6 +58,18 @@ export function createCustomModel(run, { baseUrl, modelName, apiKey, reasoningEf
       if (credentialDiagnostics?.reason === 'decrypt-failed') {
         if (code === DESKTOP_DECRYPT_CODES.FOREIGN_BLOB) {
           why = `桌面有该提供方密文，但这份密文不是当前 Studio 进程这个 Windows 用户/这台机器存的（本机 DPAPI 自检通过；该 blob 解不开）`
+        } else if (WIN_CODES.LOCAL_STATE_MISSING === code) {
+          why = '桌面有该提供方密文，但没找到桌面端的 Local State（无法取得 safeStorage 的 AES 密钥）'
+        } else if (WIN_CODES.ENCRYPTED_KEY_INVALID === code) {
+          why = '桌面有该提供方密文，但 Local State 的 os_crypt.encrypted_key 缺失或不是 DPAPI 格式'
+        } else if (WIN_CODES.KEY_UNPROTECT_FAILED === code) {
+          why = '桌面有该提供方密文，但 Local State 的 DPAPI 密钥解不开（当前 Windows 用户/机器与桌面端不一致或文件损坏）'
+        } else if (WIN_CODES.GCM_AUTH_FAILED === code) {
+          why = '桌面有该提供方密文，但 v10 载荷的 AES-GCM 校验失败（Local State 密钥与密文不匹配）'
+        } else if (WIN_CODES.BLOB_NOT_DPAPI === code || code === 'foreign-blob-proven') {
+          why = code === 'foreign-blob-proven'
+            ? '桌面有该提供方密文，且已确认是同一台机器上另一个 Windows 用户存的密文（DPAPI 无法跨用户解密）'
+            : '桌面有该提供方密文，但它既不是 v10（safeStorage）也不是合法 DPAPI blob（参数无效）；归属未确认'
         } else if (MAC_CODES.ITEM_MISSING === code) {
           why = '桌面有该提供方密文，但 macOS 钥匙串里没有对应的 Safe Storage 条目'
         } else if (MAC_CODES.DENIED === code || MAC_CODES.NO_SESSION === code || MAC_CODES.TIMEOUT === code) {

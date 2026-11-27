@@ -173,6 +173,19 @@ Windows 自检：安装 0.8.25，关闭重开 Studio 的 Deva 模型页；下拉
 
 Windows 请比较桌面与 Studio 进程的 AI_UPPER_HOME / DEVA_HOME，以及运行账号的用户目录。若 Studio 在另一机器，默认 ~/.deva 指的是 Studio 服务器，无法读取 Windows 本地配置；必须使用在该设备运行的宿主或明确配置其可访问的 sharedDevaHome。核对页面 path、exists、stat、providerCount、modelCount；不存在、权限拒绝或 JSON 错误均按页面诊断处理，不要提交 secrets.json 或 API Key。**0.8.44 起**：同一 OS 用户、同一台机器上，插件会在服务端按需只读解密桌面 `secrets.json` 里同一 provider 的密文（Windows DPAPI CurrentUser；明文只在内存、不写回、不进日志、不回前端），因此桌面端存过的 Key 不必在 Studio 再填一遍。跨用户/跨机器仍不可解，页面会给出原因码（`dpapi-failed` 等）与确切路径；此时手填即可。
 
+### 0.8.49 Windows 桌面密钥解密（safeStorage v10）
+
+Windows 上 Electron safeStorage 使用 `v10` + AES-256-GCM，AES 密钥由 DPAPI 保护后放在 `<userData>/Local State` 的 `os_crypt.encrypted_key`（base64 带 `DPAPI` 前缀）。插件按两层解密；诊断字段：
+
+- `decryptCode=local-state-missing`：找不到 Local State（`%APPDATA%\<App>\Local State` 等候选）→ 确认桌面端启动过、Studio 与桌面同一 Windows 用户；
+- `encrypted-key-invalid`：`os_crypt.encrypted_key` 缺失/不是 DPAPI 格式；
+- `key-unprotect-failed`：DPAPI 解不开该密钥（用户/机器或文件损坏）；
+- `gcm-auth-failed`：v10 载荷 GCM 校验失败（Local State 密钥与密文不匹配，桌面端重装常导致）；
+- `blob-not-dpapi`：密文既不是 v10 也不是合法 DPAPI blob（`0x80131501` 参数无效属于这一类的表现，**不代表**跨用户）；
+- `foreign-blob-proven`：仅当同一台机器、不同 Windows 用户被规范化确证时才出现。
+
+`aclReadable`/`fileOwner` 按真实可读性与规范化 owner 判定；`XY-L275\XYXNY` 与 `xy-l275\xyxny` 视为同一用户。
+
 ### 0.8.48 macOS 桌面密钥解密
 
 macOS 上插件现在能直接从 Keychain 取 Electron safeStorage 主密钥解密 `~/.deva/secrets.json`（`v10` + AES-128-CBC）。看不出来源时按 `decryptCode` 处理：

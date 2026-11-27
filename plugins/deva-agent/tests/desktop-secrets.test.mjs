@@ -9,6 +9,7 @@ import {
 } from '../lib/desktop-secrets.mjs'
 import { readCustomModel, readModelSelection, resolveCredential, saveModelSelection } from '../lib/model-selection.mjs'
 import { createMacKeychainDecoder } from '../lib/macos-keychain.mjs'
+import { createWindowsSafeStorageDecoder, WIN_CODES } from '../lib/windows-safe-storage.mjs'
 
 /**
  * 五种夹具：仅插件 Key / 仅桌面 Key（注入假解密器）/ 两者都有（插件优先）/
@@ -498,6 +499,8 @@ test('macOS platform reports a real decrypt reason instead of platform-unsupport
   try {
     clearDesktopKeyCache()
     const decoder = createMacKeychainDecoder({ platform: 'darwin', runSecurity: () => ({ status: 44, stderr: 'The specified item could not be found in the keychain.' }) })
+    // 用合法的 v10 信封（任意 48 字节），让流程走到“取钥匙串”这一步，而不是格式检查。
+    await writeFile(join(fx.home, 'secrets.json'), JSON.stringify({ alpha: Buffer.concat([Buffer.from('v10'), Buffer.alloc(48, 7)]).toString('base64') }), { mode: 0o600 })
     const run = { ...memoryState()(), config: fx.config }
     const resolved = await resolveCredential(run, route, { decrypt: decoder })
     assert.equal(resolved.source, 'none')
@@ -518,12 +521,39 @@ test('secrets structure diagnosis reports key names, lengths and prefix — neve
     const detail = resolved.desktop.structureDetail
     assert.equal(detail.entryCount, 1)
     assert.equal(detail.entries[0].key, 'alpha')
-    // 这份夹具是刻意造的“非 v10”密文（用于走解密失败分支），前缀应报 other 而不是假装 v10。
-    assert.equal(detail.entries[0].prefix, 'other')
+    // 这份夹具是刻意造的“非 v10”密文（用于走解密失败分支），前缀应报 raw 而不是假装 v10。
+    assert.equal(detail.entries[0].prefix, 'raw')
     assert.ok(detail.entries[0].decodedBytes > 0)
 
     const serialized = JSON.stringify(detail)
     assert.equal(serialized.includes(CIPHERTEXT), false, '不含 base64 密文')
     assert.equal(serialized.includes(PLAIN), false, '不含明文')
+  } finally { await fx.cleanup() }
+})
+
+test('Windows v10 decrypt failure reports a real reason and same-user case differences are not foreign', async () => {
+  const fx = await fixture({ desktop: true })
+  try {
+    clearDesktopKeyCache()
+    const key = Buffer.alloc(32, 9)
+    const localPath = join(fx.home, 'Local State')
+    await writeFile(localPath, JSON.stringify({ os_crypt: { encrypted_key: Buffer.concat([Buffer.from('DPAPI'), Buffer.from('blob')]).toString('base64') } }), { mode: 0o600 })
+    const decoder = createWindowsSafeStorageDecoder({
+      platform: 'win32',
+      candidates: [localPath],
+      readLocalState: p => ({ path: p, exists: true, structure: 'ok', encryptedKey: Buffer.concat([Buffer.from('DPAPI'), Buffer.from('blob')]).toString('base64'), encryptedKeyChars: 24, hasDpapiPrefix: true, decodedBytes: 9 }),
+      unprotect: () => ({ ok: true, bytes: key }),
+      dpapiSelfCheck: async () => ({ ok: true, code: 'ok', user: 'XY-L275\\XYXNY', machine: 'XY-L275', variants: [{ binary: 'powershell.exe', ok: true, runtime: 'windows-powershell', version: '5.1', user: 'XY-L275\\XYXNY', machine: 'XY-L275', languageMode: 'FullLanguage', assembly: true, roundtrip: true, code: '' }] }),
+    })
+    // 构造一个 v10 blob（内容任意，GCM 必然校验失败）
+    const v10 = Buffer.concat([Buffer.from('v10'), Buffer.alloc(12, 1), Buffer.alloc(32, 2)]).toString('base64')
+    await writeFile(join(fx.home, 'secrets.json'), JSON.stringify({ alpha: v10 }), { mode: 0o600 })
+    const run = { ...memoryState()(), config: fx.config }
+    const resolved = await resolveCredential(run, route, { decrypt: decoder })
+    assert.equal(resolved.reason, 'decrypt-failed')
+    assert.equal(resolved.desktop.decryptCode, WIN_CODES.GCM_AUTH_FAILED)
+    const view = await readModelSelection({ ...memoryState()(), config: fx.config }, { decrypt: decoder })
+    assert.match(view.keyProblem, /AES-GCM 校验失败/)
+    assert.equal(/不在那台 Windows|外来|不是当前 Studio 进程/.test(view.keyProblem), false, '不得把普通 GCM 失败说成跨用户/跨机器')
   } finally { await fx.cleanup() }
 })

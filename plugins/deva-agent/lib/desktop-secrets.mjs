@@ -21,6 +21,9 @@ import { accessSync, constants, lstatSync, readFileSync, statSync } from 'node:f
 import { join } from 'node:path'
 import { resolveDevaRoot } from './deva-fs.mjs'
 import { MAC_CODES, createMacKeychainDecoder, isMacToolchainFailure } from './macos-keychain.mjs'
+import { createWindowsSafeStorageDecoder, WIN_CODES } from './windows-safe-storage.mjs'
+import { classifyOwnership, describeValuePrefix, normalizeAccount } from './safe-storage.mjs'
+import { hostname, userInfo } from 'node:os'
 
 export const DESKTOP_SECRETS_MAX_BYTES = 1024 * 1024
 
@@ -62,7 +65,7 @@ export function isToolchainFailure(code) {
 }
 
 /** macOS 钥匙串专属原因码（与 DPAPI 那套并列，页面按平台给下一步）。 */
-export { MAC_CODES }
+export { MAC_CODES, WIN_CODES }
 
 /** Windows DPAPI 的 HRESULT → 原因码。只映射少数能区分「归属」的值，其它一律 DPAPI_FAILED。 */
 const HRESULT_CODES = Object.freeze({
@@ -160,24 +163,16 @@ export function desktopSecretsStructure(file) {
   return {
     entryCount: Object.keys(file.entries).length,
     entries: Object.entries(file.entries).map(([key, value]) => {
-      let decoded = null
-      try { decoded = strictBase64ForStructure(value) } catch { decoded = null }
-      const prefix = decoded ? decoded.subarray(0, 3).toString('ascii') : ''
+      const described = describeValuePrefix(value)
       return {
         key,
         keyLength: key.length,
         valueChars: value.length,
-        decodedBytes: decoded ? decoded.length : null,
-        prefix: ['v10', 'v11', 'v20'].includes(prefix) ? prefix : (decoded ? 'other' : 'invalid-base64')
+        decodedBytes: described.bytes,
+        prefix: described.kind === 'v10' ? 'v10' : described.kind
       }
     })
   }
-}
-
-function strictBase64ForStructure(value) {
-  const text = String(value || '')
-  if (!text || text.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(text)) return null
-  return Buffer.from(text, 'base64')
 }
 
 /** 某一 provider 的密文（桌面按 providerId 存；没有 provider 级前缀）。 */
@@ -536,8 +531,14 @@ export function defaultDpapiDecoder() {
   return defaultDecoder
 }
 
-export function createDefaultDesktopDecoder({ platform = process.platform } = {}) {
+export function createDefaultDesktopDecoder({ platform = process.platform, env = process.env } = {}) {
   if (platform === 'darwin') return createMacKeychainDecoder({ platform })
+  if (platform === 'win32') {
+    const dpapi = createDpapiDecoder({ platform })
+    // Windows 的 safeStorage 是 v10 AES-256-GCM + Local State 里的 DPAPI 密钥；
+    // createDpapiDecoder 只保留为 DPAPI 工具链自检与 legacy 裸 blob 的底层实现。
+    return createWindowsSafeStorageDecoder({ platform, env, dpapiSelfCheck: dpapi.selfCheck })
+  }
   return createDpapiDecoder({ platform })
 }
 
@@ -605,11 +606,25 @@ export async function resolveDesktopCredential({ config = {}, providerId, decryp
   } catch {
     result = { ok: false, code: DESKTOP_DECRYPT_CODES.DPAPI_FAILED }
   }
+  const health = credentialHealth(result?.selfCheck)
+  const processUser = health?.user || (() => { try { return userInfo().username } catch { return '' } })()
+  const processMachine = health?.machine || hostname()
+  // `DOMAIN\user` 里的前缀只有等于本机名时才能当 machine 用；域账号不能拿域名当机器名。
+  const ownerMachine = acl.owner?.includes('\\') ? acl.owner.split('\\')[0] : ''
+  const fileMachine = ownerMachine && normalizeAccount(ownerMachine) === normalizeAccount(processMachine) ? ownerMachine : ''
+  const ownership = classifyOwnership({ fileOwner: acl.owner, processUser, fileMachine, processMachine })
+  base.selfCheck = health
+  base.ownership = ownership
+  base.localStateTried = health?.localStateTried || []
   if (!result?.ok) {
+    const finalCode = ownership.sameMachine && ownership.sameUser === false ? 'foreign-blob-proven' : (result?.code || DESKTOP_DECRYPT_CODES.DPAPI_FAILED)
     return {
       status: 'undecryptable', ...base, present: true, cached: false, plaintext: '',
-      decryptCode: result?.code || DESKTOP_DECRYPT_CODES.DPAPI_FAILED,
+      decryptCode: finalCode,
       toolchainBroken: isToolchainFailure(result?.code),
+      ...(result?.localState ? { localState: result.localState } : {}),
+      ...(result?.v10 !== undefined ? { v10: Boolean(result.v10) } : {}),
+      ...(ownership.sameMachine && ownership.sameUser === false ? { foreignProven: true } : {}),
       selfCheck: credentialHealth(result?.selfCheck),
       stderr: result?.stderr || '',
     }
@@ -645,6 +660,9 @@ export function credentialHealth(selfCheck) {
     ok: Boolean(selfCheck.ok),
     code: selfCheck.code || '',
     runtime: selfCheck.runtime || '',
+    ...(selfCheck.localState ? { localState: selfCheck.localState } : {}),
+    ...(selfCheck.localStateTried ? { localStateTried: selfCheck.localStateTried } : {}),
+    ...(selfCheck.dpapi ? { dpapi: selfCheck.dpapi } : {}),
     ...(selfCheck.service ? { service: selfCheck.service } : {}),
     ...(selfCheck.account ? { account: selfCheck.account } : {}),
     ...(selfCheck.roundtrip !== undefined ? { roundtrip: Boolean(selfCheck.roundtrip) } : {}),

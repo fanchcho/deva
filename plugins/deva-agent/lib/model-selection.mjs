@@ -9,7 +9,7 @@ import { getPersona, listPersonas, writePersonaModel } from './persona-store.mjs
 import { resolveDevaRoot } from './deva-fs.mjs'
 import { sharedDevaWritePath, desktopWriteDenial } from './shared-deva-model.mjs'
 import { validateStored, validateStoredModel } from './storage-contracts.mjs'
-import { DESKTOP_DECRYPT_CODES, MAC_CODES, isToolchainFailure, publicDesktopCredential, resolveDesktopCredential } from './desktop-secrets.mjs'
+import { DESKTOP_DECRYPT_CODES, MAC_CODES, WIN_CODES, isToolchainFailure, publicDesktopCredential, resolveDesktopCredential } from './desktop-secrets.mjs'
 
 export const REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const LEGACY_EFFORT = 'minimal'
@@ -428,6 +428,26 @@ function credentialProblemMessage(credential, run, route) {
       }
       if (isToolchainFailure(code) && code !== DESKTOP_DECRYPT_CODES.NOT_WINDOWS) {
         return `桌面端已保存 providerId=${provider} 的密钥，但本机没有可用的 DPAPI 工具链（${code}）${variantText}。这不是密钥的问题：请让管理员在 Studio 所在 Windows 机器上确认 Windows PowerShell 5.1 或 PowerShell 7 可用、且未被 Constrained Language/组策略限制；也可先在本页手动填写。${desktopDetail}`
+      }
+      if (code === WIN_CODES.LOCAL_STATE_MISSING) {
+        return `桌面端已保存 providerId=${provider} 的密钥，但没找到桌面端的 Local State 文件（候选：${(desktop?.localStateTried || []).map(x => x.path).filter(Boolean).join(' / ') || '%APPDATA%\\<App>\\Local State'}）。桌面端可能未启动过、应用名不同，或 Studio 与桌面不在同一 Windows 用户下；请在本页填一次 API Key。${desktopDetail}`
+      }
+      if (code === WIN_CODES.ENCRYPTED_KEY_INVALID) {
+        return `桌面端已保存 providerId=${provider} 的密钥，但 Local State 里的 os_crypt.encrypted_key 缺失或不是 DPAPI 格式（不是密钥本身的问题）。请在桌面端重新保存一次该 Key，或在本页填一次。${desktopDetail}`
+      }
+      if (code === WIN_CODES.KEY_UNPROTECT_FAILED) {
+        return `桌面端已保存 providerId=${provider} 的密钥，但 Local State 里的 DPAPI 密钥解不开（当前 Windows 用户/机器与桌面端不一致，或 Local State 被复制/损坏）。请在本页填一次 API Key，或在桌面端重新保存。${desktopDetail}`
+      }
+      if (code === WIN_CODES.GCM_AUTH_FAILED) {
+        return `桌面端已保存 providerId=${provider} 的密钥，但 v10 载荷的 AES-GCM 校验失败（gcm-auth-failed）：Local State 里的 AES 密钥与这份密文不匹配（桌面端重装/换用户后生成了新密钥）。请在本页填一次 API Key，或在桌面端重新保存。${desktopDetail}`
+      }
+      if (code === WIN_CODES.BLOB_NOT_DPAPI || code === 'foreign-blob-proven') {
+        const own = desktop?.ownership
+        const who = own ? `（归属判定：sameUser=${own.sameUser}，sameMachine=${own.sameMachine}，method=${own.method}）` : ''
+        const tail = code === 'foreign-blob-proven'
+          ? '已确认是同一台机器上的另一个 Windows 用户存的密文，DPAPI 无法跨用户解密'
+          : '密文既不是 v10（safeStorage）也不是合法 DPAPI blob（参数无效），归属未确认'
+        return `桌面端已保存 providerId=${provider} 的密钥，但${tail}${who}。请在本页填一次 API Key（账号级永久）。${desktopDetail}`
       }
       if (code === MAC_CODES.ITEM_MISSING) {
         return `桌面端已保存 providerId=${provider} 的密钥，但 macOS 钥匙串里没有对应的 Safe Storage 条目（尝试过：${(health?.variants || []).map(v => v.service).filter(Boolean).join(' / ') || '多个应用名候选'}）。这通常意味着桌面端的钥匙串条目被删过、或桌面包名与当前候选不同；请在本页填一次 API Key（账号级永久）。${desktopDetail}`

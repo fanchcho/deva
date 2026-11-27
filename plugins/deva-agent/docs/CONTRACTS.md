@@ -430,3 +430,17 @@ phase=geometry 每个element单独记录：root/candidates/diagnostic/status/ifr
 自检 `selfCheck()` 输出 `{platform, ok, code, service, account, roundtrip, variants[]}`：`variants` 是每个 app 名候选的 `service/account/ok/code`，`roundtrip` 用真实 PBKDF2+AES 往返验证（不碰用户密文）。
 
 `aclReadable` / `fileOwner` 在 POSIX 平台改为真实可读性（`access(R_OK)`）+ `uid`/`mode`/`self`，不再对非 Windows 返回 `platform-unsupported`。
+
+## 0.8.49 Windows safeStorage（v10 AES-256-GCM + Local State）
+
+Windows 桌面端的 safeStorage **不是**“明文直接 DPAPI 后写盘”。依据 Chromium 130 `components/os_crypt/sync/os_crypt_win.cc`：
+
+- `kNonceLength = 96/8 = 12`（:42）、`kEncryptionVersionPrefix = "v10"`（:45）、`kDPAPIKeyPrefix = "DPAPI"`（:48）。
+- `EncryptString`：AES-256-GCM，`v10` + nonce(12) + 密文（GCM tag 16 附在末尾）（:191-215）。
+- 密钥：随机 32B，`os_crypt.encrypted_key` = base64(`DPAPI` + DPAPI(32B key))，存于 `<userData>/Local State`（:109-125,256-295）；Electron 的 Local State 在 `DIR_SESSION_DATA/Local State`（`shell/browser/browser_process_impl.cc:110-122`，即 `<userData>/Local State`）。
+
+`lib/windows-safe-storage.mjs` 的链路：候选 Local State（`%APPDATA%` / `%LOCALAPPDATA%` 下 `Deva` / `deva` / `@deva/desktop` / `Electron`）→ `os_crypt.encrypted_key` 校验 base64/`DPAPI` 前缀 → DPAPI(`CurrentUser`) 解出 32B key → `lib/safe-storage.mjs` 的 AES-256-GCM 解 v10；不以 `v10` 开头的值是 legacy 裸 DPAPI，走 `legacy-raw-dpapi-ok`。
+
+原因码：`local-state-missing`、`encrypted-key-invalid`、`key-unprotect-failed`、`gcm-auth-failed`、`blob-not-dpapi`、`legacy-raw-dpapi-ok`、`v10-detected`、`foreign-blob-proven`（仅当同机不同用户可确证时）。`0x80131501`（.NET 泛化 `MethodInvocationException` / 参数无效）只表示“不是合法 DPAPI blob”，**不得**据此推断跨用户/跨机器。
+
+`lib/safe-storage.mjs` 同时提供 macOS v10 的 AES-128-CBC 实现（IV=16×0x20），macOS 的 Keychain 密钥由 `lib/macos-keychain.mjs` 提供——两端共用同一个 v10 信封解析器，但密码算法不同。

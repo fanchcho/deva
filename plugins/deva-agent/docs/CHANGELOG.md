@@ -1,3 +1,11 @@
+# 0.8.49
+
+- 统一 safeStorage 解码器：Windows 与 macOS 共用 `lib/safe-storage.mjs` 的 v10 格式层（Windows=AES-256-GCM，macOS=AES-128-CBC，二者前缀同为 v10 但密码不同）。
+- Windows 真机修复：不再把 `secrets.json` 的 v10 值直接喂 DPAPI。新链路为 `<userData>/Local State` → `os_crypt.encrypted_key`（base64(`DPAPI`+DPAPI(32B key))）→ DPAPI 解出 32B AES key → v10 AES-256-GCM 解密；依据 Chromium 130 `os_crypt_win.cc:42-48,191-240`。
+- 归因修复：`0x80131501`「参数无效」只说明“不是合法 DPAPI blob”，不再推断跨用户/跨机器；新增 `blob-not-dpapi`、`local-state-missing`、`encrypted-key-invalid`、`key-unprotect-failed`、`gcm-auth-failed`、`legacy-raw-dpapi-ok`、`v10-detected`、`foreign-blob-proven`（仅同机不同用户且已确证时）。
+- 用户/机器归属改为规范化比较（域\用户、机器名大小写不敏感；有 SID 比 SID），`XY-L275\XYXNY` 与 `xy-l275\xyxny` 判为同一用户，不再误报。
+- 诊断仅输出路径/大小/条目/前缀类型/Local State 是否存在与 encrypted_key 长度和 DPAPI 前缀/owner 对比，不含密文、明文、encrypted_key 值或 SID 原文。
+
 # 0.8.48
 
 - 修复 macOS：桌面密钥在 darwin 上一律报 `platform-unsupported` —— 现在真正实现 macOS 解密链路（纯 Node：`security find-generic-password` 取 safeStorage 主密钥 → PBKDF2-SHA1(`saltysalt`, 1003, 128bit) → AES-128-CBC(IV=16×0x20) → 去 PKCS#7），依据 Electron 33 与 Chromium 130 源码。
