@@ -421,14 +421,6 @@ test('MCP parity: one catalog, real chips, fractions, switches and no selection 
   assert.equal(switches[0]['aria-checked'], 'true')
   await switches[0].onclick()
   assert.deepEqual(calls[1], ['set-mcp-server-enabled', { name: 'service-0', enabled: false }])
-  if (process.env.MCP_SNAPSHOT) {
-    const { writeFileSync, readFileSync } = await import('node:fs')
-    const escape = value => String(value || '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;')
-    const html = n => `<${n.tag}${n.className ? ` class="${escape(n.className)}"` : ''}${n.role ? ` role="${n.role}"` : ''}${n.placeholder ? ` placeholder="${escape(n.placeholder)}"` : ''}${n.style.display ? ` style="display:${n.style.display}"` : ''}${n['aria-checked'] ? ` aria-checked="${n['aria-checked']}"` : ''}>${escape(n.textContent)}${n._html || ''}${n.children.map(html).join('')}</${n.tag}>`
-    const source = readFileSync(new URL('../client.mjs', import.meta.url), 'utf8')
-    const css = source.match(/const STYLES = `([\s\S]*?)`/)[1]
-    writeFileSync(process.env.MCP_SNAPSHOT, '<!doctype html><meta charset="utf-8"><title>MCP parity fixture</title><style>:root{--bg-card:#282828;--bg-input:#282828;--text-primary:#ddd;--text-secondary:#aaa;--text-muted:#888;--border-color:#3c3c3c;--accent-primary:#ddd;--accent-primary-rgb:220,220,220;--success:#61bd65;--error:#ed7777}body{background:#191919;color:#ddd}</style><style>'+css+'</style>'+html(root))
-  }
 })
 
 test('mcp view surfaces a failing host request as an error, not as "no servers"', async () => {
@@ -1019,19 +1011,12 @@ test('MCP page requests once and renders one merged editable catalog', async () 
 })
 
 test('all declared settings pages keep headings and render theme/state evidence', async () => {
-  const { readFileSync, writeFileSync, mkdirSync } = await import('node:fs')
-  const { join } = await import('node:path')
+  const { readFileSync } = await import('node:fs')
   const manifest = JSON.parse(readFileSync(new URL('../plugin.json', import.meta.url)))
   assert.deepEqual(manifest.views.map(v => v.id), ['identity','mcp','skills','model','memory'])
-  const css = readFileSync(new URL('../client.mjs', import.meta.url), 'utf8').match(/const STYLES = `([^]*?)`/)[1]
-  const escape = value => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;')
-  const html = n => `<${n.tag}${n.className ? ` class="${escape(n.className)}"` : ''}${n.hidden ? ' hidden' : ''}${n.disabled ? ' disabled' : ''}${n.role ? ` role="${n.role}"` : ''}${n['aria-checked'] ? ` aria-checked="${n['aria-checked']}"` : ''}${n.style.display ? ` style="display:${n.style.display}"` : ''}>${escape(n.textContent)}${n._html || ''}${n.children.map(html).join('')}</${n.tag}>`
-  const evidence = []
   for (const { id: view } of manifest.views) for (const state of ['populated','empty','error']) {
     const populated = state === 'populated'
-    const calls=[]
     const root = await mountPage(fakeContext('zh', async (name) => {
-      calls.push(name)
       if (state === 'error') throw new Error('FIXTURE_READ_FAILED')
       if (name === 'get-identities') return {identities:populated?[{id:'deva',name:'Deva',description:'身份说明'}]:[],selected:populated?'deva':'',filePath:'/fixture/config.json',personasDir:'/fixture/personas'}
       if (name === 'get-mcp-servers') return {servers:populated?[server('example',{tools:[{name:'example_tool',description:''}],toolCount:1})]:[],selected:[]}
@@ -1043,14 +1028,5 @@ test('all declared settings pages keep headings and render theme/state evidence'
     }, {view}))
     assert.ok(findAll(root,n=>n.tag==='h2' && n.textContent).length, `${view}/${state} has heading`)
     if(view==='skills' && populated){const toggle=findAll(root,n=>n.role==='switch')[0];assert.equal(toggle.disabled,true,'readonly permission remains')}
-    if (process.env.SETTINGS_SNAPSHOTS) {
-      mkdirSync(process.env.SETTINGS_SNAPSHOTS,{recursive:true})
-      for(const theme of ['light','dark']){
-        const palette=theme==='dark'?'--bg-card:#282828;--bg-input:#282828;--text-primary:#ddd;--text-secondary:#aaa;--text-muted:#999;--border-color:#444;--accent-primary:#ddd;--accent-primary-rgb:220,220,220;--success:#61bd65;--error:#ef7777;background:#191919;color:#ddd':'--bg-card:#fff;--bg-input:#fff;--text-primary:#222;--text-secondary:#555;--text-muted:#777;--border-color:#ddd;--accent-primary:#333;--accent-primary-rgb:51,51,51;--success:#2e7d32;--error:#c62828;background:#fafafa;color:#222'
-        writeFileSync(join(process.env.SETTINGS_SNAPSHOTS,`${view}-${state}-${theme}.html`),'<!doctype html><meta charset="utf-8"><style>:root{'+palette+'}body{margin:0}</style><style>'+css+'</style>'+html(root))
-      }
-    }
-    evidence.push({view,state,calls,headings:findAll(root,n=>n.tag==='h2').map(n=>n.textContent)})
   }
-  if(process.env.SETTINGS_SNAPSHOTS)writeFileSync(join(process.env.SETTINGS_SNAPSHOTS,'render-evidence.json'),JSON.stringify(evidence,null,2))
 })

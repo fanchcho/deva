@@ -24,7 +24,3 @@
 ## 验证与限制
 
 新增测试覆盖三层同时显示/标识、一次请求、按 scope 增改删、跨层拒绝、owner、草稿保留、删除确认、加载/空态/错误态、主题变量。既有测试名与断言保留。
-
-截图与交互采用离线 Chromium：执行真实 client.mount + 真实插件 CSS，加载本机 Studio `app-D9zeiodk.css` 的浅深主题；RPC 测试桥调用真实 memoryPage，DEVA_HOME 与 TMPDIR 均隔离在插件 `.tmp`。不是已安装 Studio 实例，不代表用户已看到新版本。真实 Studio 点击、Win/macOS 真机、桌面与插件同时写未验证。
-
-本轮证据位于 `plugins/deva-agent/.tmp/memory-redesign/`：`render.mjs`、`render-evidence.json`、`before-{light,dark}.png`、`after-{light,dark}.png`、`editor-{light,dark}.png`、`error-draft-light.png`、测试/harness 日志和最终 REPORT.md。临时浏览器与字体复用工作区既有资源，不进入依赖或提交。
