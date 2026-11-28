@@ -12,7 +12,7 @@
 #   push → v*                    → 构建 + 推送，tag: v<version> / sha-<short> / <version>
 #   workflow_dispatch            → 同上按所在 ref 决定（手动点一次就能重发）
 #
-# 版本号不是抄来的：从 apps/desktop/package.json 读（与 out/check-versions.mjs 同一个事实源），
+# 版本号不是抄来的：从 apps/desktop/package.json 读（与 scripts/check-versions.mjs 同一个事实源），
 # 并先跑一次 check:versions，确保 web 包版本没掉队才发布。
 #
 # 架构：只出 linux/amd64。
@@ -51,7 +51,7 @@ jobs:
       - name: 校验并读取版本号
         id: version
         run: |
-          node out/check-versions.mjs
+          node scripts/check-versions.mjs
           VERSION=$(node -p "require('./apps/desktop/package.json').version")
           echo "value=$VERSION" >> "$GITHUB_OUTPUT"
           echo "发布版本: $VERSION"

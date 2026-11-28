@@ -125,11 +125,7 @@ jobs:
           BASE: http://127.0.0.1:7080
           ADMIN_PASSWORD: ci-pass
         run: |
-          node out/probe.mjs
-          node out/git-e2e.mjs
-          node out/channel-coverage.mjs
-          node out/browse-check.mjs
-          node out/icon-check.mjs
+          node apps/web/test/http-smoke.mjs
 
       - name: 失败时输出服务日志
         if: failure()

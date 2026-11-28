@@ -128,6 +128,17 @@ const otherState=await(await req('/api/invoke',{method:'POST',headers:{cookie:se
 await deviceSmoke({invoke,tmp,userHome,secondPort:otherState.value.port})
 
 const ws = (await (await req('/api/fs/list')).json()).path
+const gitRoot=path.join(ws,'git-http-regression')
+await fs.mkdir(gitRoot,{recursive:true})
+assert.equal((await invoke('git:init',[gitRoot])).value.ok,true)
+assert.equal((await invoke('git:set-config',[gitRoot,'Web smoke','smoke@example.invalid',false])).value.ok,true)
+await fs.writeFile(path.join(gitRoot,'tracked.txt'),'git-http-bytes')
+assert.equal((await invoke('git:stage',[gitRoot,[path.join(gitRoot,'tracked.txt')]])).value.ok,true)
+assert.equal((await invoke('git:commit',[gitRoot,'test: isolated HTTP fixture'])).value.ok,true)
+assert.equal((await invoke('git:log',[gitRoot,5])).value.length,1)
+assert.equal((await invoke('git:status',[gitRoot])).value.staged.length,0)
+console.log('PASS git HTTP init, local identity, stage, commit, log and clean status')
+
 const persona = await invoke('personas:upsert',[{name:'Merge persona',workspace:ws,prompt:'test',enabled:true}])
 assert.equal(persona.ok,true)
 assert.equal((await invoke('chat:create-session',[{sessionId:'merge-persona',personaId:persona.value.id}])).ok,true)
