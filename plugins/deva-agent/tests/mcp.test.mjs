@@ -4,7 +4,7 @@ import { createServer } from 'node:http'
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { McpPool, createClient, parseServerConfig, expandEnv, sanitizeName, mergeServers, flattenResult, serverFingerprint } from '../lib/mcp.mjs'
+import { McpPool, createClient, parseServerConfig, expandEnv, sanitizeName, flattenResult, serverFingerprint } from '../lib/mcp.mjs'
 
 /** 一个最小 MCP stdio 服务器：换行分帧的 JSON-RPC，工具 echo/慢/sse 由调用方按需选。 */
 const STDIO_SERVER = `
@@ -77,13 +77,7 @@ test('config parsing rejects garbage instead of silently connecting nothing', ()
   assert.deepEqual(parseServerConfig('').servers, [])
 })
 
-test('env expansion reports missing variables and host-injected servers win on name clashes', () => {
-  assert.deepEqual(expandEnv('a-${HAS}-b', { HAS: '1' }), { text: 'a-1-b', missing: [] })
-  assert.deepEqual(expandEnv('${NOPE}', {}).missing, ['NOPE'])
-  const merged = mergeServers([{ name: 'x', type: 'stdio', command: 'a' }], [{ name: 'x', type: 'http', url: 'b' }])
-  assert.deepEqual(merged, [{ name: 'x', type: 'http', url: 'b' }])
-  assert.equal(sanitizeName('My Server!'), 'My-Server')
-})
+
 
 test('flattenResult keeps text and marks errors without inventing structure', () => {
   const flat = flattenResult({ content: [{ type: 'text', text: 'hi' }, { type: 'image', mimeType: 'image/png' }] })

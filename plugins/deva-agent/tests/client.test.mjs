@@ -413,7 +413,7 @@ test('mcp view lists Studio servers, summarizes them, and saves the checked name
   const ctx = fakeContext('zh', rpc)
   const root = await mountPage(ctx)
 
-  assert.deepEqual(calls.map(([name]) => name), ['desktop-mcp-page', 'get-mcp-servers'], 'MCP 页读取两个来源但不读身份目录')
+  assert.deepEqual(calls.map(([name]) => name), ['get-mcp-servers'], 'MCP 页仅通过宿主清单 RPC 读取')
 
   // 顶部四张汇总卡：总计 / 已启用 / Studio 管理 / 工具
   const summary = findAll(root, node => node.className === 'deva-summary')[0]
@@ -960,13 +960,16 @@ test('memory page shows empty state and preserves draft on failed save', async (
   assert.ok(findAll(root, n => n.textContent === 'MEMORY_CORRUPT').length)
 })
 
-test('MCP page preserves same ID from desktop and Studio with source labels', async () => {
-  const root = await mountPage(fakeContext('zh', async name => name === 'desktop-mcp-page'
-    ? {servers:[{name:'same',source:'desktop',transport:'stdio',enabled:false}]}
-    : {servers:[server('same')],selected:[]}, {view:'mcp'}))
-  await new Promise(resolve=>setTimeout(resolve,0))
-  assert.equal(findAll(root,n=>n.tag==='h3'&&n.textContent==='same').length,2)
-  assert.ok(findAll(root,n=>n.textContent==='Studio 来源').length)
-  assert.ok(findAll(root,n=>String(n.textContent).includes('桌面来源')).length)
-  assert.ok(findAll(root,n=>String(n.textContent).includes('Studio 同名优先')).length)
+test('MCP page has one editable catalog and read-only desktop compatibility', async () => {
+  const calls = []
+  const root = await mountPage(fakeContext('zh', async name => {
+    calls.push(name)
+    return { servers: [server('same')], selected: [], desktopCompatibility: {
+      entries: [{ name: 'desktop-only', transport: 'stdio', enabled: true }], exists: true, path: 'fixture/mcp.json',
+    } }
+  }, { view: 'mcp' }))
+  assert.deepEqual(calls, ['get-mcp-servers'])
+  assert.equal(findAll(root, n => n.tag === 'h3' && n.textContent === 'same').length, 1)
+  assert.ok(findAll(root, n => String(n.textContent).includes('由桌面端管理')).length)
+  assert.equal(findAll(root, n => String(n.textContent).includes('Studio 同名优先')).length, 0)
 })

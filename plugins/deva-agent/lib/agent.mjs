@@ -21,9 +21,8 @@ import { formatSkillListing, listSkills } from './skills.mjs'
 import { formatFacts, projectFacts } from './project.mjs'
 import { runAgentTurn } from './loop.mjs'
 import { executeTool } from './tools.mjs'
-import { McpPool, parseServerConfig, mergeServers } from './mcp.mjs'
-import { ensureDevamcpStore, resolveDevamcpServers } from './mcp-store.mjs'
-import { resolveStudioServers } from './studio-mcp.mjs'
+import { McpPool, parseServerConfig } from './mcp.mjs'
+import { listStudioServers, readStoredMcpSelection } from './studio-mcp.mjs'
 
 function packageVersion() {
   try {
@@ -91,29 +90,25 @@ function makeExecute({ run, getPool, onToolSuccess }) {
 }
 
 /**
- * 连接本轮的 Studio 勾选，按 Profile 读取；同名优先用宿主本轮注入，未获勾选不连接。
- * 未在 Studio 登记的桌面服务保持兼容。
+ * 只连接宿主清单中的 Studio MCP（`/api/ekko/mcp/servers`），这是 Agent 侧唯一的 MCP 来源。
+ * 桌面 `~/.deva/mcp.json` 只做设置页只读兼容展示，不进入运行时；因此不存在同名两份配置互相覆盖。
+ * 用户保存过「本 Agent 使用」勾选时，按勾选过滤宿主清单；勾选只存服务名，不复制连接配置。
  * 连接跨轮复用；配置或凭证变了才重连。连接失败写进系统提示词，不中断对话。
  */
 async function runWithMcp({ run, input, system, workspaceDir, facts, identity, log, runTurn, mcp, onToolSuccess, checkpoint, model }) {
   const problems = []
-  await ensureDevamcpStore(run.config)
-  const own = resolveDevamcpServers({ config: run.config, log })
-  const injected = injectedServers(run.mcpServers)
-  let servers = mergeServers(own.servers, injected.servers)
-  problems.push(...own.problems, ...injected.problems)
-  if (typeof run.host?.request === 'function') {
-    try {
-      const catalog = await resolveStudioServers(run)
-      problems.push(...catalog.problems)
-      const remaining = servers.filter(server => !catalog.names.has(server.name))
-      const fresh = injected.servers.filter(server => catalog.selected.has(server.name))
-      servers = mergeServers(remaining, mergeServers(catalog.servers, fresh))
-    } catch {
-      // Do not connect a potentially stale copied config when Studio ownership cannot be checked.
-      servers = []
-      problems.push('无法读取 Studio MCP 清单；本轮不使用 MCP，请检查 Studio Profile 和 MCP 权限')
-    }
+  let servers = []
+  try {
+    const catalog = await listStudioServers(run.host)
+    const selected = await readStoredMcpSelection(run)
+    const wanted = selected === null ? null : new Set(selected)
+    const parsed = injectedServers(Object.fromEntries(catalog
+      .filter(server => server.enabled && (wanted === null || wanted.has(server.name)))
+      .map(server => [server.name, server.config])))
+    servers = parsed.servers
+    problems.push(...parsed.problems)
+  } catch (error) {
+    problems.push(`读取 Studio MCP 失败：${error.message}`)
   }
   // 记忆的角色层按本轮身份分区：把 id/名称一路带给工具层（runTurn 的默认实现就是 runAgentTurn）。
   const identityScope = { identityId: identity?.id ?? null, identityName: identity?.name ?? null }

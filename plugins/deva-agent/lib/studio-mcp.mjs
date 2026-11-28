@@ -15,10 +15,9 @@
  * 连接配置每次运行现取，用户在 Studio 或本页改完，下一轮即生效。
  * 失败一律显式暴露（RPC 报错 / 系统提示词的「MCP 连接状态」），不静默当成「没配服务」。
  */
-import { parseServerConfig } from './mcp.mjs'
 import { validateStored } from './storage-contracts.mjs'
 import { safeMcpError } from './mcp-secrets.mjs'
-import { isServerName, MAX_SELECTED_SERVERS } from './mcp-store.mjs'
+import { isServerName, MAX_SELECTED_SERVERS, readDesktopMcpCompatibility } from './mcp-store.mjs'
 
 const STORAGE_KEY = 'mcp'
 const SERVERS_PATH = '/api/ekko/mcp/servers'
@@ -41,9 +40,16 @@ function selectionStore({ state, identity }) {
   return state.profile.namespace(String(identity.userId))
 }
 
-async function readSelection(run, available) {
+/** 读取本 Agent 已保存的服务名；没有保存过时返回 null（由调用方决定默认值）。 */
+export async function readStoredMcpSelection(run) {
+  if (run.identity?.userId == null || typeof run.state?.profile?.namespace !== 'function') return null
   const stored = await selectionStore(run).get(STORAGE_KEY)
-  if (stored !== undefined) return validateStored('mcp', stored).servers
+  return stored === undefined ? null : validateStored('mcp', stored).servers
+}
+
+async function readSelection(run, available) {
+  const stored = await readStoredMcpSelection(run)
+  if (stored !== null) return stored
   return available.filter(item => item.enabled).map(item => item.name)
 }
 
@@ -170,7 +176,7 @@ export async function testStudioServer(host, { name }) {
 
 /** Mirrors the native Ekko MCP page: probe enabled servers via Studio, never run them in the settings handler.
  * A failed probe is unknown, not a zero; summary count is a lower bound if any probe failed. */
-export async function readStudioMcpPage(run) {
+export async function readStudioMcpPage(run, activationUserId) {
   const catalog = await listStudioServers(run.host)
   const selected = await readSelection(run, catalog)
   const byName = new Map(catalog.map(server => [server.name, server]))
@@ -183,17 +189,10 @@ export async function readStudioMcpPage(run) {
       return { ...summary, toolCountUnavailable: true }
     }
   }))
-  return { servers, selected: selected.filter(name => byName.get(name)?.enabled !== false) }
-}
-
-/** Resolve only selected services using the current Studio profile and host permissions.
- * A Studio name shadows a legacy Desktop copy even when it is not selected. */
-export async function resolveStudioServers(run) {
-  const catalog = await listStudioServers(run.host)
-  const selected = new Set(await readSelection(run, catalog))
-  const names = new Set(catalog.map(server => server.name))
-  const enabled = catalog.filter(s => s.enabled && selected.has(s.name))
-  const parsed = parseServerConfig({ mcpServers: Object.fromEntries(enabled.map(server => [server.name, server.config])) })
-  for (const name of selected) if (!names.has(name)) parsed.problems.push(`${name}: 在 Studio 里已不存在`)
-  return { ...parsed, names, selected: new Set(enabled.map(server => server.name)) }
+  // 桌面兼容视图只读；失败不影响 Studio 清单。
+  const owner = run.config?.sharedDevaUserId ?? activationUserId
+  const desktopCompatibility = owner === run.identity?.userId && Number.isSafeInteger(owner)
+    ? readDesktopMcpCompatibility(run.config)
+    : { path: '', exists: false, entries: [], error: 'DESKTOP_MCP_OWNER_REQUIRED' }
+  return { servers, selected: selected.filter(name => byName.get(name)?.enabled !== false), desktopCompatibility }
 }

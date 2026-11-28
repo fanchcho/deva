@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { listSkills, listSkillFiles, readSkill, toggleSkill, deleteSkill, formatSkillListing } from '../lib/skills.mjs'
-import { deleteDevamcpServer } from '../lib/mcp-store.mjs'
+import { deleteStudioServer } from '../lib/studio-mcp.mjs'
 import { safeMcpError } from '../lib/mcp-secrets.mjs'
 import { McpPool } from '../lib/mcp.mjs'
 const host = payload => ({ request: async () => payload })
@@ -11,7 +11,7 @@ test('old Studio catalog shapes and missing mutation acknowledgements never impl
   await assert.rejects(listSkillFiles(host({}), 'demo'), /files 数组/)
   await assert.rejects(toggleSkill(host({}), 'demo', false), /ok=true/)
   await assert.rejects(deleteSkill(host({}), 'demo'), /ok=true/)
-  assert.throws(() => deleteDevamcpServer({ sharedDevaHome: '/tmp/deva-compat-none' }, { name: 'demo' }), /not found/)
+  await assert.rejects(deleteStudioServer(host({}), { name: 'demo' }), /Studio MCP 请求失败/)
   await assert.rejects(readSkill(host({ skill: { name: 'demo' } }), 'demo'), /content/)
 })
 test('Studio error envelopes retain skill reasons and become named MCP status failures', async () => {

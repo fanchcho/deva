@@ -55,8 +55,7 @@ Studio MCP 连接配置保留在宿主，旧桌面 MCP 文件不迁入 Studio。
   `tool.started`、`tool.completed`、`tool.failed`。
 - `run.interactions.clarify`：`ask_user` 的唯一通道；`dismissed`/`cancelled`/`timeout`
   如实回给模型，绝不改成「默认同意」。
-- `run.mcpServers`：宿主注入的 MCP 服务（由宿主按运行入口决定，不假设普通对话一定为空）；插件把它与
-  MCP 页勾选的 Studio 服务合并（同名宿主优先）后自行连接；坏配置的原因写进「MCP 连接状态」。
+- `run.mcpServers`：宿主注入的 MCP 服务（由宿主按运行入口决定，不假设普通对话一定为空）；插件不单独连接该注入清单，统一读取 MCP 页相同的宿主服务表；坏配置的原因写进「MCP 连接状态」。
   配置不变时在同一会话内跨轮复用，配置或凭证变化时重连，会话释放时断开。
 - `run.host.request`：读写 Studio MCP 服务表（`/api/ekko/mcp/servers*`，读需 `api.read`、写需
   `api.write`）；没有宿主通道时相关 RPC 与设置页直接报错。
@@ -118,7 +117,7 @@ Studio MCP 连接配置保留在宿主，旧桌面 MCP 文件不迁入 Studio。
 | persona 内容 | `<root>/personas/<id>.md`（frontmatter + 正文） |
 | 默认 persona | `<root>/config.json → personas.selected` |
 | 会话选择 | `<root>/config.json → personas.sessionSelected[sessionId]` |
-| MCP | Studio API 为权威；桌面 mcp.json 仅在 Studio 无同名项时遗留兜底 |
+| MCP | Studio API 为唯一来源；桌面 mcp.json 只读展示 |
 | 模型 | `<root>/config.json → models.*` |
 | 密钥 | `<root>/secrets.json`（桌面 safeStorage 加密；0.8.44 起插件**只读**：按 providerId 取密文并按需 DPAPI 解密，明文只在内存、不写回、不落库、不进日志、不回前端） |
 
@@ -216,7 +215,7 @@ Studio MCP 连接配置保留在宿主，旧桌面 MCP 文件不迁入 Studio。
 | `run_subagent` / `send_to_subagent` | 复用 `runAgentTurn` 跑隔离子轮：自己的系统提示词与历史（fork 继承主对话），工具表按类型收窄且剔除交互/派生/记忆写删/技能/待办，MCP 工具全量附加；子轮 `silent`，事件不进主对话流；`depth>0` 拒绝再派生；结论 ≤20000 字符并截断标注；派发记录写 `state.agentSession` 的 `subagents`（最近 20 个），记录里保存的是子轮自己的完整消息数组（含它每轮的结论），续聊据此接上 |
 | MCP 工具 | 参数与结果都当数据；单次调用 60s 超时；成功结果超 30000 字符同样落盘 + 首尾预览（错误文本原样回给模型）；服务连接失败只写进系统提示词 |
 
-Studio 权威清单来自 `GET /api/ekko/mcp/servers`，按当前调用者的 Profile 与权限执行。可用工具由 Studio 原生 `/test` 执行 `tools/list`；探测失败计数未知，清单 401/403、结构异常和服务错误都不是空态。桌面 `mcp.json` 保留，只消费 Studio 清单中无同名项的桌面服务。宿主本轮注入与 Studio 已勾选服务同名时优先使用其配置，不落盘。
+Studio 权威清单来自 `GET /api/ekko/mcp/servers`，按当前调用者的 Profile 与权限执行。可用工具由 Studio 原生 `/test` 执行 `tools/list`；探测失败计数未知，清单 401/403、结构异常和服务错误都不是空态。桌面文件只读展示；运行时每轮读取同一宿主清单，不合并桌面或注入副本。
 
 ## Deva MCP（RPC）
 
@@ -310,7 +309,7 @@ Agent 会话在 `session.lifecycle` 登记幂等清理函数，与显式 `dispos
 
 MCP/Skill 清单必须包含 servers/skills 数组，支持文件清单必须包含 files 数组；旧结构和 ok:false 明确报错，不能当作空表。删除 MCP、删除/启停 Skill 必须收到 ok:true 才报告成功。skill_view 缺少正文或宿主标记 invalid 时明确失败并保留宿主原因。
 
-技能清单每轮重新向 Studio 读取，原生页面启停/删除下一轮立即生效；只向提示词注入启用且有效技能的 name 与 description，不缓存正文或复制技能。MCP 每轮取最新配置，同名注入优先；缺失环境变量（含 HTTP headers）完整列出变量名，HTTP 401/403/404/405 保留可诊断类别，任意 stderr/连接配置不进入日志。
+技能清单每轮重新向 Studio 读取，原生页面启停/删除下一轮立即生效；只向提示词注入启用且有效技能的 name 与 description，不缓存正文或复制技能。MCP 每轮取宿主清单最新配置；缺失环境变量（含 HTTP headers）完整列出变量名，HTTP 401/403/404/405 保留可诊断类别，任意 stderr/连接配置不进入日志。
 
 运行日志仅记录 surface、宿主通道是否存在及注入服务名，不记录模型代理凭据、MCP env/headers 或技能正文。页面 RPC 的成功不能证明 Desktop 页面已挂载；需独立 Desktop 授权验收。
 
@@ -449,10 +448,8 @@ Windows 桌面端的 safeStorage **不是**“明文直接 DPAPI 后写盘”。
 回滚插件可重新访问旧宿主数据；新桌面文件仍保留，不自动反向覆盖旧数据。
 桌面服务不使用插件锁，不能保证两个应用在检查与 rename 的极短窗口内同时写不冲突；未声称分布式事务保证。
 
-## MCP 双来源设置页
+## MCP 单一来源与桌面兼容
 
-MCP 页现在合并展示两个独立来源分区：桌面 ~/.deva 和 Studio。桌面使用 mcp.json 的 mcpServers[id]，启用态使用 config.json 的 mcp.enabled[id]；Studio 继续使用已有宿主 API，不复制内容。
-按 (source, stable ID) 区分，桌面 ID 是映射键，Studio ID 是 name。同源映射天然唯一，宿主重复 ID 仍明确报错；跨来源同名保留两条且分别可编辑。运行时沿用 Studio 同名优先，即使未勾选 Studio 同名服务，也不会偷偷启用桌面同名副本。
-新增 desktop-mcp-page RPC，action=list/get/create/update/delete/toggle，owner 取 sharedDevaUserId 或激活账号，沿用 32/128 RPC 门禁。输入输出见契约。桌面编辑保留未知字段、secretRef 和其他条目顺序；env/header 详情仍仅显示掩码，省略/掩码保留，null 清除。
-文件使用现有 writeAtomic（临时文件、fsync、rename、锁与原内容比较），损坏 JSON/结构只读保护。连接文件与启用态分文件写，第二步失败尝试条件回滚并明确报错；不是跨进程双文件事务。删除同时清理 enabled/roles 引用；不删除或解密桌面 secrets.json，避免跨应用密钥破坏。外部写入不会触发桌面进程内部 changeListener；桌面重新读取可见，实时连接重建未保证。
-页面各来源独立加载，桌面读取失败不隐藏宿主服务。刷新同时重新获取两来源。桌面分区新增写共享文件；Studio 分区已有新增/编辑仍写宿主。
+Studio `/api/ekko/mcp/servers` 是唯一可管理、可运行的 MCP 清单。新增、编辑、启停、删除、测试全部通过宿主 API；Agent 勾选只在当前用户/Profile 保存名称，不复制配置。每轮重新读取宿主清单并应用启用位及勾选；显式空勾选不连接任何服务，读取失败不回退桌面文件或其他注入清单。
+
+桌面 `mcp.json → mcpServers[id]` 与 `config.json → mcp.enabled[id]` 仅提供只读说明，标注「来自桌面配置、由桌面端管理」。仅共享目录拥有者可读取此说明；没有桌面 CRUD RPC，不迁移、不 chmod、不连接。原文件的 `{secretRef}`、未知字段、顺序和启用位均保留。宿主配置规范仅接受字符串 env/headers，并裁剪未知字段，因此无法无损自动导入；用户需在 Studio 原版或本页显式配置所需服务。旧 `deva-agent/` 身份迁移流程不属于此 MCP 读取路径。

@@ -94,14 +94,6 @@ export function parseServerConfig(raw) {
   return { servers, problems }
 }
 
-/** 宿主注入的 run.mcpServers 与配置表合并：同名时宿主优先（本轮凭证更新）。 */
-export function mergeServers(configured, injected) {
-  const merged = new Map()
-  for (const server of configured) merged.set(server.name, server)
-  for (const server of injected) merged.set(server.name, server)
-  return [...merged.values()]
-}
-
 /** 键顺序无关的规范化，保证同一份配置每次得到同样的指纹。 */
 function canonicalValue(value) {
   if (Array.isArray(value)) return value.map(canonicalValue)

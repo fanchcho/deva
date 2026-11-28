@@ -75,7 +75,7 @@ Studio 直连只支持有明确 Base URL 的 OpenAI Chat Completions 模型。�
 | `skill_manage` | 创建 / 更新 / 启停 / 删除 Studio 技能；只写 SKILL.md 正文，内置技能只读 |
 | `run_subagent` | 在隔离上下文里跑一个子智能体（General / Explore / Research / Plan / fork），只把结论交回主轮；前台执行，可并行发起多个 |
 | `send_to_subagent` | 给已派出的子智能体续聊，让它在保留自己上下文的基础上继续；记录存在本会话（最近 20 个） |
-| `mcp__<服务>__<工具>` | 本轮连接的 MCP 服务工具（stdio / Streamable HTTP / 旧版 SSE），来自 MCP 页勾选的 Studio 服务与宿主注入 |
+| `mcp__<服务>__<工具>` | 本轮连接的 MCP 服务工具（stdio / Streamable HTTP / 旧版 SSE），来自 MCP 页勾选的 Studio 服务 |
 
 工程事实里的 `docs/PROJECT-MAP.md` 与 `docs/FUNCTION-INDEX.md` 是本地生成物，不入库；
 工作区里存在时才会出现在系统提示词与 `deva_project` 速览里，不存在就静默跳过，不影响其他能力。
@@ -84,7 +84,7 @@ Studio 直连只支持有明确 Base URL 的 OpenAI Chat Completions 模型。�
 
 **Studio → Deva → MCP** 显示原生 `/ekko/mcp` 的服务及内置项，并由 Studio 探测已启用服务的工具数。卡片的新增、编辑、启停、测试和删除走官方 Studio 接口，受同样的权限约束。**保存勾选**只改当前账号与 Profile 的 Deva 服务名单；不会启停宿主。未保存过勾选时默认继承所有启用服务，显式空勾选不连接任何 Studio 服务。
 
-既有的桌面 `mcp.json` 保留；未在 Studio 登记的桌面服务仍可按桌面启用位使用。与 Studio 同名的旧副本不会覆盖 Studio 配置或绕过勾选。宿主本轮注入的同名配置可用于刷新连接凭据，不写入磁盘。
+既有桌面 `mcp.json` 仅只读展示，由桌面端管理，不参与 Agent 运行。
 
 配置里的 `${VAR}`（环境变量与请求头的值）从插件进程环境展开；变量缺失时该服务连接失败并在
 系统提示词的「MCP 连接状态」里点名缺哪个变量，不会静默跳过。连接失败只影响该服务，不中断对话。
@@ -160,7 +160,7 @@ Gemini 3 起每步的第一个工具调用必须带思考签名，缺了整个�
 | 默认 persona | `config.json → personas.selected`（personas 段内的扩展键；桌面 `getConfig()` 可读，`writeEnabledMap` 合并保留） |
 | 会话选择 | `config.json → personas.sessionSelected[sessionId]` |
 | persona 启停/排序 | `config.json → personas.enabled/order` |
-| MCP | Studio API 为权威；桌面 mcp.json 仅兼容未在 Studio 登记的旧服务 |
+| MCP | Studio API 为唯一来源；桌面 mcp.json 只读展示 |
 | 模型 | `config.json → models.providers/activeModelId` |
 | 密钥 | 桌面 `secrets.json`（插件不读写密文） |
 

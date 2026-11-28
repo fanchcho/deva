@@ -1,4 +1,3 @@
-import { registerDesktopMcp } from './lib/desktop-mcp-settings.mjs'
 import { registerMemorySettings } from './lib/memory-settings.mjs'
 import { registerSkillSettings } from './lib/skill-settings.mjs'
 import { discoverModels } from './lib/model-discovery.mjs'
@@ -45,7 +44,6 @@ export function apply(ctx) {
   const activationUserId = ctx.identity?.userId
   ctx.log.info(`deva: 激活通道 ctx.host.request=${typeof ctx.host?.request === 'function'}`)
   registerMemorySettings(ctx, contract)
-  registerDesktopMcp(ctx, contract)
   registerCompression(ctx)
   registerSkillSettings(ctx, contract)
   registerRpc(ctx, contract, 'list-provider-models', (input, run) => discoverModels(run, input))
@@ -101,7 +99,7 @@ export function apply(ctx) {
     return { ok: true, sessionId, identity: snapshot.selected }
   })
   // Settings and selection use the current caller's Studio catalog, never a copied file.
-  registerRpc(ctx, contract, 'get-mcp-servers', (_input, run) => readStudioMcpPage(run))
+  registerRpc(ctx, contract, 'get-mcp-servers', (_input, run) => readStudioMcpPage(run, ctx.identity?.userId))
   registerRpc(ctx, contract, 'save-mcp-selection', (input, run) => saveStudioSelection(run, input.servers))
   registerRpc(ctx, contract, 'get-mcp-server', async (input, run) => {
     const server = await getStudioServer(run.host, input.name)

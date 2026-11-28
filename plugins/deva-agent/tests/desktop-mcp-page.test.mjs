@@ -1,51 +1,32 @@
-import './support/memory-home.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { writeFileSync, readFileSync, statSync, mkdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { desktopMcpPage } from '../lib/desktop-mcp-settings.mjs'
-import { SECRET_MASK } from '../lib/mcp-secrets.mjs'
-const run = () => ({ config: { sharedDevaHome: process.env.DEVA_HOME }, identity: { userId: 1 } })
-const call = input => desktopMcpPage(input, run(), 1)
-const path = name => join(process.env.DEVA_HOME, name)
-const read = name => JSON.parse(readFileSync(path(name)))
-const seed = () => {
-  writeFileSync(path('mcp.json'), JSON.stringify({ extra: 7, mcpServers: { same: { name:'桌面显示名',description:'keep',transport:'stdio',command:'node',args:[],env:{TOKEN:{secretRef:'token'}},future:{keep:true}}, other:{name:'Other',transport:'http',url:'https://example.com/mcp'} } }))
-  writeFileSync(path('config.json'), JSON.stringify({theme:'dark',mcp:{extra:8,enabled:{same:true,other:false},roles:{same:['general'],other:['general']}}}))
+import { isolatedDevaHome } from './support/deva-home.mjs'
+import { readDesktopMcpCompatibility } from '../lib/mcp-store.mjs'
+const root = isolatedDevaHome()
+const config = { sharedDevaHome: root }
+test('desktop compatibility preserves bytes, modes, secretRef, unknown fields and enabled state', () => {
+  const input = { extra: 7, mcpServers: { same: { command: 'node', env: { TOKEN: { secretRef: 'token' } }, future: { keep: true } }, other: { url: 'https://example.com' } } }
+  writeFileSync(join(root, 'mcp.json'), JSON.stringify(input), { mode: 0o644 })
+  writeFileSync(join(root, 'config.json'), JSON.stringify({ mcp: { enabled: { same: true, other: false }, extra: 9 } }))
+  const before = ['mcp.json', 'config.json'].map(name => [readFileSync(join(root, name), 'utf8'), statSync(join(root, name)).mode])
+  const result = readDesktopMcpCompatibility(config, { studioNames: ['same'] })
+  assert.deepEqual(result.entries, [{ name: 'same', transport: 'stdio', enabled: true }, { name: 'other', transport: 'http', enabled: false }])
+  assert.doesNotMatch(JSON.stringify(result), /secretRef|token|future/)
+  assert.deepEqual(readDesktopMcpCompatibility(config, { studioNames: ['same'] }), result)
+  assert.deepEqual(['mcp.json', 'config.json'].map(name => [readFileSync(join(root, name), 'utf8'), statSync(join(root, name)).mode]), before)
+  mkdirSync(join(root, 'deva-agent'))
+  writeFileSync(join(root, 'deva-agent', 'mcp-servers.json'), '{"servers":{}}')
+  readDesktopMcpCompatibility(config)
+  assert.equal(existsSync(join(root, 'deva-agent', 'mcp-servers.json')), true)
+})
+for (const [file, content] of [['mcp.json', '{bad'], ['mcp.json', '{"mcpServers":[]}'], ['config.json', '{bad']]) {
+  test(`invalid ${file} returns an explicit read error without writing`, () => {
+    writeFileSync(join(root, 'mcp.json'), '{"mcpServers":{"ok":{"command":"node"}}}')
+    writeFileSync(join(root, 'config.json'), '{}')
+    writeFileSync(join(root, file), content)
+    assert.ok(readDesktopMcpCompatibility(config).error)
+    assert.equal(readFileSync(join(root, file), 'utf8'), content)
+  })
 }
-test('desktop MCP file CRUD preserves secretRef, unknown fields, order and separate enabled state', () => {
-  seed()
-  assert.equal(call({action:'list'}).servers[0].source,'desktop')
-  const config=call({action:'get',name:'same'}).config
-  assert.equal(config.env.TOKEN,SECRET_MASK)
-  call({action:'update',name:'same',config:{...config,command:'new-node',enabled:false}})
-  const data=read('mcp.json');assert.equal(data.extra,7);assert.deepEqual(Object.keys(data.mcpServers),['same','other']);assert.deepEqual(data.mcpServers.same.env.TOKEN,{secretRef:'token'});assert.deepEqual(data.mcpServers.same.future,{keep:true});assert.equal(data.mcpServers.same.name,'桌面显示名')
-  assert.equal(read('config.json').theme,'dark');assert.equal(read('config.json').mcp.extra,8);assert.equal(read('config.json').mcp.enabled.same,false)
-  call({action:'toggle',name:'same',enabled:true});assert.equal(read('config.json').mcp.enabled.same,true)
-  call({action:'create',name:'new',config:{type:'http',url:'https://example.com',enabled:false}})
-  assert.equal(read('mcp.json').mcpServers.new.transport,'http')
-  call({action:'delete',name:'same'});assert.equal(read('mcp.json').mcpServers.same,undefined);assert.equal(read('config.json').mcp.enabled.same,undefined);assert.equal(read('config.json').mcp.roles.same,undefined);assert.deepEqual(read('config.json').mcp.roles.other,['general'])
-})
-for (const [file,raw] of [['mcp.json','{bad'],['mcp.json','{"mcpServers":[]}'],['config.json','{bad'],['config.json','{"mcp":{"enabled":[]}}']]) test(`desktop MCP protects invalid ${file}: ${raw}`,()=>{
-  seed();writeFileSync(path(file),raw);const before=readFileSync(path('mcp.json'),'utf8');const cfg=readFileSync(path('config.json'),'utf8')
-  assert.throws(()=>call({action:'update',name:'same',config:{type:'stdio',command:'new'}}))
-  assert.equal(readFileSync(path('mcp.json'),'utf8'),before);assert.equal(readFileSync(path('config.json'),'utf8'),cfg)
-})
-test('desktop MCP owner gate denies other accounts without exposing configuration',()=>{seed();assert.throws(()=>desktopMcpPage({action:'list'},run(),2),/OWNER/)} )
-test('real desktop upsert fixture is readable through plugin page',()=>{
-  writeFileSync(path('mcp.json'),readFileSync(new URL('./fixtures/mcp-desktop.json',import.meta.url)))
-  const result=call({action:'list'});assert.equal(result.servers[0].name,'interop')
-  const detail=call({action:'get',name:'interop'});assert.equal(detail.config.env.TOKEN,SECRET_MASK)
-})
-test('failed enabled write rolls connection file back and never returns success', async()=>{
-  const { acquireFileLock }=await import('../lib/file-lock.mjs')
-  seed();const before=readFileSync(path('mcp.json'),'utf8');const release=acquireFileLock(path('config.json'))
-  try {assert.throws(()=>call({action:'update',name:'same',config:{type:'stdio',command:'changed'}}));assert.equal(readFileSync(path('mcp.json'),'utf8'),before)} finally {release()}
-})
-test('same-source stable IDs reject duplicates and runtime merge keeps Studio priority', async()=>{
-  const { mergeServers }=await import('../lib/mcp.mjs')
-  seed();assert.throws(()=>call({action:'create',name:'same',config:{type:'stdio',command:'x'}}),/already exists/)
-  const desktop={name:'same',command:'desktop'},studio={name:'same',command:'studio'}
-  const merged=mergeServers([desktop,{name:'desktop-only'}],[studio])
-  assert.equal(merged.filter(x=>x.name==='same').length,1);assert.equal(merged.find(x=>x.name==='same').command,'studio');assert.ok(merged.some(x=>x.name==='desktop-only'))
-})

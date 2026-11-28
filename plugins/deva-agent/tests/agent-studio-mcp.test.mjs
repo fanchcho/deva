@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createAgentDefinition } from '../lib/agent.mjs'
-import { createDevamcpServer, updateDevamcpServer } from '../lib/mcp-store.mjs'
+
 import { isolatedDevaHome } from './support/deva-home.mjs'
 
 // 这些用例跑真实 Agent：身份文件要落在临时根，不能写进真实 ~/.deva。
@@ -58,7 +58,7 @@ function fakeRunTurn() {
   return { calls, runTurn }
 }
 
-test('invalid host-injected MCP configuration is reported in the system prompt', async () => {
+test('invalid Studio catalog MCP configuration is reported in the system prompt', async () => {
   const { dir, cleanup } = await workspace()
   const { calls, runTurn } = fakeRunTurn()
   const definition = createAgentDefinition({ runTurn, log: { info() {}, warn() {} } })
@@ -68,7 +68,7 @@ test('invalid host-injected MCP configuration is reported in the system prompt',
       mode: 'scoped', model: { baseUrl: 'http://127.0.0.1:1', token: 'test', model: 'test' },
       paths: { workspaceDir: dir, runtimeDir: dir }, state: memoryState(),
       identity: { userId: 1, profile: 'default' }, signal: new AbortController().signal,
-      mcpServers: { broken: { type: 'stdio' }, unknown: { type: 'carrier-pigeon' } },
+      host: { request: async path => path === '/api/ekko/skills' ? { skills: [] } : { ok: true, servers: [{ name: 'broken', config: { type: 'stdio' } }, { name: 'unknown', config: { type: 'carrier-pigeon' } }] } },
     })
     assert.equal(calls.length, 1)
     assert.match(calls[0], /broken: stdio 缺少 command/)
@@ -79,15 +79,15 @@ test('invalid host-injected MCP configuration is reported in the system prompt',
   }
 })
 
-test('插件自带 MCP 连不上时写进 MCP 状态段，不中断对话', async () => {
+test('Studio MCP 连不上时写进 MCP 状态段，不中断对话', async () => {
   const { dir, cleanup } = await workspace()
   const config = { sharedDevaHome: join(dir, '.deva') }
   try {
     const { calls, runTurn } = fakeRunTurn()
     const definition = createAgentDefinition({ runTurn, log: { info() {}, warn() {} } })
     const session = await definition.runtime.createSession({ identity: { userId: 1, profile: 'default', sessionId: 's1' }, paths: { workspaceDir: dir } })
-    // 插件自己的 MCP：指向不可达端口，运行时要如实点名
-    createDevamcpServer(config, { name: 'bad', config: { type: 'http', url: 'http://127.0.0.1:1' } })
+    // Studio MCP：指向不可达端口，运行时要如实点名
+    const catalog = [{ name: 'bad', config: { type: 'http', url: 'http://127.0.0.1:1' } }]
     const run = {
       mode: 'scoped',
       config,
@@ -99,7 +99,7 @@ test('插件自带 MCP 连不上时写进 MCP 状态段，不中断对话', asyn
       output: { emit: async () => {} },
       attachments: { resolve: async () => ({}), read: async () => new Uint8Array() },
       mcpServers: {},
-      host: { async request(path) { return path === '/api/ekko/mcp/servers' ? { ok: true, servers: [] } : { skills: [] } } },
+      host: { async request(path) { return path === '/api/ekko/mcp/servers' ? { ok: true, servers: catalog } : { skills: [] } } },
     }
     await session.run({ input: [{ type: 'text', text: '你好' }], history: [], instructions: [], options: {} }, run)
     assert.equal(calls.length, 1)
@@ -140,7 +140,7 @@ test('Studio 和桌面 MCP 均为空时不产生 MCP 状态噪声', async () => 
   }
 })
 
-test('插件自带 MCP 连接跨轮复用；配置变更后重建连接', async () => {
+test('Studio MCP 连接跨轮复用；配置变更后重建连接', async () => {
   const { dir, cleanup } = await workspace()
   const serverFile = join(dir, 'server.mjs')
   const startsFile = join(dir, 'starts.log')
@@ -148,10 +148,10 @@ test('插件自带 MCP 连接跨轮复用；配置变更后重建连接', async 
   const starts = async () => (await readFile(startsFile, 'utf8')).trim().split('\n').filter(Boolean).length
   try {
     const config = { sharedDevaHome: join(dir, '.deva') }
-    createDevamcpServer(config, {
+    const catalog = [{
       name: 'fake',
       config: { type: 'stdio', command: process.execPath, args: [serverFile], env: { START_LOG: startsFile, TOKEN: 'v1' } },
-    })
+    }]
     const turns = []
     const runTurn = async ({ extraTools, execute }) => {
       turns.push(extraTools.map(tool => tool.name))
@@ -171,7 +171,7 @@ test('插件自带 MCP 连接跨轮复用；配置变更后重建连接', async 
       output: { emit: async () => {} },
       attachments: { resolve: async () => ({}), read: async () => new Uint8Array() },
       mcpServers: {},
-      host: { async request(path) { return path === '/api/ekko/mcp/servers' ? { ok: true, servers: [] } : { skills: [] } } },
+      host: { async request(path) { return path === '/api/ekko/mcp/servers' ? { ok: true, servers: catalog } : { skills: [] } } },
     })
     const input = text => ({ input: [{ type: 'text', text }], history: [], instructions: [], options: {} })
 
@@ -180,8 +180,8 @@ test('插件自带 MCP 连接跨轮复用；配置变更后重建连接', async 
     assert.deepEqual(turns, [['mcp__fake__echo'], ['mcp__fake__echo']])
     assert.equal(await starts(), 1, '同一配置的第二轮不应重连')
 
-    // 插件存储里的配置变了：指纹变化，必须重建连接
-    updateDevamcpServer(config, { name: 'fake', config: { type: 'stdio', command: process.execPath, args: [serverFile], env: { START_LOG: startsFile, TOKEN: 'v2' } } })
+    // 宿主清单里的配置变了：指纹变化，必须重建连接
+    catalog[0].config.env.TOKEN = 'v2'
     await session.run(input('三'), runFor('r3'))
     assert.equal(await starts(), 2)
     await session.dispose()
@@ -261,6 +261,7 @@ test('failed skill listing retries next turn and refreshes the recovered listing
       paths: { workspaceDir: dir, runtimeDir: dir }, state,
       identity: { userId: 1, profile: 'default' }, signal: new AbortController().signal,
       host: { async request(path) {
+        if (path === '/api/ekko/mcp/servers') return { ok: true, servers: [] }
         assert.equal(path, '/api/ekko/skills')
         requests++
         if (requests === 1) throw new Error('temporary unavailable')
@@ -293,4 +294,31 @@ test('session lifecycle releases the agent and repeated disposal is safe', async
     await session.dispose()
     await assert.rejects(session.run({}, {}), /已释放/)
   } finally { await cleanup() }
+})
+
+test('runtime ignores desktop and injected duplicates, honors empty selection and host disable', async () => {
+  const { dir, cleanup } = await workspace()
+  const { mkdir } = await import('node:fs/promises')
+  const home = join(dir, '.deva')
+  await mkdir(home)
+  const raw = JSON.stringify({ mcpServers: { same: { command: 'never-launch-desktop', env: { K: { secretRef: 'keep' } } } } })
+  await writeFile(join(home, 'mcp.json'), raw)
+  await writeFile(join(home, 'config.json'), JSON.stringify({ mcp: { enabled: { same: true } } }))
+  const state = memoryState(), systems = []
+  const definition = createAgentDefinition({ runTurn: async ({ system, extraTools = [] }) => { systems.push(system); assert.deepEqual(extraTools, []); return { finishReason: 'stop', content: [] } }, log: { info() {}, warn() {} } })
+  const session = await definition.runtime.createSession({ identity: { sessionId: 'single' }, paths: { workspaceDir: dir } })
+  let enabled = false
+  const run = { config: { sharedDevaHome: home }, mode: 'scoped', model: { baseUrl: 'http://127.0.0.1:1', token: 'test', model: 'test' }, state,
+    paths: { workspaceDir: dir, runtimeDir: dir }, identity: { userId: 1, profile: 'default' }, signal: new AbortController().signal,
+    mcpServers: { same: { command: 'never-launch-injected' } },
+    host: { request: async path => path.endsWith('/skills') ? { skills: [] } : { ok: true, servers: [{ name: 'same', config: { command: 'never-launch-host', enabled } }] } },
+  }
+  try {
+    await session.run({ input: [], history: [], instructions: [] }, run)
+    enabled = true
+    await state.profile.namespace('1').set('mcp', { servers: [] })
+    await session.run({ input: [], history: [], instructions: [] }, run)
+    assert.ok(systems.every(system => !system.includes('## MCP 连接状态')))
+    assert.equal(await readFile(join(home, 'mcp.json'), 'utf8'), raw)
+  } finally { await session.dispose(); await cleanup() }
 })
