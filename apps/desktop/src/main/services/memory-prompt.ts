@@ -51,6 +51,7 @@ export function memoryPromptSection(access: MemoryAccess, root: string | null): 
 
   // ── 使用
   lines.push(
+    '写满时冷记忆会移入遗忘区，不再注入正文；memory_recall 按关键词或 id 查原文，memory_check 只读体检，memory_merge 合并同层条目且原文保留。',
     '【记忆的使用】记忆不在此处列出，而是随对话消息附带：「【记忆】」给出全部条目的索引（id、类型、标题），之后的变化以「【记忆更新】」告知，以最近的告知为准' +
       (anyRw ? '；你自己用 memory_write / memory_delete 做的改动以工具结果为准，不会另行告知' : '') +
       '。做事方式类附了正文，其余正文需要时用 `memory_read` 按 id 读取——处理与某条记忆相关的任务前，先读它的正文。对话中没有附带任何记忆，说明还没有记忆。',

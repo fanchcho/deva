@@ -67,10 +67,10 @@ export async function writeMemoryWithConsolidation(
   model: CompactModelConfig | undefined,
   signal?: AbortSignal
 ): Promise<{ result: MemoryWriteResult; consolidated?: ConsolidateStats; failure?: string }> {
-  const first = writeMemory(input, id, scope)
+  const first = writeMemory(input, id, scope, !model)
   if (first.ok || (first.code !== 'full' && first.code !== 'budget') || !model) return { result: first }
   const c = await consolidate(scope, input, id, model, signal)
-  if (!c.ok) return { result: first, failure: c.reason }
+  if (!c.ok) return { result: writeMemory(input, id, scope), failure: c.reason }
   // 要更新的那条可能已被并进别的条目：那就按新增写入（新增须带类型，取原条目的）。
   const exists = id ? listMemories(scope).some((e) => e.id === id) : false
   const retry = exists || !id ? input : { type: input.type ?? 'user', ...input }
@@ -119,7 +119,7 @@ async function run(
     }
     const after = mergeConcurrent(before, parsed.entries, listMemories(scope))
     const backup = backupMemories(scope, listMemories(scope))
-    replaceMemories(scope, after)
+    replaceMemories(scope, after, true)
     return {
       ok: true,
       before: { count: before.length, used: memoryUsage(before) },

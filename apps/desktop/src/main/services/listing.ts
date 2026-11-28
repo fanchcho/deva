@@ -1,3 +1,4 @@
+import { markMemoriesSeen, listArchive } from './memory'
 /**
  * 清单随消息下发（对标 Claude Code 的 skill_listing / deferred_tools_delta 附件）：技能清单、记忆条目、
  * 成员名单，以及按需加载工具的用法已告知到哪些（guidesAnnounced，见 tool-search.ts）。
@@ -201,16 +202,24 @@ export function memoryListingPart(history: Message[], access: MemoryAccess, root
     const r = withinBudget(listMemories(scope), memoryLimits(scope).budget)
     omitted += r.omitted
     items.push(...r.kept.map((entry) => ({ entry, layer })))
+    const archive = listArchive(scope)
+    if (archive.length) items.push({ layer, entry: {
+      id: `archive_${layer}`, type: 'reference', body: '', createdAt: 0, updatedAt: 0,
+      title: `遗忘区 ${archive.length} 条：${archive.slice(-3).map(e => e.title.slice(0, 10)).join(' / ')}；用 memory_recall 查原文`
+    } })
   }
   const d = diffListing(history, 'memory', items, (i) => i.entry.id, (i) => memoryDigestText(i.entry))
   if (!d) return null
 
+  for (const { layer, scope } of scopes) markMemoriesSeen(scope, items.filter(i => i.layer === layer).map(i => i.entry.id))
+  const archivedCount = scopes.reduce((n, { scope }) => n + listArchive(scope).length, 0)
   const bodies = feedbackWithBody(items.map((i) => i.entry))
   const lines = [
     d.initial
       ? '【记忆】以下是当前的记忆索引（方括号里是 id，用于 memory_read 读取正文、memory_write 更新、memory_delete 删除）。做事方式类附了正文，其余正文需要时用 memory_read 按 id 读取：'
       : '【记忆更新】'
   ]
+  if (archivedCount) lines.push('遗忘区有 ' + archivedCount + ' 条完整记忆，可用 memory_recall 召回、memory_check 体检。')
   const tag = d.initial ? '' : '（新增或内容有更新）'
   const label: Record<MemoryLayer, string> = {
     global: '全局记忆',

@@ -1,3 +1,4 @@
+import { MemoryArchive } from './MemoryArchive'
 import { useState } from 'react'
 import { useI18n } from '../i18n/i18n'
 import { MemoryDetail } from './MemoryDetail'
@@ -20,6 +21,7 @@ export function RoleMemoryList({ personaId, list }: { personaId: string; list: M
 
   return (
     <>
+      <MemoryArchive scope={{ personaId }} onChanged={list.apply} />
       {entries.map((e) => (
         <button key={e.id} type="button" className="cf-convrow" title={e.title} onClick={() => setOpenId(e.id)}>
           <span className="cf-convrow__title">{e.title}</span>

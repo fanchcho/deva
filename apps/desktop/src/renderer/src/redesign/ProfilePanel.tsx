@@ -1,3 +1,5 @@
+import { useChatState } from '../store/chat'
+import { MemoryArchive } from './MemoryArchive'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ImagePlus } from 'lucide-react'
 import type { MemoryEntry } from '../../../preload'
@@ -20,6 +22,7 @@ export function ProfilePanel({ onClose }: { onClose: () => void }): React.JSX.El
   const { t } = useI18n()
   const toast = useToast()
   const profile = useProfile()
+  const { currentBinding } = useChatState()
 
   const [editingAvatar, setEditingAvatar] = useState(false)
   const [savingAvatar, setSavingAvatar] = useState(false)
@@ -99,6 +102,8 @@ export function ProfilePanel({ onClose }: { onClose: () => void }): React.JSX.El
               />
             ) : (
               <>
+                <MemoryArchive onChanged={apply} />
+                {currentBinding.focusRoot && <MemoryArchive scope={currentBinding.focusRoot} onChanged={apply} />}
                 <MemoryBoard
                   avatar={
                     <button

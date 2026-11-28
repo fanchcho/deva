@@ -9,7 +9,7 @@ import { resolveExecShell } from './exec-policy'
 import { spillLongOutput } from './tool-results'
 import { skillsDir, upsertSkill } from './skills'
 import type { MemoryAccess } from './memory'
-import { MEMORY_TOOL_SPECS, memoryDeleteTool, memoryReadTool, memoryWriteTool } from './memory-tools'
+import { MEMORY_TOOL_SPECS, memoryRecallTool, memoryCheckTool, memoryMergeTool, memoryTidyTool, memoryDeleteTool, memoryReadTool, memoryWriteTool } from './memory-tools'
 import type { CompactModelConfig } from './compaction'
 import { upsertServer, type McpValue } from './mcp-config'
 import {
@@ -1772,6 +1772,10 @@ const toolHandlers: Record<string, (a: Record<string, unknown>, ctx: ToolContext
     }
   },
   memory_read: memoryReadTool,
+  memory_recall: memoryRecallTool,
+  memory_check: memoryCheckTool,
+  memory_merge: memoryMergeTool,
+  memory_tidy: memoryTidyTool,
   memory_write: memoryWriteTool,
   memory_delete: memoryDeleteTool,
   propose_agent: async (a, _ctx) => {

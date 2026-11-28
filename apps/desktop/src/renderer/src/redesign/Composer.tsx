@@ -1,3 +1,4 @@
+import { ContextChip } from './ContextChip'
 /**
  * 输入框：草稿、/指令、插话胶囊；模型、思考等级与上下文占用在 ModelPanel.tsx。
  */
@@ -966,6 +967,7 @@ export const Composer = memo(function Composer({
                 {t('cf.mountWorkspace')}
               </button>
             )}
+            <ContextChip />
             <ModelPanel />
             {/* 回合进行中只有一枚键：输入框有文字＝「发送」（插入当前轮），空＝「停止」（只放图标，与发送同宽不跳动）。
                 有文字时不出停止，要停先清空输入框。 */}

@@ -38,7 +38,11 @@ const CATALOG: Record<string, ToolTraits> = {
   grep: { category: 'read', parallel: true },
   web_fetch: { category: 'read', parallel: true },
   // 读记忆：主进程直读 ~/.deva 下的全局 / 项目记忆，无路径入参。
+  memory_recall: { category: 'read', parallel: true },
+  memory_check: { category: 'read', parallel: true },
+  memory_merge: { subagent: false, unattended: false, member: 'with-folder' },
   memory_read: { category: 'read', parallel: true },
+  memory_tidy: { subagent: false, member: 'with-folder' },
 
   // ── 写 / 执行 ──
   write_file: { category: 'edit' },

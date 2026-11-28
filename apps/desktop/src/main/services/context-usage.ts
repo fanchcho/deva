@@ -31,7 +31,7 @@ function contextUsageOf(
 ): ContextUsage {
   const cfg = compactionConfig()
   const window = contextWindowFor(model, cfg)
-  const trigger = cfg.enabled ? triggerTokens(model, cfg) : null
+  const trigger = cfg.enabled ? triggerTokens(model, cfg, session?.compactRatio) : null
   if (!session || session.messages.length === 0) return { used: null, estimated: false, window, trigger }
   const live = liveInput.get(session.id)
   if (live) return { used: live, estimated: false, window, trigger }

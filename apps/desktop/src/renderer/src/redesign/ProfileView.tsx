@@ -94,7 +94,7 @@ export function ProfileView({
   )
   // 角色记忆（对比稿 design/memory-ui.html 方案 ①）：有记忆才显示「记忆」标签。
   const memList = useMemoryList({ personaId: persona.id })
-  const memCount = memList.mem?.entries.length ?? 0
+  const memCount = (memList.mem?.entries.length ?? 0) + (memList.mem?.archivedCount ?? 0)
   // 没有专属能力 / 没有记忆就不显示对应标签；之前停在那里的回到「对话」。
   const current: ProfileTab =
     (tab === 'caps' && !caps.length) || (tab === 'memory' && !memCount) ? 'chats' : tab

@@ -1,5 +1,7 @@
+import { writeFileAtomic } from './atomic-write'
+import { evictionCandidates, recallArchive, checkMemories, type ArchivedMemory } from './memory-archive'
 import { ipcMain } from 'electron'
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs'
 import { createHash, randomBytes } from 'node:crypto'
 import { dirname, join } from 'path'
 import { getDevaHome } from './config'
@@ -37,6 +39,8 @@ export interface MemoryEntry {
   body: string
   createdAt: number
   updatedAt: number
+  lastSeenAt?: number
+  seenCount?: number
 }
 
 /** 写入入参：新增时 type 与 title 必填；按 id 更新时省略的字段保持原值。 */
@@ -156,6 +160,8 @@ function firstSentence(content: string): string {
 // ── 读写文件 ────────────────────────────────────────────────────────────────────
 
 interface MemoryFile {
+  legacyArchiveHash?: string
+  archive?: ArchivedMemory[]
   entries: MemoryEntry[]
   /** 旧版转换来的条目还没由模型补上类型与标题（见 memory-tidy.ts）。 */
   tidy?: 'pending'
@@ -177,7 +183,9 @@ function parseEntry(raw: unknown): { entry: MemoryEntry; legacy: boolean } | nul
         title: e.title,
         body: typeof e.body === 'string' ? e.body : '',
         createdAt,
-        updatedAt
+        updatedAt,
+        ...(Number(e.lastSeenAt) > 0 ? { lastSeenAt: Number(e.lastSeenAt) } : {}),
+        ...(Number(e.seenCount) > 0 ? { seenCount: Number(e.seenCount) } : {})
       },
       legacy: false
     }
@@ -185,47 +193,77 @@ function parseEntry(raw: unknown): { entry: MemoryEntry; legacy: boolean } | nul
   // v1：每条一句话 content。
   if (typeof e.content !== 'string') return null
   return {
-    entry: { id: e.id, type: 'user', title: firstSentence(e.content), body: e.content, createdAt, updatedAt },
+    entry: { ...(Number(e.lastSeenAt) > 0 ? { lastSeenAt: Number(e.lastSeenAt) } : {}),
+      ...(Number(e.seenCount) > 0 ? { seenCount: Number(e.seenCount) } : {}), id: e.id, type: 'user', title: firstSentence(e.content), body: e.content, createdAt, updatedAt },
     legacy: true
   }
 }
 
 function readMemoryFile(scope: MemoryScope): MemoryFile {
   const p = memoryPath(scope)
-  if (!existsSync(p)) return { entries: [] }
-  let parsed: { entries?: unknown; tidy?: unknown; tidyTries?: unknown }
+  const legacyArchive = join(dirname(p), 'memory-archive.json')
+  if (!existsSync(p) && (scope.kind === 'role' || !existsSync(legacyArchive))) return { entries: [] }
+  let parsed: { entries?: unknown; tidy?: unknown; tidyTries?: unknown; archive?: unknown; legacyArchiveHash?: string }
   let raw: string
   try {
-    raw = readFileSync(p, 'utf8')
+    raw = existsSync(p) ? readFileSync(p, 'utf8') : '{"entries":[]}'
     parsed = JSON.parse(raw)
   } catch {
-    return { entries: [] }
+    throw new Error('MEMORY_CORRUPT: 记忆文件无法读取，保留原文件并禁止覆盖')
   }
-  if (!Array.isArray(parsed?.entries)) return { entries: [] }
+  if (!Array.isArray(parsed?.entries)) throw new Error('MEMORY_CORRUPT: entries 无效')
   const entries: MemoryEntry[] = []
   let legacy = false
   for (const r of parsed.entries) {
     const hit = parseEntry(r)
-    if (!hit) continue
+    if (!hit) throw new Error('MEMORY_INCOMPATIBLE: 无法转换的记忆条目，原文件保持不变')
     entries.push(hit.entry)
     legacy ||= hit.legacy
   }
+  const archive: ArchivedMemory[] = []
+  if (parsed.archive !== undefined && !Array.isArray(parsed.archive)) throw new Error('MEMORY_CORRUPT: archive 无效')
+  for (const rawEntry of (parsed.archive ?? []) as unknown[]) {
+    const hit = parseEntry(rawEntry)
+    const meta = rawEntry as Partial<ArchivedMemory>
+    if (!hit || typeof meta.originalId !== 'string' || typeof meta.archivedAt !== 'number') throw new Error('MEMORY_INCOMPATIBLE: 遗忘区条目无效')
+    archive.push({ ...hit.entry, originalId: meta.originalId, archivedAt: meta.archivedAt, reason: meta.reason })
+    legacy ||= hit.legacy
+  }
   const file: MemoryFile = {
-    entries,
+    entries, archive,
+    legacyArchiveHash: parsed.legacyArchiveHash,
     ...(parsed.tidy === 'pending' ? { tidy: 'pending' as const } : {}),
     ...(typeof parsed.tidyTries === 'number' ? { tidyTries: parsed.tidyTries } : {})
   }
-  if (legacy) {
-    // 旧版文件：原样备份一份，再按新格式写回并标记待整理（只转换一次）。
-    try {
-      const dir = join(dirname(p), 'memory-backups')
-      mkdirSync(dir, { recursive: true })
-      writeFileSync(join(dir, `memory-v1-${new Date().toISOString().replace(/[:.]/g, '-')}.json`), raw, 'utf8')
-      file.tidy = 'pending'
-      writeMemoryFile(scope, file)
-    } catch {
-      /* 写不了：本次按转换结果用，下次再试 */
-    }
+  let archiveRaw: string | undefined
+  if (scope.kind !== 'role' && existsSync(legacyArchive)) {
+    archiveRaw = readFileSync(legacyArchive, 'utf8')
+    const hash = createHash('sha256').update(archiveRaw).digest('hex')
+    if (file.legacyArchiveHash !== hash) {
+      let rows: unknown
+      try { rows = JSON.parse(archiveRaw).entries } catch { throw new Error('MEMORY_ARCHIVE_INCOMPATIBLE: 旧遗忘区无法解析，原文件保留：' + legacyArchive) }
+      if (!Array.isArray(rows)) throw new Error('MEMORY_ARCHIVE_INCOMPATIBLE: 旧遗忘区缺少 entries：' + legacyArchive)
+      for (const row of rows) {
+        const hit = parseEntry(row)
+        if (!hit || typeof row.originalId !== 'string' || typeof row.archivedAt !== 'number')
+          throw new Error('MEMORY_ARCHIVE_INCOMPATIBLE: 旧遗忘区条目无法转换，原文件保留：' + legacyArchive)
+        const twin = archive.find(e => e.id === hit.entry.id)
+        if (twin && twin.title === hit.entry.title && twin.body === hit.entry.body) continue
+        archive.push({ ...hit.entry, id: twin ? 'a_' + randomBytes(8).toString('hex') : hit.entry.id,
+          originalId: row.originalId, archivedAt: row.archivedAt, reason: row.reason })
+      }
+      file.legacyArchiveHash = hash
+    } else archiveRaw = undefined
+  }
+  if (legacy || archiveRaw !== undefined) {
+    // 复用 v1 -> v2 迁移流程：先备份原字节，再一次原子写回。旧遗忘区保留，以 hash 防止重复导入。
+    const dir = join(dirname(p), 'memory-backups')
+    mkdirSync(dir, { recursive: true })
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+    writeFileSync(join(dir, `memory-v1-${stamp}.json`), raw, 'utf8')
+    if (archiveRaw !== undefined) writeFileSync(join(dir, `archive-v1-${stamp}.json`), archiveRaw, 'utf8')
+    if (legacy) file.tidy = 'pending'
+    writeMemoryFile(scope, file)
   }
   return file
 }
@@ -233,20 +271,20 @@ function readMemoryFile(scope: MemoryScope): MemoryFile {
 function writeMemoryFile(scope: MemoryScope, file: MemoryFile): void {
   const p = memoryPath(scope)
   mkdirSync(dirname(p), { recursive: true })
-  const tmp = `${p}.tmp`
   // 项目 / 角色记忆顺带记下来源：只为人工排查「这个文件是谁的」，读取时不依赖它。
   const body = {
     version: 2,
+    ...(file.legacyArchiveHash ? { legacyArchiveHash: file.legacyArchiveHash } : {}),
     ...(scope.kind === 'project' ? { root: scope.root } : scope.kind === 'role' ? { personaId: scope.personaId } : {}),
     ...(file.tidy ? { tidy: file.tidy } : {}),
     ...(file.tidyTries ? { tidyTries: file.tidyTries } : {}),
+    archive: file.archive ?? [],
     entries: file.entries
   }
-  writeFileSync(tmp, JSON.stringify(body, null, 2), 'utf8')
-  renameSync(tmp, p)
+  writeFileAtomic(p, JSON.stringify(body, null, 2))
 }
 
-/** 读取某作用域的全部记忆（按创建先后）。文件不存在 / 损坏视为空，绝不抛错。 */
+/** 读取某作用域的全部记忆；缺失为空，损坏明确报错，禁止覆盖原数据。 */
 export function listMemories(scope: MemoryScope = GLOBAL_SCOPE): MemoryEntry[] {
   if (scope.kind === 'role' && !isSafeId(scope.personaId)) return []
   return readMemoryFile(scope).entries
@@ -262,8 +300,8 @@ export function memoryTidyState(scope: MemoryScope): { pending: boolean; tries: 
 /** 整理结束：写回整理后的条目并清掉待整理标记（entries 省略 = 只记一次失败）。 */
 export function finishMemoryTidy(scope: MemoryScope, entries: MemoryEntry[] | null, giveUp: boolean): void {
   const f = readMemoryFile(scope)
-  if (entries) writeMemoryFile(scope, { entries })
-  else if (giveUp) writeMemoryFile(scope, { entries: f.entries })
+  if (entries) writeMemoryFile(scope, { ...f, entries, tidy: undefined, tidyTries: undefined })
+  else if (giveUp) writeMemoryFile(scope, { ...f, tidy: undefined, tidyTries: undefined })
   else writeMemoryFile(scope, { ...f, tidyTries: (f.tidyTries ?? 0) + 1 })
 }
 
@@ -302,11 +340,18 @@ function budgetError(scope: MemoryScope, used: number): MemoryWriteResult {
 }
 
 /** 新增（无 id）或按 id 更新一条记忆。 */
-export function writeMemory(input: MemoryInput, id?: string, scope: MemoryScope = GLOBAL_SCOPE): MemoryWriteResult {
+export function writeMemory(input: MemoryInput, id?: string, scope: MemoryScope = GLOBAL_SCOPE, autoArchive = true): MemoryWriteResult {
   if (scope.kind === 'role' && !isSafeId(scope.personaId))
     return { ok: false, code: 'notFound', error: '找不到这个角色的记忆' }
-  const lim = memoryLimits(scope)
   const file = readMemoryFile(scope)
+  const result = editMemoryFile(file, input, id, scope, autoArchive)
+  if (result.ok) writeMemoryFile(scope, file)
+  return result
+}
+
+/** 在内存里完成校验、腾位与写入；调用者统一原子提交，取回不产生半完成状态。 */
+function editMemoryFile(file: MemoryFile, input: MemoryInput, id: string | undefined, scope: MemoryScope, autoArchive: boolean): MemoryWriteResult {
+  const lim = memoryLimits(scope)
   const entries = file.entries
   const hit = id ? entries.find((e) => e.id === id) : undefined
   if (id && !hit)
@@ -347,20 +392,19 @@ export function writeMemory(input: MemoryInput, id?: string, scope: MemoryScope 
     // 只拒「越改越超」：缩短 / 不变的更新即便总量仍超（旧数据）也放行，否则永远没法合并瘦身。
     if (used > lim.budget && formatMemoryLine(next).length > formatMemoryLine(hit).length) return budgetError(scope, used)
     Object.assign(hit, { type, title, body, updatedAt: now })
-    writeMemoryFile(scope, file)
     return { ok: true, entry: hit, created: false }
   }
-  if (entries.length >= lim.maxEntries)
-    return {
-      ok: false,
-      code: 'full',
-      error: `${scopeLabel(scope)}已满（上限 ${lim.maxEntries} 条）：请先用 memory_delete 删除过时条目，或用 memory_write 带 id 合并相近条目`
-    }
   const entry: MemoryEntry = { id: newMemoryId(scope, entries), type, title, body, createdAt: now, updatedAt: now }
-  const used = memoryUsage(entries) + formatMemoryLine(entry).length
-  if (used > lim.budget) return budgetError(scope, used)
+  if (!autoArchive && (entries.length >= lim.maxEntries || memoryUsage(entries) + formatMemoryLine(entry).length > lim.budget)) return budgetError(scope, memoryUsage(entries) + formatMemoryLine(entry).length)
+  const victims = evictionCandidates(entries)
+  while (entries.length >= lim.maxEntries || memoryUsage(entries) + formatMemoryLine(entry).length > lim.budget) {
+    const victim = victims.shift()
+    if (!victim) return budgetError(scope, memoryUsage(entries) + formatMemoryLine(entry).length)
+    file.archive ??= []
+    file.archive.push({ ...victim, originalId: victim.id, id: 'a_' + randomBytes(8).toString('hex'), archivedAt: now, reason: entries.length >= lim.maxEntries ? 'entries' : 'budget' })
+    entries.splice(entries.indexOf(victim), 1)
+  }
   entries.push(entry)
-  writeMemoryFile(scope, file)
   return { ok: true, entry, created: true }
 }
 
@@ -376,14 +420,18 @@ export function deleteMemory(id: string, scope: MemoryScope = GLOBAL_SCOPE): Mem
 }
 
 /** 整体替换某作用域的全部条目（归纳后写回，见 memory-consolidate.ts）；待整理标记原样保留。 */
-export function replaceMemories(scope: MemoryScope, entries: MemoryEntry[]): void {
+export function replaceMemories(scope: MemoryScope, entries: MemoryEntry[], archiveChanged = false): void {
   const f = readMemoryFile(scope)
+  if (archiveChanged) {
+    const changed = f.entries.filter(e => !entries.some(n => n.id === e.id && n.title === e.title && n.body === e.body && n.type === e.type))
+    f.archive = [...(f.archive ?? []), ...changed.map(e => archiveEntry(e, 'manual'))]
+  }
   writeMemoryFile(scope, { ...f, entries })
 }
 
 /** 清空某作用域的全部记忆（仅用户经面板触发；模型没有对应工具）。 */
 export function clearMemories(scope: MemoryScope = GLOBAL_SCOPE): void {
-  writeMemoryFile(scope, { entries: [] })
+  writeMemoryFile(scope, { ...readMemoryFile(scope), entries: [] })
 }
 
 /** 删除角色时连同它的记忆一起删：先备份到同目录的 memory-backups/。 */
@@ -405,6 +453,84 @@ export function removeRoleMemory(personaId: string): void {
   }
 }
 
+export function listArchive(scope: MemoryScope, query = ''): ArchivedMemory[] {
+  if (scope.kind === 'role' && !isSafeId(scope.personaId)) throw new Error('memory: invalid role')
+  return recallArchive(readMemoryFile(scope).archive ?? [], query)
+}
+
+export function restoreMemory(scope: MemoryScope, id: string): MemoryWriteResult {
+  const file = readMemoryFile(scope)
+  const archived = file.archive?.find(e => e.id === id)
+  if (!archived) return { ok: false, code: 'notFound', error: '找不到归档记忆' }
+  // 超长旧数据明确拒绝并保留原文。成功时恢复原 id（若未被占用）及创建时间、使用记录。
+  const result = editMemoryFile(file, archived, undefined, scope, true)
+  if (!result.ok) return result
+  if (result.created) {
+    if (!file.entries.some(e => e !== result.entry && e.id === archived.originalId)) result.entry.id = archived.originalId
+    Object.assign(result.entry, { createdAt: archived.createdAt, lastSeenAt: archived.lastSeenAt, seenCount: archived.seenCount })
+  }
+  file.archive = file.archive?.filter(e => e.id !== id)
+  writeMemoryFile(scope, file)
+  return result
+}
+
+function archiveEntry(entry: MemoryEntry, reason: ArchivedMemory['reason']): ArchivedMemory {
+  return { ...entry, originalId: entry.id, id: 'a_' + randomBytes(8).toString('hex'), archivedAt: Date.now(), reason }
+}
+
+/** 合并 2–5 条，原文全部进遗忘区，与合并结果在一次原子写盘中提交。 */
+export function mergeMemories(scope: MemoryScope, ids: string[], input: MemoryInput): MemoryWriteResult {
+  const unique = [...new Set(ids)]
+  if (unique.length < 2 || unique.length > 5) return { ok: false, code: 'badType', error: '每次须合并 2–5 条记忆' }
+  const file = readMemoryFile(scope)
+  const sources = file.entries.filter(e => unique.includes(e.id))
+  if (sources.length !== unique.length) return { ok: false, code: 'notFound', error: '部分记忆不存在于该层，未合并' }
+  file.entries = file.entries.filter(e => !unique.includes(e.id))
+  const result = editMemoryFile(file, input, undefined, scope, true)
+  if (!result.ok) return result
+  file.archive = [...(file.archive ?? []), ...sources.map(e => archiveEntry(e, 'manual'))]
+  writeMemoryFile(scope, file)
+  return result
+}
+
+/** 无模型整理：仅高用量时腾出冷条目 / 无损合并明显重叠条目；原文全部归档。 */
+export function tidyMemories(scope: MemoryScope, dryRun = false): { archived: number; merged: number; changed: boolean; advice: ReturnType<typeof checkMemories> } {
+  const file = readMemoryFile(scope)
+  const advice = checkMemories(file.entries)
+  const result = { archived: 0, merged: 0, changed: false, advice }
+  if (dryRun || memoryUsage(file.entries) < memoryLimits(scope).budget * 0.8) return result
+  const stale = file.entries.filter(e => advice.stale.includes(e.id))
+  file.archive = [...(file.archive ?? []), ...stale.map(e => archiveEntry(e, 'entries'))]
+  file.entries = file.entries.filter(e => !advice.stale.includes(e.id))
+  result.archived = stale.length
+  for (const [aid, bid] of advice.similar) {
+    const a = file.entries.find(e => e.id === aid), b = file.entries.find(e => e.id === bid)
+    if (!a || !b || a.type !== b.type) continue
+    const title = a.title.length >= b.title.length ? a.title : b.title
+    const body = `${a.title}\n${a.body}\n\n${b.title}\n${b.body}`
+    if (title.length > MEMORY_TITLE_MAX || body.length > MEMORY_BODY_MAX) continue
+    const next: MemoryEntry = { id: newMemoryId(scope, file.entries), type: a.type, title, body,
+      createdAt: Math.min(a.createdAt, b.createdAt), updatedAt: Date.now(),
+      seenCount: (a.seenCount ?? 0) + (b.seenCount ?? 0), lastSeenAt: Math.max(a.lastSeenAt ?? 0, b.lastSeenAt ?? 0) }
+    file.entries = file.entries.filter(e => e !== a && e !== b)
+    file.entries.push(next)
+    file.archive.push(archiveEntry(a, 'manual'), archiveEntry(b, 'manual'))
+    result.merged++
+  }
+  result.changed = result.archived > 0 || result.merged > 0
+  if (result.changed) writeMemoryFile(scope, file)
+  return result
+}
+
+export function markMemoriesSeen(scope: MemoryScope, ids: string[]): void {
+  const file = readMemoryFile(scope)
+  for (const e of file.entries) if (ids.includes(e.id)) {
+    e.lastSeenAt = Date.now()
+    e.seenCount = (e.seenCount ?? 0) + 1
+  }
+  writeMemoryFile(scope, file)
+}
+
 // ── 面板 IPC ────────────────────────────────────────────────────────────────────
 
 export interface MemorySnapshot {
@@ -415,6 +541,7 @@ export interface MemorySnapshot {
   maxEntries: number
   maxTitle: number
   maxBody: number
+  archivedCount: number
 }
 
 function snapshot(scope: MemoryScope): MemorySnapshot {
@@ -426,6 +553,7 @@ function snapshot(scope: MemoryScope): MemorySnapshot {
     budget: lim.budget,
     maxEntries: lim.maxEntries,
     maxTitle: MEMORY_TITLE_MAX,
+    archivedCount: listArchive(scope).length,
     maxBody: MEMORY_BODY_MAX
   }
 }
@@ -458,6 +586,9 @@ function ipcInput(raw: unknown): MemoryInput {
  * 末位参数 scope：省略 = 全局（个人资料面板）；字符串 = 该工作区的项目记忆；`{ personaId }` = 角色记忆。
  */
 export function registerMemoryIpc(): void {
+  ipcMain.handle('memory:archive', (_e, scope?: unknown, query?: string) => listArchive(ipcScope(scope), query))
+  ipcMain.handle('memory:check', (_e, scope?: unknown) => checkMemories(listMemories(ipcScope(scope))))
+  ipcMain.handle('memory:restore', (_e, id: string, scope?: unknown) => restoreMemory(ipcScope(scope), id))
   ipcMain.handle('memory:list', (_e, scope?: unknown): MemorySnapshot => snapshot(ipcScope(scope)))
   ipcMain.handle('memory:write', (_e, input: unknown, id?: string, scopeArg?: unknown): MemoryIpcResult => {
     const scope = ipcScope(scopeArg)

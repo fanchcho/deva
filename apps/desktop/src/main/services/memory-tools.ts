@@ -1,7 +1,12 @@
+import { checkMemories } from './memory-archive'
 import type { ToolSpec } from '../providers/types'
 import type { ToolContext, ToolResult } from './tools'
 import {
   GLOBAL_SCOPE,
+  listArchive,
+  mergeMemories,
+  tidyMemories,
+  markMemoriesSeen,
   MEMORY_BODY_MAX,
   MEMORY_TITLE_MAX,
   MEMORY_TYPES,
@@ -29,6 +34,14 @@ const SCOPES = ['global', 'role', 'project'] as const
 type ScopeKind = (typeof SCOPES)[number]
 
 export const MEMORY_TOOL_SPECS: ToolSpec[] = [
+  { name: 'memory_tidy', description: '高于 80% 索引预算时把冷记忆移入遗忘区、无损合并重叠内容，全部保留原文。dry_run 只体检；写入仍遵守三层权限。',
+    inputSchema: { type: 'object', properties: { scope: { type: 'string', enum: [...SCOPES] }, dry_run: { type: 'boolean' } } } },
+  { name: 'memory_merge', description: '把同层 2–5 条记忆合并成 type/title/body 新条目，所有原文保留在遗忘区，可召回。遵守各层写权限。',
+    inputSchema: { type: 'object', properties: { ids: { type: 'array', items: { type: 'string' } }, type: { type: 'string', enum: [...MEMORY_TYPES] }, title: { type: 'string' }, body: { type: 'string' } }, required: ['ids', 'type', 'title', 'body'] } },
+  { name: 'memory_recall', description: '从全局、角色、项目遗忘区按关键词或归档 id 召回完整记忆。',
+    inputSchema: { type: 'object', properties: { query: { type: 'string' } } } },
+  { name: 'memory_check', description: '只读体检三层记忆，返回久未使用与相似条目，不自动删除。',
+    inputSchema: { type: 'object', properties: {} } },
   {
     name: 'memory_read',
     description:
@@ -142,6 +155,7 @@ export async function memoryReadTool(a: Record<string, unknown>, ctx: ToolContex
       const scope = scopeOf(kind, access, ctx)
       const hit = scope ? listMemories(scope).find((e) => e.id === id) : undefined
       if (hit) {
+        markMemoriesSeen(scope!, [hit.id])
         found++
         out.push(fullEntry(hit, layerName(kind, access, ctx)))
       } else out.push(`[${id}] 不存在${scope ? '' : '（当前未挂载工作区，无法读取项目记忆）'}`)
@@ -232,4 +246,54 @@ export async function memoryDeleteTool(a: Record<string, unknown>, ctx: ToolCont
     summary: '已删除',
     listing: memoryDeletedRecord(removed.id)
   }
+}
+
+export async function memoryRecallTool(a: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+  if (!ctx.memoryAccess) return NO_ACCESS
+  const result = SCOPES.flatMap(kind => {
+    const scope = scopeOf(kind, ctx.memoryAccess!, ctx)
+    return scope ? listArchive(scope, typeof a.query === 'string' ? a.query : '').map(e => ({ scope: kind, ...e })) : []
+  })
+  return { content: JSON.stringify(result), summary: result.length + ' 条归档' }
+}
+export async function memoryCheckTool(_a: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+  if (!ctx.memoryAccess) return NO_ACCESS
+  const result = SCOPES.flatMap(kind => {
+    const scope = scopeOf(kind, ctx.memoryAccess!, ctx)
+    return scope ? [{ scope: kind, ...checkMemories(listMemories(scope)) }] : []
+  })
+  return { content: JSON.stringify(result), summary: '记忆体检' }
+}
+
+export async function memoryMergeTool(a: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+  const access = ctx.memoryAccess
+  if (!access) return NO_ACCESS
+  const ids = Array.isArray(a.ids) ? a.ids.filter((id): id is string => typeof id === 'string') : []
+  if (!ids.length || ids.some(id => scopeKindOfId(id) !== scopeKindOfId(ids[0])))
+    return { content: '只能合并同一层的记忆', summary: '参数无效', isError: true }
+  const kind = scopeKindOfId(ids[0])
+  if (modeOf(kind, access) !== 'rw') return readOnlyError(kind, access)
+  const scope = scopeOf(kind, access, ctx)
+  if (!scope) return { content: '请先挂载项目工作区', summary: '未合并', isError: true }
+  const result = mergeMemories(scope, ids, {
+    type: isMemoryType(a.type) ? a.type : undefined,
+    title: typeof a.title === 'string' ? a.title : undefined,
+    body: typeof a.body === 'string' ? a.body : undefined
+  })
+  return result.ok ? { content: '已合并，原文保留在遗忘区：' + formatMemoryLine(result.entry), summary: '已合并', listing: memoryWrittenRecord(result.entry) }
+    : { content: result.error, summary: '未合并', isError: true }
+}
+
+export async function memoryTidyTool(a: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+  const access = ctx.memoryAccess
+  if (!access) return NO_ACCESS
+  const kinds = a.scope === undefined ? [...SCOPES] : SCOPES.filter(k => k === a.scope)
+  if (!kinds.length) return { content: '无效 scope', summary: '参数无效', isError: true }
+  const result = kinds.flatMap<{ scope: ScopeKind; error?: string } & Partial<ReturnType<typeof tidyMemories>>>(kind => {
+    const scope = scopeOf(kind, access, ctx)
+    if (!scope) return []
+    if (a.dry_run !== true && modeOf(kind, access) !== 'rw') return [{ scope: kind, error: readOnlyError(kind, access).content }]
+    return [{ scope: kind, ...tidyMemories(scope, a.dry_run === true) }]
+  })
+  return { content: JSON.stringify(result), summary: a.dry_run === true ? '仅体检' : '整理结果' }
 }

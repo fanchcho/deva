@@ -34,11 +34,13 @@ import type {
   ResolveAutotaskResult,
   ChatStreamEvent,
   ContextUsage,
+  CompactUsage,
   MemberProgressGroup
 } from '../shared/chat-protocol'
 
 /** 聊天 IPC 协议类型：与主进程共用 shared/chat-protocol.ts。 */
 export type {
+  CompactUsage,
   ChatModelConfig,
   ChatSendRequest,
   ChatInsertRequest,
@@ -296,6 +298,7 @@ export interface MemoryEntry {
   updatedAt: number
 }
 export interface MemorySnapshot {
+  archivedCount?: number
   entries: MemoryEntry[]
   /** 当前索引总字数（与随消息下发同一口径）。 */
   used: number
@@ -712,6 +715,9 @@ const api = {
    * `{ personaId }` = 该角色的记忆（~/.deva/personas/memory/<id>.json）。
    */
   memory: {
+    archive: (scope?: MemoryScopeArg, query?: string): Promise<(MemoryEntry & { originalId: string; archivedAt: number })[]> => ipcRenderer.invoke('memory:archive', scope, query),
+    restore: (id: string, scope?: MemoryScopeArg): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('memory:restore', id, scope),
+    check: (scope?: MemoryScopeArg): Promise<{ stale: string[]; similar: string[][] }> => ipcRenderer.invoke('memory:check', scope),
     list: (scope?: MemoryScopeArg): Promise<MemorySnapshot> => ipcRenderer.invoke('memory:list', scope),
     /** 无 id 新增（type、title 必填），有 id 更新（省略的字段保持原值）。 */
     write: (
@@ -797,6 +803,20 @@ const api = {
   },
   /** 会话：发送、中止、重置、列表/载入/删除、回应权限、订阅流式事件。 */
   chat: {
+    compactUsage: (
+      sessionId: string
+    ): Promise<Extract<ChatStreamEvent, { type: 'context_usage' }> | null> =>
+      ipcRenderer.invoke('chat:compact-usage', sessionId),
+    /**
+     * 设置本对话的自动压缩触发比例（0～1）；null = 恢复默认（跟随全局 / 按窗口算）。
+     * 立即落库并对下一轮生效（不必重启，也不必等一次压缩）。
+     */
+    setCompactRatio: (req: {
+      sessionId: string
+      ratio: number | null
+    }): Promise<Extract<ChatStreamEvent, { type: 'context_usage' }> | null> =>
+      ipcRenderer.invoke('chat:set-compact-ratio', req),
+
     send: (req: ChatSendRequest): Promise<{ turnId: string }> =>
       ipcRenderer.invoke('chat:send', req),
     /** 回合进行中插入一条消息（见 ChatInsertRequest）。 */
