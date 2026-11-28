@@ -5,13 +5,21 @@
   "license": "MIT",
   "packageManager": "pnpm@10.8.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.18.0"
   },
   "scripts": {
+    "verify:platform:windows": "powershell -NoProfile -File scripts/verify-platform.ps1",
+    "verify:platform:mac": "bash scripts/verify-platform.sh",
+    "verify:container": "bash scripts/verify-container.sh",
     "dev": "pnpm --filter @deva/desktop dev",
     "build": "pnpm --filter @deva/desktop build",
+    "build:web": "pnpm --filter @deva/desktop build && pnpm --filter @deva/web build",
     "start": "pnpm --filter @deva/desktop start",
-    "typecheck": "pnpm --filter @deva/desktop typecheck",
+    "start:web": "pnpm --filter @deva/web start",
+    "typecheck": "pnpm --filter @deva/desktop typecheck && pnpm --filter @deva/web typecheck && pnpm --filter @deva/relay typecheck && pnpm --filter @deva/relay-node typecheck",
+    "check:versions": "node out/check-versions.mjs",
+    "test:desktop": "pnpm --filter @deva/desktop test",
+    "lint": "eslint .",
     "package:win": "pnpm --filter @deva/desktop build:win",
     "package:mac": "pnpm --filter @deva/desktop build:mac",
     "package:linux": "pnpm --filter @deva/desktop build:linux",
@@ -20,8 +28,7 @@
     "relay:dev": "pnpm --filter @deva/desktop build:mobile && pnpm --filter @deva/relay run dev",
     "relay-node:build": "pnpm --filter @deva/desktop build:mobile && pnpm --filter @deva/relay-node run build",
     "relay-node:deploy": "pnpm relay-node:build && pnpm --filter @deva/relay-node run deploy",
-    "relay-node:start": "pnpm --filter @deva/relay-node run start",
-    "build:web": "pnpm --filter @deva/desktop build && pnpm --filter @deva/web build"
+    "relay-node:start": "pnpm --filter @deva/relay-node run start"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -30,5 +37,12 @@
       "esbuild",
       "@parcel/watcher"
     ]
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "eslint": "9",
+    "eslint-plugin-react-hooks": "^5",
+    "globals": "^17.14.0",
+    "typescript-eslint": "^8"
   }
 }

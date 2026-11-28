@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { SseBudget } from './src/server/sse-budget.mjs'
+import { serveDeliverable } from './src/server/deliverables.mjs'
+import { handleInvoke as invokeRequest } from './src/server/invoke.mjs'
 /**
  * Deva 纯 Web 服务：静态托管原 renderer + 登录/多用户 + 每用户后端进程 + 审计。
  *
@@ -26,7 +29,6 @@ import {
   migrateFile,
   parseCookies,
   readJsonBody,
-  summarize,
   text
 } from './src/server/util.mjs'
 
@@ -114,6 +116,7 @@ function userDirs(user) {
   migrateDir(path.join(base, 'home'), home)
   const workspace = PICK_ROOTS.find((p) => fs.existsSync(p)) ?? path.join(base, 'workspace')
   fs.mkdirSync(home, { recursive: true, mode: 0o700 })
+  fs.mkdirSync(path.join(home, 'tmp'), { recursive: true, mode: 0o700 })
   try {
     fs.mkdirSync(workspace, { recursive: true, mode: 0o700 })
   } catch {
@@ -262,20 +265,11 @@ if (users.list().length === 0) {
   audit.auth({ event: 'bootstrap-admin', username: admin.username })
 }
 
-const sseClients = new Map() // userId -> Set<res>
+const sseBudget = new SseBudget()
 const dirPicks = new Map() // pickId -> { userId, title, resolve }
 
 function broadcast(userId, channel, payload) {
-  const set = sseClients.get(userId)
-  if (!set) return
-  const frame = `data: ${JSON.stringify({ channel, payload: payload ?? null })}\n\n`
-  for (const res of set) {
-    try {
-      res.write(frame)
-    } catch {
-      set.delete(res)
-    }
-  }
+  sseBudget.broadcast(userId, channel, payload)
 }
 
 const pool = new BackendPool({
@@ -421,7 +415,7 @@ function shellScript(username, role) {
 })` 
 }
 
-// 静态资源（renderer 产物 + dist/web 构建资源）：ETag/304 + 流式读取，见 src/server/static.mjs。
+// 静态资源（renderer 产物 + src/web 自有文件）：ETag/304 + 流式读取，见 src/server/static.mjs。
 const serveStatic = createStaticHandler({
   rendererDir: manifest.rendererDir,
   assetsDir: path.join(here, 'dist', 'web'),
@@ -555,7 +549,7 @@ async function handleWorkerPick(req, res) {
   const user = withDirs(raw)
   // 没有浏览器连着（脚本调用 / 无 UI 场景）就退回默认工作区，
   // 否则 worker 会一直等到超时。
-  if (!sseClients.get(user.id)?.size) {
+  if (!sseBudget.users.get(user.id)?.size) {
     json(res, 200, { ok: true, value: { canceled: false, path: user.workspace } })
     return
   }
@@ -674,58 +668,7 @@ async function handleLogin(req, res) {
   redirect(res, next)
 }
 
-async function handleInvoke(req, res, user, session) {
-  if (req.method !== 'POST') {
-    json(res, 405, { ok: false, error: 'method not allowed' })
-    return
-  }
-  if (!csrfOk(session, req.headers['x-deva-csrf'])) {
-    json(res, 403, { ok: false, error: 'csrf token invalid' })
-    return
-  }
-  const started = Date.now()
-  let body
-  try {
-    body = await readJsonBody(req)
-  } catch {
-    json(res, 400, { ok: false, error: 'bad json' })
-    return
-  }
-  const channel = String(body.channel ?? '')
-  const args = Array.isArray(body.args) ? body.args : []
-  if (!channel) {
-    json(res, 400, { ok: false, error: 'channel required' })
-    return
-  }
-
-  try {
-    await jailCheck(user, channel, args)
-    if (body.fireAndForget) {
-      await pool.send(user, channel, args)
-      audit.append(user.id, { channel, args: summarize(args), ok: true, ms: Date.now() - started })
-      res.writeHead(204).end()
-      return
-    }
-    const value = await pool.invoke(user, channel, args)
-    audit.append(user.id, {
-      channel,
-      args: summarize(args),
-      ok: true,
-      ms: Date.now() - started
-    })
-    json(res, 200, { ok: true, value: value ?? null })
-  } catch (error) {
-    const message = String(error?.message ?? error)
-    audit.append(user.id, {
-      channel,
-      args: summarize(args),
-      ok: false,
-      error: message,
-      ms: Date.now() - started
-    })
-    json(res, 200, { ok: false, error: message })
-  }
-}
+const handleInvoke = (req, res, user, session) => invokeRequest(req, res, user, session, { pool, audit, jailCheck })
 
 function handleEvents(req, res, user) {
   res.writeHead(200, {
@@ -734,23 +677,7 @@ function handleEvents(req, res, user) {
     connection: 'keep-alive',
     'x-accel-buffering': 'no'
   })
-  res.write(': connected\n\n')
-  if (!sseClients.has(user.id)) sseClients.set(user.id, new Set())
-  const set = sseClients.get(user.id)
-  set.add(res)
-  const timer = setInterval(() => {
-    try {
-      res.write(': ping\n\n')
-    } catch {
-      /* ignore */
-    }
-  }, 15_000)
-  timer.unref?.()
-  req.on('close', () => {
-    clearInterval(timer)
-    set.delete(res)
-    if (set.size === 0) sseClients.delete(user.id)
-  })
+  sseBudget.add(user.id, req, res)
 }
 
 /** 表单 POST 解析（application/x-www-form-urlencoded）。 */
@@ -906,6 +833,11 @@ const server = http.createServer(async (req, res) => {
     }
     const { session, user } = ctx
 
+    if (pathname === '/api/deliverables/file') {
+      await serveDeliverable(req, res, user, url, pool)
+      return
+    }
+
     if (pathname === '/api/me') {
       json(res, 200, { ok: true, user: { id: user.id, username: user.username, role: user.role } })
       return
@@ -1038,6 +970,7 @@ process.on('SIGTERM', () => shutdown('SIGTERM'))
 process.on('SIGINT', () => shutdown('SIGINT'))
 
 server.listen(PORT, HOST, () => {
+  pool.ctlUrl = `http://127.0.0.1:${server.address().port}`
   console.log(`[deva-web] http://${HOST}:${server.address().port}`)
   console.log(`[deva-web] data=${DATA_ROOT} renderer=${manifest.rendererDir}`)
   console.log('[deva-web] 登录页 /login，管理页 /admin；每用户独立后端进程')

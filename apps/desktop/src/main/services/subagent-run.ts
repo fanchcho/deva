@@ -3,7 +3,7 @@
  * 子智能体自己再跑一遍 runAgentLoop；所需的父轮入参与状态经 LoopRun 传入。
  */
 import type { ContentPart, Message } from '../providers/types'
-import { runAgentLoop, type LoopRun } from './agent-loop'
+import type { LoopRun } from './agent-loop'
 import {
   GENERAL_SUBAGENT,
   FORK_AGENT,
@@ -34,7 +34,7 @@ import {
   remoteTurns
 } from './chat-state'
 import { buildSubagentTools, CHANGE_REPORT_RULE, buildSubagentSystem } from './chat-prompts'
-import { bgGroupsWaiting, setBackgroundState, enqueueNotice } from './background-tasks'
+import { bgGroupsWaiting, setBackgroundState } from './background-state'
 
 /**
  * fork 的起始历史：主对话历史的浅拷贝（消息对象按不可变对待、与主对话共享）+ 一条合成的回灌消息。
@@ -219,7 +219,7 @@ async function runSubagentLoop(
   const args = run.args
   const label = rec.agent
   try {
-    const sub = await runAgentLoop({
+    const sub = await run.runChild({
       turnId: bg ? '' : turnId,
       sessionId,
       history: rec.messages,
@@ -245,7 +245,8 @@ async function runSubagentLoop(
       parentToolId: tc.id,
       background: !!bg,
       // 子轮写入归到本次调用的 id（见 agent-loop.ts runGatedTool 的 owner），随父轮一起回滚。
-      recorder: args.recorder
+      recorder: args.recorder,
+      enqueueNotice: args.enqueueNotice
     })
     const aborted = sub.stopReason === 'aborted'
     const degenerate = sub.stopReason === 'degenerate'
@@ -388,7 +389,7 @@ function launchBackgroundSubagent(
         wake = !stopped || bgGroupsWaiting.has(entry.group)
         bgGroupsWaiting.delete(entry.group)
       }
-      enqueueNotice(sessionId, {
+      run.args.enqueueNotice(sessionId, {
         toolUseId: tc.id,
         headline: `后台子智能体「${title}」${status}`,
         body: [

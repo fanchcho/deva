@@ -347,6 +347,7 @@ export type DisplayBlock =
 export type DisplayMessage =
   | {
       role: 'user'
+      deferred?: { revision: string; turn: number }
       text: string
       attachments: AttachmentChip[]
       /** 后台任务通知（见 NOTIFY_MARKER）：展示为一行系统通知而非用户气泡，text 为其标题。 */
@@ -541,6 +542,7 @@ export type ChatStreamEvent =
    * （仅当被拒的是用户在模型详情页填的值才带）。渲染层据此弹 toast，提示去模型设置里改。
    */
   | { type: 'auto_retry'; reason: AutoRetryReason; attempt: number; max: number; limit?: number }
+  | { type: 'persistence_error'; message: string }
   | { type: 'error'; kind: string; message: string }
   /**
    * 上下文压缩结果（自动或手动 /compact）。渲染层据此在助手气泡追加软提示块；

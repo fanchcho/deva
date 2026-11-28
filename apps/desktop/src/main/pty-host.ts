@@ -9,8 +9,7 @@
  * 线缆类型按项目约定在本文件内结构化复述，不跨层 import。
  */
 import * as pty from '@lydell/node-pty'
-import { existsSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { launchPty } from './pty-launch'
 
 /** 主进程 → 宿主 的入站消息。 */
 type InboundMessage =
@@ -40,28 +39,10 @@ function post(msg: OutboundMessage): void {
   parentPort.postMessage(msg)
 }
 
-/** 默认 shell：Windows 用 Windows PowerShell（5.1 恒随系统预装，零配置）；其余用登录 shell。 */
-function defaultShell(): string {
-  if (process.platform === 'win32') return 'powershell.exe'
-  return process.env.SHELL || '/bin/bash'
-}
-
-/** cwd 兜底：目录不存在（或未开项目）时回退到用户主目录，避免 spawn 失败。 */
-function safeCwd(cwd: string | null): string {
-  if (cwd && existsSync(cwd)) return cwd
-  return homedir()
-}
-
 function handleCreate(msg: Extract<InboundMessage, { type: 'create' }>): void {
   let proc: pty.IPty
   try {
-    proc = pty.spawn(msg.shellPath || defaultShell(), msg.shellArgs ?? [], {
-      name: 'xterm-256color',
-      cols: msg.cols || 80,
-      rows: msg.rows || 24,
-      cwd: safeCwd(msg.cwd),
-      env: { ...process.env }
-    })
+    proc = launchPty(msg, { spawn: pty.spawn })
   } catch (err) {
     // 起不来（如 shell 缺失）：补发一个 exit，让渲染层给出反馈而非空等。
     post({ type: 'exit', id: msg.id, exitCode: -1, error: err instanceof Error ? err.message : String(err) })

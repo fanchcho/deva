@@ -166,7 +166,8 @@ export const EMPTY_NUDGE =
 export const MAX_TRUNCATED_STREAK = 4
 
 /** 写进被截断调用 tool_use 里的标记：展示层据此一律画成普通工具卡（它不是能被答复的问答 / 计划 / 名片）。 */
-export const TRUNCATED_FLAG = '__truncated'
+import { TRUNCATED_FLAG } from './tool-result-flags'
+export { TRUNCATED_FLAG } from './tool-result-flags'
 
 /**
  * 被截断调用在历史里的 input：残缺参数不可执行，也不值得每步重发——只留能捞出的目标路径

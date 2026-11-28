@@ -1,0 +1,25 @@
+name: Web verification
+on:
+  pull_request:
+    paths: ['apps/web/**', 'apps/desktop/**', 'package.json', 'pnpm-lock.yaml', 'eslint.config.mjs', '.github/workflows/web.yml']
+  push:
+    branches: [develop-web]
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm --filter @deva/web lint
+      - run: pnpm --filter @deva/web test
+      - run: pnpm build:web
+      - run: pnpm --filter @deva/web test:build
+      - run: node apps/web/test/http-smoke.mjs

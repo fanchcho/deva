@@ -82,7 +82,7 @@ function push(f: Frame): void {
     ringBytes.set(f.sessionId, 0)
   }
   // 超大帧降级为占位后入环：直播连接已收到完整帧；回放端按未知类型忽略并推进 id（设计 §3.4）
-  let buffered = f.data.length > FRAME_MAX_BYTES
+  const buffered = f.data.length > FRAME_MAX_BYTES
     ? JSON.stringify({ ...JSON.parse(f.data), type: '__truncated__', dropped: 'oversize' })
     : f.data
   ring.push({ ...f, data: buffered })

@@ -326,16 +326,8 @@ export const dialog = {
 }
 
 // ───────────────────────── shell / clipboard ─────────────────────────
-export const shell = {
-  async openPath() {
-    return ''
-  },
-  async openExternal() {
-    return undefined
-  },
-  showItemInFolder() {},
-  async trashItem() {}
-}
+export { shell } from './shell.mjs'
+import { shell } from './shell.mjs'
 
 let clipboardText = ''
 export const clipboard = {

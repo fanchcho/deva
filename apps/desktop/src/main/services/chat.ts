@@ -1,3 +1,5 @@
+import { SessionPins } from './session-pins'
+import { loadTail, loadPage } from './history-page'
 import type {
   AskOption,
   AskQuestion,
@@ -60,6 +62,9 @@ import { trustRoot } from './fs-guard'
 import { personaWorkspace } from './role-home'
 import { activeTodoList, todoUserCancelNote, todoState, type TodoState } from './todos'
 import {
+  sessionCache,
+  recoverCorruptSession,
+  unsavedSessions,
   deriveTitle,
   ensureSession,
   getSession,
@@ -557,6 +562,13 @@ function answerMount(payload: MountResponse): boolean {
 }
 
 export function registerChatIpc(getWin: () => BrowserWindow | null): void {
+  const viewedSessions = new SessionPins()
+  sessionCache.protectedSession = (id) => busySessions.has(id) || unsavedSessions.has(id) || viewedSessions.has(id)
+  ipcMain.handle('chat:pin-session', (event, id: string) => {
+    if (!viewedSessions.hasWindow(event.sender.id)) event.sender.once('destroyed', () => viewedSessions.release(event.sender.id))
+    viewedSessions.set(event.sender.id, id)
+    sessionCache.prune(id)
+  })
   setWindowGetter(getWin)
   // 渲染层只是总线的一个订阅者（远程通道是另一个，见 remote/hub.ts）。
   // 退出收尾期间窗口可能已销毁：此时回合仍在补结果 / 落盘，事件丢掉即可，绝不能因 send 抛错打断收尾。
@@ -722,6 +734,9 @@ export function registerChatIpc(getWin: () => BrowserWindow | null): void {
     }
   )
 
+  ipcMain.handle('chat:retry-save', (_event, id: string) => saveProject(id))
+  ipcMain.handle('chat:history-page', (_event, id: string, revision: string, from: number) => loadPage(id, revision, from))
+
   ipcMain.handle(
     'chat:load-session',
     (_e, sessionId: string, _workspaceRoot: string | null): DisplayMessage[] => loadDisplay(sessionId)
@@ -784,13 +799,20 @@ export function registerChatIpc(getWin: () => BrowserWindow | null): void {
 
   // 载入历史 + 进行中回合的 turnId（无则 null），同一时刻取出：渲染层据此接上别处发起、仍在跑的一轮——
   // 此后到达的流事件都晚于这份快照，不会漏掉 done 而永远停在「进行中」。
+  ipcMain.handle('chat:recover-corrupt', (_e, id: string, confirmed: boolean) => {
+    if (historyLocked(id)) throw new Error('busy')
+    const branch = recoverCorruptSession(id, confirmed)
+    publishSessionsChanged()
+    return branch.id
+  })
+
   ipcMain.handle(
     'chat:attach-session',
     (
       _e,
       sessionId: string
     ): { messages: DisplayMessage[]; turnId: string | null; startedAt: number | null } => ({
-      messages: loadDisplay(sessionId),
+      messages: loadTail(sessionId),
       turnId: busySessions.get(sessionId) ?? null,
       // 进行中这一轮的开始时刻：渲染层中途接上时据此续上计时，而不是从接上那一刻重新算。
       startedAt: busySince.get(sessionId) ?? null

@@ -1,3 +1,4 @@
+import { useVisibleHistory } from '../store/history-pages'
 /**
  * 对话流：分段渲染、滚动跟随、轮次目录。
  */
@@ -335,6 +336,7 @@ export function Conversation({
   }
   const from = range ? startOfTurn(range.from) : 0
   const to = range && range.to !== null ? endOfTurn(range.to) : messages.length - 1
+  useVisibleHistory(messages.slice(from, to + 1), currentSessionId)
   /** 已渲染到最新一条：不在时（跳转到较早的轮后）不跟随新内容、不显示底部状态行，「回到最新」常显。 */
   const isTail = to === messages.length - 1
   // 补上更早一段后要保持的「距底距离」（内容加在上方，按距底距离落位，看着的内容不动）。
@@ -519,10 +521,11 @@ export function Conversation({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [win])
 
-  const exitSelect = (): void => {
+  // 只调用 setter，标识恒定：可安全作下面清空消息时那个 effect 的依赖。
+  const exitSelect = useCallback((): void => {
     setSelecting(false)
     setSelected(new Set())
-  }
+  }, [])
   const toggleTurn = (turn: number): void => {
     setSelected((prev) => {
       const next = new Set(prev)
@@ -568,8 +571,7 @@ export function Conversation({
   // 会话内消息被删空（选中全部轮）后自动退出选择态，避免停留在空白选择界面。
   useEffect(() => {
     if (selecting && messages.length === 0) exitSelect()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages.length, selecting])
+  }, [messages.length, selecting, exitSelect])
 
   // 新内容到达：仅当仍贴底才自动滚到底；用户上滚查看历史时保持不动。
   useEffect(() => {

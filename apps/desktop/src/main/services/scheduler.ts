@@ -65,6 +65,7 @@ export function planFires(
 
 // ── 运行期状态（模块级单例）──────────────────────────────────────────────────
 
+let startupTimer: ReturnType<typeof setTimeout> | null = null
 let started = false
 let timer: ReturnType<typeof setInterval> | null = null
 let getWin: (() => BrowserWindow | null) | null = null
@@ -254,13 +255,15 @@ export function startScheduler(getWindow: () => BrowserWindow | null): void {
   // tasks:run-now 与 UI「立即运行」经此入串行队列（manual：不重排 / 不退避）。
   setTaskRunner((id) => enqueue(id, true, 0))
 
-  setTimeout(tick, 3000)
+  startupTimer = setTimeout(() => { startupTimer = null; tick() }, 3000)
   timer = setInterval(tick, 30_000)
   if (timer.unref) timer.unref()
 }
 
 /** 停止调度器（供退出 / 测试清理；生产一般随进程退出）。 */
 export function stopScheduler(): void {
+  if (startupTimer) clearTimeout(startupTimer)
+  startupTimer = null
   if (timer) {
     clearInterval(timer)
     timer = null

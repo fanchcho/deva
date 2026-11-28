@@ -1,6 +1,10 @@
-import { createHash } from 'crypto'
+import { publishChatEvent } from './chat-bus'
+import { SessionCache } from './session-cache'
+import { createHash, randomUUID } from 'crypto'
 import {
   appendFileSync,
+  copyFileSync,
+  constants,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -321,7 +325,7 @@ function indexPath(): string {
 }
 
 // id -> 该对话全量（内存缓存，惰性载入；messages 数组引用被 Agent 循环原地改写）。
-const sessionCache = new Map<string, StoredSession>()
+export const sessionCache = new SessionCache<StoredSession>()
 // id -> 元信息（左侧列表的真源，内存态）。ensureSession 即时写入、save 落盘；null = 尚未载入。
 let indexCache: Map<string, ChatSessionMeta> | null = null
 
@@ -347,6 +351,7 @@ function ensureIndex(): Map<string, ChatSessionMeta> {
   if (indexCache) return indexCache
   const map = new Map<string, ChatSessionMeta>()
   try {
+    if (existsSync(`${indexPath()}.dirty`)) throw new Error('index needs recovery')
     const raw = readFileSync(indexPath(), 'utf8')
     const parsed = JSON.parse(raw)
     if (Array.isArray(parsed)) {
@@ -376,10 +381,26 @@ function ensureIndex(): Map<string, ChatSessionMeta> {
   return map
 }
 
+let indexTimer: ReturnType<typeof setTimeout> | undefined
+process.once('exit', () => { if (indexTimer) flushSessionIndex() })
+export function flushSessionIndex(): void {
+  if (indexTimer) clearTimeout(indexTimer)
+  indexTimer = undefined
+  persistIndex()
+}
+function scheduleIndex(): void {
+  if (indexTimer) return
+  indexTimer = setTimeout(() => {
+    indexTimer = undefined
+    persistIndex()
+  }, 200)
+  indexTimer.unref()
+}
 function persistIndex(): void {
   if (!indexCache) return
   try {
     writeFileAtomic(indexPath(), JSON.stringify([...indexCache.values()], null, 2))
+    rmSync(`${indexPath()}.dirty`, { force: true })
   } catch {
     /* 索引落盘失败静默：单条对话文件已是真源，下次成功保存即自愈 */
   }
@@ -459,12 +480,35 @@ function syncCompacted(s: StoredSession): string | null {
   return prev?.file ?? null
 }
 
-/** 载入单条对话（缓存优先；不存在 / 解析失败 → undefined）。拆分存盘的对话在内存里拼回完整记录。 */
+export const corruptSessions = new Map<string, { path: string; hash: string | null; errorCode: string }>()
+
+function assertSessionWritable(id: string): void {
+  const corruption = corruptSessions.get(safeId(id))
+  if (corruption) throw Object.assign(new Error(`SESSION_CORRUPT_READ_ONLY: ${corruption.path}`), {
+    code: 'SESSION_CORRUPT_READ_ONLY', ...corruption
+  })
+}
+
+/** Explicit recovery only: preserve the original byte for byte and create a distinct branch. */
+export function recoverCorruptSession(id: string, confirmed: boolean): StoredSession {
+  if (!confirmed || !corruptSessions.has(safeId(id))) throw new Error('SESSION_RECOVERY_CONFIRMATION_REQUIRED')
+  const file = fileForId(id)
+  copyFileSync(file, file.replace(/\.json$/, `.corrupt-${new Date().toISOString().replace(/:/g, '-')}.json`), constants.COPYFILE_EXCL)
+  const branch = ensureSession(randomUUID())
+  save(branch.id)
+  return branch
+}
+
+/** Only ENOENT permits creating a new session. */
 function loadSessionFile(id: string): StoredSession | undefined {
+  assertSessionWritable(id)
   const cached = sessionCache.get(id)
   if (cached) return cached
+  let raw: Buffer | undefined
   try {
-    const s = JSON.parse(readFileSync(fileForId(id), 'utf8')) as StoredSession
+    raw = readFileSync(fileForId(id))
+    const s = JSON.parse(raw.toString('utf8')) as StoredSession
+    if (!s || s.id !== id || !Array.isArray(s.messages)) throw Object.assign(new Error('Invalid session'), { code: 'INVALID_SESSION' })
     if (s && typeof s.id === 'string') {
       // 读不出较早记录时不清理拆分文件：可能只是暂时被占用，留着下次还能读回来。
       let tidy = true
@@ -489,10 +533,15 @@ function loadSessionFile(id: string): StoredSession | undefined {
       // 主文件不引用的拆分文件（换文件后没删掉的旧文件、写到一半崩溃的新文件）顺手清掉。
       if (tidy) removeCompactedFiles(id, s.compacted?.file)
       sessionCache.set(id, s)
+      sessionCache.committed(id)
       return s
     }
-  } catch {
-    /* 首次运行 / 文件不存在 / 解析失败 → undefined */
+  } catch (error) {
+    if (raw === undefined && (error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    let hash: string | null = null
+    try { hash = createHash('sha256').update(readFileSync(fileForId(id))).digest('hex') } catch { /* unreadable */ }
+    corruptSessions.set(safeId(id), { path: fileForId(id), hash, errorCode: (error as NodeJS.ErrnoException).code ?? 'PARSE_ERROR' })
+    assertSessionWritable(id)
   }
   return undefined
 }
@@ -502,22 +551,37 @@ function loadSessionFile(id: string): StoredSession | undefined {
  * 只重写这一条 + 轻量索引，与其它对话无关（这是一对话一文件的核心收益）；压缩过的对话只重写模型还看得到的
  * 那部分，更早的追加进拆分文件（见 syncCompacted）。
  */
+export const unsavedSessions = new Set<string>()
+
 export function save(id: string): void {
+  assertSessionWritable(id)
   const s = sessionCache.get(id)
   if (!s) return
   let stale: string | null
+  const compacted = s.compacted
   try {
+    writeFileSync(`${indexPath()}.dirty`, '1', { mode: 0o600 })
     stale = syncCompacted(s)
     const live = s.compacted ? s.messages.slice(s.compacted.count) : s.messages
     // 图片 / PDF 的 base64 外置为 blob 引用（见 media-store.ts），对话文件只留哈希。
     writeFileAtomic(fileForId(id), JSON.stringify({ ...s, messages: live }, mediaReplacer, 2))
-  } catch {
-    /* 单条对话落盘失败静默，不影响内存态 */
-    return
+  } catch (cause) {
+    s.compacted = compacted
+    // An append may have succeeded before the manifest failed. Rebuild a new prefix
+    // on retry rather than appending after uncommitted trailing records.
+    persistedPrefix.delete(s)
+    sessionCache.dirty(id)
+    unsavedSessions.add(id)
+    publishChatEvent({ turnId: '', sessionId: id, event: { type: 'persistence_error', message: '会话未保存，请检查磁盘空间和权限后重试' } })
+    throw Object.assign(new Error('会话未保存，请检查磁盘空间和权限后重试', { cause }), {
+      code: 'SESSION_SAVE_FAILED', sessionId: id
+    })
   }
+  unsavedSessions.delete(id)
+  sessionCache.committed(id)
   if (stale) removeCompactedFiles(id, s.compacted?.file)
   ensureIndex().set(id, metaOf(s))
-  persistIndex()
+  scheduleIndex()
 }
 
 /** 全部会话清单（无分桶——对话优先外壳一次列全部，按 updatedAt 倒序）。 */
@@ -622,13 +686,18 @@ export function setSessionArchived(id: string, archived: boolean): boolean {
 
 /** 删除某对话：清缓存 + 索引 + 磁盘文件（含拆分存盘的较早记录、它存下的超长工具结果）。 */
 export function deleteSession(id: string): void {
-  sessionCache.delete(id)
-  if (ensureIndex().delete(id)) persistIndex()
+  loadSessionFile(id)
+  assertSessionWritable(id)
   try {
     rmSync(fileForId(id), { force: true })
-  } catch {
-    /* 删除失败静默 */
+  } catch (cause) {
+    throw Object.assign(new Error('会话删除失败，原会话已保留，请检查权限后重试', { cause }), {
+      code: 'SESSION_DELETE_FAILED', sessionId: id
+    })
   }
+  sessionCache.delete(id)
+  unsavedSessions.delete(id)
+  if (ensureIndex().delete(id)) persistIndex()
   removeCompactedFiles(id)
   removeToolResults(safeId(id))
 }

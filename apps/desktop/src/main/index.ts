@@ -1,3 +1,4 @@
+import { flushSessionIndex } from './services/chat-store'
 import { app, shell, BrowserWindow, ipcMain, nativeTheme, Tray, Menu } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -139,6 +140,10 @@ function createWindow(): void {
     shown = true
     if (reason !== 'ready-to-show') console.warn(`[window] 首显兜底触发：${reason}`)
     win.show()
+    const sweepTimer = setTimeout(() => {
+      void sweepMedia().catch((e) => console.warn('[media] 清扫失败：', e))
+    }, 10000)
+    sweepTimer.unref()
   }
   win.once('ready-to-show', () => revealOnce('ready-to-show'))
   win.webContents.once('did-finish-load', () => revealOnce('did-finish-load'))
@@ -315,7 +320,8 @@ if (!app.requestSingleInstanceLock()) {
   ipcMain.handle('window:minimize', () => mainWindow?.minimize())
   ipcMain.handle('window:toggle-maximize', () => {
     if (!mainWindow) return
-    mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize()
+    if (mainWindow.isMaximized()) mainWindow.unmaximize()
+    else mainWindow.maximize()
   })
   ipcMain.handle('window:close', () => mainWindow?.close())
   ipcMain.handle('window:is-fullscreen', () => mainWindow?.isFullScreen() ?? false)
@@ -354,7 +360,7 @@ if (!app.requestSingleInstanceLock()) {
     console.warn('[subagents] 清扫失败：', e)
   )
   // 图片 / PDF blob 清扫：删掉已无任何对话或子智能体记录引用的文件
-  void sweepMedia().catch((e) => console.warn('[media] 清扫失败：', e))
+  // Media scanning is scheduled after the window has become visible.
 
   // 技能（Skills，全局 ~/.deva/skills/*/SKILL.md；渐进式披露，启用态入 config.json）
   registerSkillsIpc(() => mainWindow)
@@ -438,6 +444,7 @@ app.on('before-quit', (e) => {
     })
     return
   }
+  flushSessionIndex()
   void disconnectAllServers()
   void stopAllChannels()
   // 入站通道最后停（先停出站再停入站，设计 §3.5）

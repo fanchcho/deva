@@ -1,0 +1,109 @@
+# 镜像发布：构建 Web 版镜像并推到 ghcr.io/<owner>/<repo>，供服务器上的 watchtower 轮询 digest。
+#
+# 为什么单独一个 workflow 而不是塞进 ci.yml：
+#   ci.yml 的职责是「挡住编不过 / 跑不对的改动」，PR 上跑；这里要写 registry 凭据、
+#   只在集成分支和 tag 上推送。分成两个文件后，`push: false` 的构建与真正推送的构建
+#   不会出现两套配置各自漂移——本文件是唯一的镜像构建点。
+#
+# 触发与行为：
+#   pull_request                 → 只构建，不推送（证明 Dockerfile 仍可编译）
+#   push → main                  → 构建 + 推送，tag: latest / sha-<short> / <version>
+#   push → feat/plugin-deva-agent→ 构建 + 推送，tag: edge   / sha-<short> / <version>
+#   push → v*                    → 构建 + 推送，tag: v<version> / sha-<short> / <version>
+#   workflow_dispatch            → 同上按所在 ref 决定（手动点一次就能重发）
+#
+# 版本号不是抄来的：从 apps/desktop/package.json 读（与 out/check-versions.mjs 同一个事实源），
+# 并先跑一次 check:versions，确保 web 包版本没掉队才发布。
+#
+# 架构：只出 linux/amd64。
+#   要加 arm64 需要 buildx + QEMU 模拟整个构建（pnpm install、apt 装 chromium、electron-vite 构建），
+#   实测这类镜像在模拟下是 30–60 分钟量级，还会让缓存命中变差；而这个镜像唯一的原生依赖
+#   @lydell/node-pty 是按安装平台解析 optionalDependency 的，模拟构建虽然能出 arm64 产物，
+#   但构建时间成本对 CI 不划算。需要 arm64 时按下面注释加 platforms 即可（成本自担）。
+name: Image
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - feat/plugin-deva-agent
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      # 版本号：app 包与 web 包必须一致，否则镜像 tag 会与运行时展示的版本对不上。
+      - name: 校验并读取版本号
+        id: version
+        run: |
+          node out/check-versions.mjs
+          VERSION=$(node -p "require('./apps/desktop/package.json').version")
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "发布版本: $VERSION"
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      # PR 来自 fork 时 packages: write 会被降权成只读，所以只在非 PR 事件登录。
+      - name: 登录 ghcr.io
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 计算镜像 tag
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          # 用 github.repository，而不是写死 owner/repo：在 fork 上跑就推到 fork 的包名，
+          # 不会把别人的包覆盖掉。服务器侧用 DEVA_WEB_IMAGE 指向实际发布的那一个。
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha,format=short
+            type=raw,value=${{ steps.version.outputs.value }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/feat/plugin-deva-agent' }}
+            type=ref,event=tag
+
+      # 上下文是仓库根（.dockerignore 在根，build.mjs 需要读 .git 写 build-info.json）。
+      - name: 构建并推送
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 输出镜像摘要（回滚时用 digest）
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "digest: ${{ steps.meta.outputs.digest }}"
+          {
+            echo "### 镜像已推送"
+            echo ""
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+            echo ""
+            echo "digest: \`${{ steps.meta.outputs.digest }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

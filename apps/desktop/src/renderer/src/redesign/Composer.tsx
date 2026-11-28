@@ -1,4 +1,5 @@
 import { ContextChip } from './ContextChip'
+import { runtimeDraftPins } from '../store/runtime-budget'
 /**
  * 输入框：草稿、/指令、插话胶囊；模型、思考等级与上下文占用在 ModelPanel.tsx。
  */
@@ -45,7 +46,7 @@ import {
   ResizeHandle,
   clampComposer,
   loadLayout,
-  saveLayout,
+  useSaveLayout,
   useViewport
 } from './resizable'
 import {
@@ -111,6 +112,8 @@ const draftListeners = new Set<() => void>()
 
 /** 写入（null = 清除）某会话的草稿，并通知会话列表。 */
 function setComposerDraft(id: string, draft: ComposerDraft | null): void {
+  if (draft) runtimeDraftPins.add(id)
+  else runtimeDraftPins.delete(id)
   if (draft) composerDrafts.set(id, draft)
   else if (!composerDrafts.delete(id)) return
   for (const notify of draftListeners) notify()
@@ -346,6 +349,9 @@ export const Composer = memo(function Composer({
   const boxH = clampComposer(composerH, viewport.h)
   const boxHRef = useRef(boxH)
   boxHRef.current = boxH
+  const saveLayout = useSaveLayout()
+  const saveComposerHeight = (height?: number): void =>
+    saveLayout({ composerHeight: height }, (saved) => setComposerH(saved.composerHeight ?? COMPOSER_DEFAULT))
   /** 「/ 指令」联想：当前高亮项下标（随查询词变化复位）。 */
   const [slashSel, setSlashSel] = useState(0)
   /** Esc 收起联想；任何一次输入改动都会复位，重新键入即可再唤出。 */
@@ -872,10 +878,10 @@ export const Composer = memo(function Composer({
             value={boxH}
             title={t('cf.resizeComposer')}
             onChange={(v) => setComposerH(clampComposer(v, window.innerHeight))}
-            onCommit={() => saveLayout({ composerHeight: boxHRef.current })}
+            onCommit={() => saveComposerHeight(boxHRef.current)}
             onReset={() => {
               setComposerH(COMPOSER_DEFAULT)
-              saveLayout({ composerHeight: undefined })
+              saveComposerHeight()
             }}
           />
           {/* 待发附件：图片缩略图（点开看大图）在前，文件 / 文件夹卡片在后；悬停露出右上角的移除键。 */}

@@ -17,7 +17,8 @@ const data = await fs.mkdtemp(path.join(tempRoot, 'web-build-smoke-'))
 const password = crypto.randomBytes(24).toString('hex')
 const server = spawn(process.execPath, ['apps/web/server.mjs'], {
   cwd: repo,
-  env: { ...process.env, HOST: '127.0.0.1', PORT: '0', DEVA_WEB_DATA: data,
+  env: { ...process.env, HOME: data, TMPDIR: data, HOST: '127.0.0.1', PORT: '0', DEVA_WEB_DATA: data,
+    DEVA_UPDATE_CHECK_MINUTES: '-1',
     DEVA_WEB_ADMIN_PASSWORD: password },
   stdio: ['ignore', 'pipe', 'pipe']
 })

@@ -34,10 +34,10 @@ import {
 } from './compaction'
 import { parseAskQuestions } from './ask-questions'
 import { shownText } from './skill-invoke'
-import { repairDanglingToolUses } from './chat-history'
+import { turnRanges, repairDanglingToolUses } from './chat-history'
 import {
   TRUNCATED_FLAG
-} from './loop-support'
+} from './tool-result-flags'
 import { busySessions, backgroundSubagents } from './chat-state'
 
 /** base64 串解码后的字节数。 */
@@ -142,7 +142,8 @@ export function toDisplayMessages(
   background: Record<string, 'running' | 'ok' | 'error'> = {},
   durations: Record<string, number> = {},
   /** messages[0] 在整份对话记录里的下标：只转换末尾几条时（如 emitTurnStart）图片的 ref 仍指向记录里的真实位置。 */
-  indexBase = 0
+  indexBase = 0,
+  window?: { from: number; to: number; heads?: string }
 ): DisplayMessage[] {
   const out: DisplayMessage[] = []
   /** 正在处理的消息在整份对话记录里的下标（图片附件的 ref 用）。 */
@@ -396,8 +397,26 @@ export function toDisplayMessages(
   }
 
   // 提示可能锚在最前（after=0，几乎不出现）、任意消息之后、或全部消息之后（after=length，最常见）。
-  flushNotices(0)
+  const ranges = window ? turnRanges(messages) : []
+  const start = window ? ranges[window.from]?.start ?? messages.length : 0
+  const end = window ? ranges[window.to]?.start ?? messages.length : messages.length
+  const heads = window?.heads === undefined ? undefined : new Map(ranges.map((r, i) => [r.start, i]))
+  if (!window || (window.from === 0 && window.heads !== undefined)) flushNotices(0)
   for (let i = 0; i < messages.length; i++) {
+    if (window && (i < start || i >= end)) {
+      const turn = heads?.get(i)
+      if (turn !== undefined && turn < window.from) {
+        curIndex = indexBase + i
+        processOne(messages[i], messages[i + 1])
+        const head = out[out.length - 1]
+        if (head?.role === 'user') out[out.length - 1] = { role: 'user', text: head.text.slice(0, 160), attachments: [],
+          quiet: head.quiet, notify: head.notify, deferred: { revision: window.heads!, turn } }
+      } else if (window.heads !== undefined && i < (ranges[0]?.start ?? messages.length)) {
+        curIndex = indexBase + i
+        processOne(messages[i], messages[i + 1]); flushNotices(i + 1)
+      }
+      continue
+    }
     curIndex = indexBase + i
     processOne(messages[i], messages[i + 1])
     flushNotices(i + 1)
@@ -443,16 +462,21 @@ export function subagentDisplayArgs(
 }
 
 // 载入某会话的历史（重建展示气泡）。id 全局唯一 → 无需 workspaceRoot（IPC 仍传，忽略即可）。
-export function loadDisplay(sessionId: string): DisplayMessage[] {
+export function loadDisplay(sessionId: string, window?: { from: number; to: number; heads?: string }): DisplayMessage[] {
+  const s = displaySession(sessionId)
+  return s ? displayOf(s, window) : []
+}
+
+export function displaySession(sessionId: string): StoredSession | undefined {
   const s = getSession(sessionId)
   // 载入即自愈并落盘：崩溃 / 强退遗留的悬空 tool_use 补成「未完成」，工具卡随之定格而不是永远转圈。
   // 回合进行中不碰（那时的悬空是工具正在执行）。
   if (s && !busySessions.has(sessionId) && repairDanglingToolUses(s)) saveProject(sessionId)
-  return s ? displayOf(s) : []
+  return s
 }
 
 /** 会话 → 展示气泡（载入 / 按轮删除 / 回滚后回传渲染层）：消息 + 各展示边车。 */
-export function displayOf(s: StoredSession): DisplayMessage[] {
+export function displayOf(s: StoredSession, window?: { from: number; to: number; heads?: string }): DisplayMessage[] {
   return toDisplayMessages(
     s.messages,
     s.proposals ?? {},
@@ -464,6 +488,7 @@ export function displayOf(s: StoredSession): DisplayMessage[] {
     s.todos ?? [],
     (to) => getSubagentMeta(s.id, to),
     s.background ?? {},
-    s.durations ?? {}
+    s.durations ?? {},
+    0, window
   )
 }

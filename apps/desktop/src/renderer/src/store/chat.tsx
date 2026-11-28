@@ -1,3 +1,6 @@
+import { trimRuntimes } from './runtime-budget'
+import { mergeHistoryPage } from '../../../shared/merge-history-page'
+import { HISTORY_REQUEST } from './history-pages'
 import {
   createContext,
   useCallback,
@@ -217,6 +220,7 @@ export type ChatBlock =
 export type PendingCard = Extract<ChatBlock, { kind: 'ask' | 'plan' | 'mount' }>
 
 export interface ChatMessage {
+  deferred?: { revision: string; turn: number }
   id: string
   role: 'user' | 'assistant'
   blocks: ChatBlock[]
@@ -238,6 +242,25 @@ export interface ChatMessage {
   handoff?: HandoffInfo
   /** 助手消息：本轮耗时（毫秒，主进程计时、扣除等用户处置的时间），工作过程折叠条据此显示「已处理 X」。 */
   durationMs?: number
+}
+
+/**
+ * 会话绑定覆盖层的一格：尚未随 `chat:send` 落库到 SessionMeta 的会话级覆盖值
+ * （persona / 聚焦工作区 / 模型 / 思考等级）。见 chat store 里的 bindings。
+ */
+export interface SessionBinding {
+  personaId?: string
+  focusRoot?: string | null
+  model?: string
+  effort?: EffortLevel
+  createdAt?: number
+}
+
+/** 去掉覆盖层里的模型项（该值已落库时以主进程为准）：返回浅拷贝，不改动传入对象。 */
+function omitModel(binding: SessionBinding): SessionBinding {
+  const next = { ...binding }
+  delete next.model
+  return next
 }
 
 /** 会话元信息（左侧列表用）。 */
@@ -607,6 +630,7 @@ function displayToMessages(dms: DisplayMessage[]): ChatMessage[] {
     if (dm.role === 'user') {
       return {
         id: genId(),
+        deferred: dm.deferred,
         role: 'user',
         blocks: dm.text ? [{ kind: 'text', text: dm.text }] : [],
         attachments: dm.attachments.length ? dm.attachments : undefined,
@@ -1084,6 +1108,7 @@ export function ChatProvider({ children }: { children: ReactNode }): React.JSX.E
   // 初始会话清单是否已载入完成。首次 listSessions resolve 后置 true 并恒保持；
   // 渲染层据此区分「加载中」与「确认无对话」，避免启动瞬间闪现空态。
   const [currentSessionId, setCurrentSessionId] = useState<string>('')
+  useEffect(() => { void window.deva.chat.pinSession(currentSessionId) }, [currentSessionId])
   // 各会话正等用户处理的交互卡（见 PendingCard）：不论本层是否缓存 / 流式该会话都记，成员的卡由此在主对话里出现。
   const [pendingCards, setPendingCards] = useState<Record<string, PendingCard[]>>({})
   const pendingCardsRef = useRef(pendingCards)
@@ -1101,22 +1126,12 @@ export function ChatProvider({ children }: { children: ReactNode }): React.JSX.E
     })
   }, [])
   // 各会话活动态（键=sessionId）。ref 供事件回调 / 命令同步读写（不受渲染闭包过期影响），state 驱动渲染。
-  const [runtimes, setRuntimes] = useState<Map<string, SessionRuntime>>(() => new Map())
+  const [runtimes] = useState<Map<string, SessionRuntime>>(() => new Map())
+  const [runtimeVersion, setRuntimeVersion] = useState(0)
   // 会话绑定覆盖层（对话优先外壳）：persona / 聚焦工作区，在会话**首发落库前**只存渲染态，首发时随
   // chat:send 一并绑定；已落库会话的 mount/unmount 也先写此层，随下次 chat:send 更新到主进程。
   // 与 SessionMeta（已落库真值）叠加读出 currentBinding，覆盖层优先（承载尚未落库/刚变更的值）。
-  const [bindings, setBindings] = useState<
-    Map<
-      string,
-      {
-        personaId?: string
-        focusRoot?: string | null
-        model?: string
-        effort?: EffortLevel
-        createdAt?: number
-      }
-    >
-  >(() => new Map())
+  const [bindings, setBindings] = useState<Map<string, SessionBinding>>(() => new Map())
   // 未读会话（键=sessionId）：不在查看时有回合完成即记入，切进该会话即清除。
   const [unread, setUnread] = useState<ReadonlySet<string>>(() => new Set())
   // 别处发起、正在进行的回合（键=sessionId；定时任务 / 手机端）：turn_start 记入、done 移除。本层没缓存的
@@ -1124,8 +1139,8 @@ export function ChatProvider({ children }: { children: ReactNode }): React.JSX.E
   const [bgStreaming, setBgStreaming] = useState<ReadonlySet<string>>(() => new Set())
   // 别处发起的回合何时开始（键=sessionId）：随 bgStreaming 一同增删，sessionStates 据此给出 startedAt。
   const bgStartedRef = useRef(new Map<string, number>())
-  // 每秒自增以触发重渲染，刷新当前所视会话「已用秒数」（不绑定变量，仅需其副作用）。
-  const [, setTick] = useState(0)
+  // 每秒自增以触发重渲染，刷新当前所视会话「已用秒数」（值本身只进 streamStatus 的 memo 依赖）。
+  const [tick, setTick] = useState(0)
 
   const runtimesRef = useRef(runtimes)
   const sessionIdRef = useRef<string>('')
@@ -1147,13 +1162,7 @@ export function ChatProvider({ children }: { children: ReactNode }): React.JSX.E
   const setBinding = useCallback(
     (
       sid: string,
-      patch: {
-        personaId?: string
-        focusRoot?: string | null
-        model?: string
-        effort?: EffortLevel
-        createdAt?: number
-      }
+      patch: SessionBinding
     ): void => {
       const cur = bindingsRef.current.get(sid) ?? {}
       const map = new Map(bindingsRef.current)
@@ -1171,10 +1180,12 @@ export function ChatProvider({ children }: { children: ReactNode }): React.JSX.E
       const cur = runtimesRef.current.get(sid) ?? EMPTY_RUNTIME
       const next = fn(cur)
       if (next === cur) return
-      const map = new Map(runtimesRef.current)
+      const map = runtimesRef.current
+      map.delete(sid)
       map.set(sid, next)
+      trimRuntimes(map, (id, r) => id === sessionIdRef.current || r.streaming || hasAttention(r.messages) || !!pendingCardsRef.current[id]?.length)
       runtimesRef.current = map
-      setRuntimes(map)
+      setRuntimeVersion(v => v + 1)
     },
     []
   )
@@ -1184,7 +1195,15 @@ export function ChatProvider({ children }: { children: ReactNode }): React.JSX.E
   // 载入期间已切走 / 已有活动态生成 → 丢弃结果（绝不冲掉实时内容）。
   const attachSession = useCallback(
     async (sid: string): Promise<void> => {
-      const { messages, turnId, startedAt } = await window.deva.chat.attachSession(sid)
+      const snapshot = await window.deva.chat.attachSession(sid).catch((error: Error) => {
+        if (error.message.includes('SESSION_CORRUPT_READ_ONLY')) {
+          window.dispatchEvent(new CustomEvent('deva:corrupt-session', { detail: { id: sid, message: error.message } }))
+          return null
+        }
+        throw error
+      })
+      if (!snapshot) return
+      const { messages, turnId, startedAt } = snapshot
       if (sessionIdRef.current !== sid || runtimesRef.current.has(sid)) return
       const msgs = displayToMessages(messages as DisplayMessage[])
       if (!turnId) {
@@ -1212,6 +1231,32 @@ export function ChatProvider({ children }: { children: ReactNode }): React.JSX.E
   // 各会话的上下文占用快照（键=sessionId）：由 context_usage 事件推送、切到会话时按需拉取。
   // 与待办清单同一套缓存策略（本窗口收得到所有会话的事件，故缓存不会过期）。
   const [contextUsages, setContextUsages] = useState<Map<string, CompactUsage>>(() => new Map())
+  useEffect(() => {
+    const pending = new Set<string>()
+    let alive = true
+    const listener = (event: Event): void => {
+      const { sid, revision, turn } = (event as CustomEvent<{ sid: string; revision: string; turn: number }>).detail
+      const key = `${sid}:${revision}:${turn}`
+      if (pending.has(key)) return
+      pending.add(key)
+      void window.deva.chat.historyPage(sid, revision, turn).then(async (page) => {
+        if (!alive || !runtimesRef.current.has(sid)) return
+        if (!page) {
+          // A concurrent delete/rewind invalidated the cursor. Reload only an idle runtime.
+          if (runtimesRef.current.get(sid)?.streaming) return
+          const messages = await window.deva.chat.loadSession(sid, projectPathRef.current)
+          if (alive && !runtimesRef.current.get(sid)?.streaming) patchRuntime(sid, r => ({ ...r, messages: displayToMessages(messages) }))
+          return
+        }
+        patchRuntime(sid, r => {
+          return { ...r, messages: mergeHistoryPage(r.messages, page, displayToMessages(page.messages)) }
+        })
+      }).catch(error => console.error('History page failed', error)).finally(() => pending.delete(key))
+    }
+    window.addEventListener(HISTORY_REQUEST, listener)
+    return () => { alive = false; window.removeEventListener(HISTORY_REQUEST, listener) }
+  }, [patchRuntime])
+
   // 各会话的待办清单状态（键=sessionId）：todos 事件推送、切到会话时拉取。本窗口收得到所有会话的事件，
   // 故缓存不会过期。ref 供事件回调 / 拉取回调同步读（判定拉取期间事件是否已先到）。
   const [todoStates, setTodoStates] = useState<Map<string, TodoState>>(() => new Map())
@@ -1286,10 +1331,10 @@ export function ChatProvider({ children }: { children: ReactNode }): React.JSX.E
 
   const dropRuntime = useCallback((sid: string): void => {
     if (!runtimesRef.current.has(sid)) return
-    const map = new Map(runtimesRef.current)
+    const map = runtimesRef.current
     map.delete(sid)
     runtimesRef.current = map
-    setRuntimes(map)
+    setRuntimeVersion(v => v + 1)
   }, [])
 
   // 拉取当前项目会话清单（左侧只列真实已落盘的会话）。
@@ -1435,6 +1480,14 @@ export function ChatProvider({ children }: { children: ReactNode }): React.JSX.E
     const unsub = window.deva.chat.onEvent((payload) => {
       const sid = payload.sessionId
       const ev = payload.event as StreamEvent
+      if (ev.type === 'persistence_error') {
+        toast.show({ variant: 'error', message: ev.message, duration: 0,
+          action: { label: '重试保存 / Retry save', onClick: () => {
+            void window.deva.chat.retrySave(sid).catch(error => toast.show({ variant: 'error', message: String(error), duration: 0 }))
+          } }
+        })
+        return
+      }
       const isDelta = ev.type === 'text_delta' || ev.type === 'thinking_delta'
       if (!isDelta) flushDeltas(sid)
 
@@ -1525,7 +1578,8 @@ export function ChatProvider({ children }: { children: ReactNode }): React.JSX.E
             startedAt: Date.now(),
             reconnecting: null,
             compacting: false,
-            external: true
+            // Received the first event: no streamed prefix is missing.
+            external: false
           }))
         } else if (sessionIdRef.current === sid) void attachSession(sid)
         return
@@ -1786,7 +1840,7 @@ export function ChatProvider({ children }: { children: ReactNode }): React.JSX.E
       // 本地记的模型（覆盖层）会挡住手机上的改动：撤掉，以对话里存的为准。
       const cur = bindingsRef.current.get(sid)
       if (cur?.model !== undefined) {
-        const { model: _stale, ...rest } = cur
+        const rest = omitModel(cur)
         const map = new Map(bindingsRef.current)
         map.set(sid, rest)
         bindingsRef.current = map
@@ -1809,15 +1863,18 @@ export function ChatProvider({ children }: { children: ReactNode }): React.JSX.E
   // 对外暴露「当前所视会话」的那一份活动态（messages/streaming/streamStatus）。
   const messages = viewed?.messages ?? EMPTY_MESSAGES
   const streaming = viewedStreaming
-  // streamStatus 在渲染作用域即时算（每次渲染读新的 Date.now()）：流式期间 setTick 每秒触发渲染 → 秒数走动。
-  const streamStatus: StreamStatus =
-    viewed && viewed.streaming
+  // streamStatus 用 memo 固化引用：它是 value（下方大 useMemo）的依赖，每次渲染新建对象会让那份 memo 每帧重算。
+  // 流式期间 setTick 每秒自增 tick（体例不直接读它，仅作依赖）触发重算 → 「已用秒数」走动。
+  const streamStatus = useMemo<StreamStatus>(() => {
+    void tick
+    return viewed && viewed.streaming
       ? {
           elapsedSec: Math.max(0, Math.floor((Date.now() - viewed.startedAt) / 1000)),
           reconnecting: viewed.reconnecting,
           compacting: viewed.compacting
         }
       : IDLE_STATUS
+  }, [viewed, tick])
 
   // 各会话活动态摘要（左侧列表角标用）；仅 runtimes / 未读集 / 后台进行中集变化时重算。
   // 后台回合没缓存 runtime（进行中靠 bgStreaming，完成后 runtime 也会被丢弃），这类会话单独补一条。
@@ -1850,10 +1907,13 @@ export function ChatProvider({ children }: { children: ReactNode }): React.JSX.E
     if (prev && sameSessionStates(prev, out)) return prev
     sessionStatesRef.current = out
     return out
-  }, [runtimes, unread, bgStreaming, pendingCards, allSessions])
+  }, [runtimes, runtimeVersion, unread, bgStreaming, pendingCards, allSessions])
 
   /** 该会话是不是成员会话（见 SessionMeta.parentId）。 */
-  const isMemberSession = (id: string): boolean => allSessions.some((s) => s.id === id && !!s.parentId)
+  const isMemberSession = useCallback(
+    (id: string): boolean => allSessions.some((s) => s.id === id && !!s.parentId),
+    [allSessions]
+  )
 
   // 当前对话的绑定读出（覆盖层优先于已落库 SessionMeta）：驱动对话优先外壳的头像 / 工作区 chip。
   // 覆盖层承载「尚未落库」（新会话首发前）或「刚 mount/unmount」的值；落库真值来自 listSessions。
@@ -2166,7 +2226,7 @@ export function ChatProvider({ children }: { children: ReactNode }): React.JSX.E
         // 已落库：撤掉覆盖层里的模型，此后以主进程为准——定时任务对话的模型还会被任务表单改（两边同步），
         // 覆盖层留着会把那次改动挡住。期间又切了别的模型（覆盖层已不是这个值）就不动，等那次落库再撤。
         if (r.ok && bindingsRef.current.get(sid)?.model === modelRef) {
-          const { model: _persisted, ...rest } = bindingsRef.current.get(sid) ?? {}
+          const rest = omitModel(bindingsRef.current.get(sid) ?? {})
           const map = new Map(bindingsRef.current)
           map.set(sid, rest)
           bindingsRef.current = map
@@ -2250,7 +2310,11 @@ export function ChatProvider({ children }: { children: ReactNode }): React.JSX.E
       if (id === sessionIdRef.current) return
       setCurrent(id)
       // 已有活动态（正在流式或此前已载入）→ 直接呈现，绝不重载冲掉实时内容。
-      if (runtimesRef.current.has(id)) return
+      const cached = runtimesRef.current.get(id)
+      if (cached) {
+        runtimesRef.current.delete(id); runtimesRef.current.set(id, cached)
+        return
+      }
       void attachSession(id)
     }
 
@@ -2580,9 +2644,10 @@ export function ChatProvider({ children }: { children: ReactNode }): React.JSX.E
     setBinding,
     refreshSessions,
     patchRuntime,
-    patchMessages,
     patchCardBlocks,
-    dropRuntime
+    dropRuntime,
+    attachSession,
+    isMemberSession
   ])
 
   // 拆开下发（见 ChatActions）。ref 在渲染时更新：子组件本次渲染里拿到的操作函数，转调的就是本次渲染的实现。

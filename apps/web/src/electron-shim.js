@@ -1,3 +1,5 @@
+import { downloadDeliverable } from './web/deliverables.js'
+import { encodeAttachment, pickAttachments } from './web/attachments.js'
 /**
  * 浏览器侧 electron 模块替身。
  * preload/index.ts 只用到 contextBridge / ipcRenderer / webUtils 三个成员，
@@ -30,13 +32,31 @@ export const contextBridge = {
 
 export const ipcRenderer = {
   async invoke(channel, ...args) {
+    if (channel === 'deliverables:open') {
+      try { return await downloadDeliverable(args) }
+      catch (error) { window.alert((error.code ?? 'WEB_DOWNLOAD_FAILED') + ': ' + error.message); throw error }
+    }
+    if (channel === 'deliverables:reveal') {
+      const error = Object.assign(new Error('Web 无法显示服务器文件管理器，请使用打开按钮下载文件'), { code: 'WEB_REVEAL_UNSUPPORTED' })
+      window.alert(error.code + ': ' + error.message)
+      throw error
+    }
+    if (channel === 'clipboard:read-text') return navigator.clipboard.readText()
+    if (channel === 'clipboard:write-text') {
+      await navigator.clipboard.writeText(String(args[0] ?? ''))
+      return { ok: true }
+    }
+    if (channel === 'fs:pick-attachments') {
+      return pickAttachments(file => ipcRenderer.invoke('fs:paste-attachment', file))
+    }
+    if (channel === 'fs:paste-attachment') args = [encodeAttachment(args[0])]
     const res = await fetch('/api/invoke', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-deva-csrf': csrf() },
       body: JSON.stringify({ channel, args })
     })
     const body = await res.json()
-    if (!body.ok) throw new Error(body.error ?? `invoke failed: ${channel}`)
+    if (!body.ok) throw Object.assign(new Error(body.error ?? `invoke failed: ${channel}`), { code: body.code })
     return body.value
   },
 
@@ -69,8 +89,8 @@ export const ipcRenderer = {
 }
 
 export const webUtils = {
-  getPathForFile(file) {
-    return file?.path ?? file?.name ?? ''
+  getPathForFile() {
+    return ''
   }
 }
 
@@ -82,6 +102,11 @@ export function __devaEmit(channel, payload) {
 // 这样任意通道（包括运行时才注册的）都能分发。
 if (typeof EventSource !== 'undefined') {
   const source = new EventSource('/api/events')
+  const resync = () => { source.close(); setTimeout(() => window.location.reload(), 1000) }
+  source.addEventListener('resync', resync)
+  let interrupted = false
+  source.onerror = () => { interrupted = true }
+  source.onopen = () => { if (interrupted) resync() } // reconnect without a delivered control frame also needs a snapshot
   source.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data)

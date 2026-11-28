@@ -1,5 +1,4 @@
 import crypto from 'node:crypto'
-import fs from 'node:fs'
 import path from 'node:path'
 import { migrateFile, randomId, readJsonSync, safeEqual, writeJsonAtomic } from './util.mjs'
 
@@ -184,92 +183,12 @@ export class SessionStore {
   }
 }
 
-const AUDIT_LEGACY_RE = /^(.+)-(\d{4}-\d{2}-\d{2})\.jsonl$/
 
 /**
  * 审计：登录事件写 audit/auth/YYYY-MM-DD.jsonl，每用户写 audit/users/<id>/YYYY-MM-DD.jsonl。
  * 旧布局（audit/ 下平铺 <id>-<day>.jsonl）在启动时自动迁移。
  */
-export class AuditLog {
-  constructor(dataRoot) {
-    this.dir = path.join(dataRoot, 'audit')
-    this.authDir = path.join(this.dir, 'auth')
-    this.usersDir = path.join(this.dir, 'users')
-    fs.mkdirSync(this.authDir, { recursive: true, mode: 0o700 })
-    fs.mkdirSync(this.usersDir, { recursive: true, mode: 0o700 })
-    this.migrateLegacy()
-  }
-
-  migrateLegacy() {
-    let entries = []
-    try {
-      entries = fs.readdirSync(this.dir, { withFileTypes: true })
-    } catch {
-      return
-    }
-    for (const entry of entries) {
-      if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue
-      const m = AUDIT_LEGACY_RE.exec(entry.name)
-      if (!m) continue
-      const [, userId, day] = m
-      const dest =
-        userId === 'auth'
-          ? path.join(this.authDir, `${day}.jsonl`)
-          : path.join(this.usersDir, userId, `${day}.jsonl`)
-      migrateFile(path.join(this.dir, entry.name), dest)
-    }
-  }
-
-  append(userId, event) {
-    const day = new Date().toISOString().slice(0, 10)
-    const dir = userId ? path.join(this.usersDir, userId) : this.authDir
-    fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
-    const file = path.join(dir, `${day}.jsonl`)
-    const ts = new Date().toISOString()
-    let line = JSON.stringify({ ts, ...event })
-    if (line.length > 8000) {
-      line = JSON.stringify({
-        ts,
-        truncated: true,
-        bytes: line.length,
-        channel: event.channel,
-        ok: event.ok,
-        error: event.error,
-        ms: event.ms,
-        argsPreview: JSON.stringify(event.args ?? null).slice(0, 2000)
-      })
-    }
-    line += '\n'
-    fs.appendFile(file, line, { mode: 0o600 }, () => undefined)
-  }
-
-  auth(event) {
-    this.append('auth', event)
-  }
-
-  read(userId, limit = 200) {
-    const dir = path.join(this.usersDir, String(userId))
-    let files = []
-    try {
-      files = fs
-        .readdirSync(dir)
-        .filter((f) => f.endsWith('.jsonl'))
-        .sort()
-        .slice(-7)
-    } catch {
-      return []
-    }
-    const lines = []
-    for (const f of files) {
-      try {
-        lines.push(...fs.readFileSync(path.join(dir, f), 'utf8').split('\n').filter(Boolean))
-      } catch {
-        /* ignore */
-      }
-    }
-    return lines.slice(-limit).reverse()
-  }
-}
+export { AuditLog } from './audit-log.mjs'
 
 export function csrfOk(session, provided) {
   return Boolean(session && provided && safeEqual(session.csrf, provided))

@@ -26,6 +26,11 @@ async function main() {
     }
   })
   process.send({ t: 'ready', channels: backend.channels() })
+  let active = null
+  setInterval(() => {
+    const next = backend.hasActiveTurns()
+    if (next !== active && process.connected) { active = next; process.send({ t: 'lease', active }) }
+  }, 1000).unref()
 }
 
 process.on('message', async (msg) => {
@@ -38,11 +43,17 @@ process.on('message', async (msg) => {
   if (!backend) return
   if (msg.t === 'invoke') {
     try {
-      const value = await backend.invoke(msg.channel, msg.args ?? [])
-      if (process.connected) process.send({ t: 'reply', id: msg.id, ok: true, value: value ?? null })
+      const args = msg.args ?? []
+      if (msg.channel === 'fs:paste-attachment' && args[0]?.data) {
+        const encoded = args[0].data.base64
+        if (typeof encoded !== 'string') throw new Error('Invalid attachment encoding')
+        args[0] = { ...args[0], data: Buffer.from(encoded, 'base64') }
+      }
+      const value = await backend.invoke(msg.channel, args)
+      if (process.connected) process.send({ t: 'reply', id: msg.id, active: backend.hasActiveTurns(), ok: true, value: value ?? null })
     } catch (error) {
       if (process.connected) {
-        process.send({ t: 'reply', id: msg.id, ok: false, error: String(error?.message ?? error) })
+        process.send({ t: 'reply', id: msg.id, ok: false, code: error?.code, error: String(error?.message ?? error) })
       }
     }
     return

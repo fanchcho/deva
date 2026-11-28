@@ -1,5 +1,6 @@
+import { CorruptSessionNotice } from './CorruptSessionNotice'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { BotsPane } from './BotsPane'
+import { DeferredTaskForm as TaskFormModal, DeferredSettings as Settings, DeferredBots as BotsPane, DeferredTasks as TasksPane, DeferredPanel, preloadPanels } from './deferred-panels'
 // 关于页的应用图标：直接用安装包图标的源文件，图形只维护一份
 import './redesign.css'
 import type { Persona } from '../mock/extensions'
@@ -23,17 +24,16 @@ import {
   SIDEBAR_DEFAULT,
   clampSidebar,
   loadLayout,
-  saveLayout,
+  useSaveLayout,
   useViewport
 } from './resizable'
 import { clipName, IS_MAC, DEFAULT_PERSONA_ID, fill } from './shell-common'
 import { type MemberEntry, memberPersona } from './MemberBar'
 import { type RailTab, IconRail, Rail, QuickStart, RosterEmpty } from './Rail'
-import { TasksPane, TaskFormModal } from './TasksPane'
 import { LiveConversation } from './Conversation'
 import { type SlashCommand, type ComposerPrefill, restoreToComposer } from './Composer'
 import { type EditorState, ProfileView, PersonaEditor } from './ProfileView'
-import { type SettingsInit, Settings } from './SettingsPane'
+import type { SettingsInit } from './SettingsPane'
 
 /**
  * 「对话优先」外壳（已接真实 store）。
@@ -69,6 +69,7 @@ function useTrafficLights(): boolean {
 }
 
 export function ChatFirstShell(): React.JSX.Element {
+  useEffect(preloadPanels, [])
   const {
     sessions: storedSessions,
     currentSessionId,
@@ -121,12 +122,15 @@ export function ChatFirstShell(): React.JSX.Element {
   }, [sessionStates, currentSessionId, storedSessions, boundTaskSessions])
   // 左侧对话面板宽（可拖动）：存的是用户意图值，渲染时按窗口宽再夹取——窗口缩小时自动收窄、放大后复原。
   const viewport = useViewport()
+  const saveLayout = useSaveLayout()
   const trafficLights = useTrafficLights()
   const railW = trafficLights ? ICONRAIL_W_MAC : ICONRAIL_W
   const [sidebarW, setSidebarW] = useState(() => loadLayout().sidebarWidth ?? SIDEBAR_DEFAULT)
   const sidebarShown = clampSidebar(sidebarW, viewport.w, railW)
   const sidebarRef = useRef(sidebarShown)
   sidebarRef.current = sidebarShown
+  const saveSidebarWidth = (width?: number): void =>
+    saveLayout({ sidebarWidth: width }, (saved) => setSidebarW(saved.sidebarWidth ?? SIDEBAR_DEFAULT))
   // 收起会话列表：只有「对话」页能收起（角色页右侧只是资料卡，收起没意义；定时任务 / 机器人页本就占满）。
   // 收起状态记住（切页再回来、重启都保持）。收起时悬停「对话」图标，列表整块浮在对话区上方（peek），
   // 点会话即切过去（列表留着，可以接着点别的，鼠标离开才收回）——不用先展开就能换对话。
@@ -142,7 +146,7 @@ export function ChatFirstShell(): React.JSX.Element {
     clearPeekTimer()
     setPeek(false)
     setListCollapsed(next)
-    saveLayout({ sidebarCollapsed: next || undefined })
+    saveLayout({ sidebarCollapsed: next || undefined }, (saved) => setListCollapsed(saved.sidebarCollapsed ?? false))
   }
   // 浮出：停 0.2 秒才浮出（鼠标路过不弹）；离开图标与列表 0.15 秒才收回（从图标移到列表要穿过图标栏右侧
   // 约 9px 的空白；再长收回就显得拖沓。同「新建对话」悬停菜单的 0.14 秒）。
@@ -593,6 +597,7 @@ export function ChatFirstShell(): React.JSX.Element {
     <div
       className={`cf-shell${IS_MAC ? ' is-mac' : ''}${trafficLights ? ' has-traffic-lights' : ''}`}
     >
+      <CorruptSessionNotice />
       {/* 无独立标题栏（微信式）：最小化/最大化/关闭用系统原生窗口控件叠加（titleBarOverlay），
           此处不再自绘按钮，避免与原生按钮重影。拖拽交给图标栏与对话头。 */}
       <div
@@ -617,16 +622,16 @@ export function ChatFirstShell(): React.JSX.Element {
             onChange={(v) => {
               if (railTab === 'chats' && v < SIDEBAR_COLLAPSE_AT) {
                 // 收起后手柄卸下、不再走 onCommit：拖到下限前改过的宽度在这里落盘。
-                saveLayout({ sidebarWidth: sidebarRef.current })
+                saveSidebarWidth(sidebarRef.current)
                 setCollapsed(true)
                 return
               }
               setSidebarW(clampSidebar(v, window.innerWidth, railW))
             }}
-            onCommit={() => saveLayout({ sidebarWidth: sidebarRef.current })}
+            onCommit={() => saveSidebarWidth(sidebarRef.current)}
             onReset={() => {
               setSidebarW(SIDEBAR_DEFAULT)
-              saveLayout({ sidebarWidth: undefined })
+              saveSidebarWidth()
             }}
           />
         )}
@@ -642,16 +647,16 @@ export function ChatFirstShell(): React.JSX.Element {
         />
         {railTab === 'bots' ? (
           // 「机器人」tab：同定时任务，占满列表列 + 右侧内容（机器人列表 + 详情）。
-          <BotsPane />
+          <DeferredPanel><BotsPane /></DeferredPanel>
         ) : railTab === 'tasks' ? (
           // 「定时任务」tab：占满列表列 + 右侧内容的整块空间，作独立管理面（列表 + 每行操作）。
           // 与「消息 / 角色」正交——不渲染 Rail 列表列，故 Rail 的 tab 只会拿到 'chats' | 'roster'。
-          <TasksPane
+          <DeferredPanel><TasksPane
             target={tasksTarget}
             onTargetConsumed={() => setTasksTarget(null)}
             onAddByChat={addTaskByChat}
             onOpenChat={openThread}
-          />
+          /></DeferredPanel>
         ) : (
           <>
             <Rail
@@ -766,21 +771,21 @@ export function ChatFirstShell(): React.JSX.Element {
       </div>
 
       {editor && <PersonaEditor initial={editor} onClose={() => setEditor(null)} />}
-      {settingsOpen && <Settings initial={settingsInit} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <DeferredPanel><Settings initial={settingsInit} onClose={() => setSettingsOpen(false)} /></DeferredPanel>}
       {/* 从任务对话标题栏「编辑任务」打开的表单（同管理页）。不显示运行方式：这里是从某个对话进来的，改到别的对话后
           「返回」就会回到那个对话；运行方式到定时任务页里改。 */}
       {editTask && (
-        <TaskFormModal
+        <DeferredPanel><TaskFormModal
           key={editTask.id}
           task={editTask}
           hideRunMode
           onClose={() => setEditTaskId(null)}
           onSubmit={async (input) => {
-            await updateTask({ id: editTask.id, ...input })
+            if (!await updateTask({ id: editTask.id, ...input })) return 'tasks.saveFailed'
             setEditTaskId(null)
             return null
           }}
-        />
+        /></DeferredPanel>
       )}
     </div>
   )

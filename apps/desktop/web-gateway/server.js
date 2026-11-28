@@ -124,7 +124,7 @@ function loadKey() {
   try {
     const k = fs.readFileSync(KEY_FILE, 'utf8').trim()
     if (k) return k
-  } catch {}
+  } catch (error) { console.warn('[web-gateway]', error.message) }
   const k = crypto.randomBytes(6).toString('hex')
   try {
     fs.mkdirSync(path.dirname(KEY_FILE), { recursive: true })
@@ -156,7 +156,7 @@ function broadcast(payload) {
   for (const res of sseClients) {
     try {
       sseSend(res, payload)
-    } catch {}
+    } catch (error) { console.warn('[web-gateway]', error.message) }
   }
 }
 
@@ -547,7 +547,7 @@ function listDrives() {
     const p = `${String.fromCharCode(c)}:\\`
     try {
       if (fs.existsSync(p)) out.push({ name: p, path: p })
-    } catch {}
+    } catch (error) { console.warn('[web-gateway]', error.message) }
   }
   return out
 }
@@ -1007,7 +1007,7 @@ const server = http.createServer(async (req, res) => {
     const beat = setInterval(() => {
       try {
         res.write(': ping\n\n')
-      } catch {}
+      } catch (error) { console.warn('[web-gateway]', error.message) }
     }, 20000)
     req.on('close', () => {
       clearInterval(beat)
@@ -1128,7 +1128,7 @@ function startParentWatchdog() {
     log('[gateway] 启动器已退出，网关随之关闭')
     try {
       await deva.stop()
-    } catch {}
+    } catch (error) { console.warn('[web-gateway]', error.message) }
     process.exit(0)
   }, 2000)
   timer.unref?.()

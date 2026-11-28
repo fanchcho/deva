@@ -40,7 +40,7 @@ const server = http.createServer((req, res) => {
     let msgs = []
     try {
       msgs = JSON.parse(body).messages ?? []
-    } catch {}
+    } catch { res.writeHead(400); res.end('invalid JSON'); return }
     let lastUser = ''
     for (let i = msgs.length - 1; i >= 0; i--) {
       if (msgs[i].role === 'user') {

@@ -2,7 +2,7 @@ import { basename } from 'path'
 import type { ToolSpec } from '../providers/types'
 import type { ToolContext } from './tools'
 import { getSession } from './chat-store'
-import { setMemberFolder } from './chat-members'
+import { setMemberFolder } from './member-folder'
 import { loadProjectDoc } from './project-doc'
 
 /**

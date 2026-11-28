@@ -25,7 +25,7 @@ import {
   formatDuration
 } from '../features/chat/blocks'
 import { fill, useShortTime, Avatar } from './shell-common'
-import { useSchedulePreview } from './TasksPane'
+import { useSchedulePreview } from './schedule-preview'
 import { Conversation } from './Conversation'
 
 /* ---------------- 绑定在本对话上的定时任务（对比稿 design/task-entry.html 方案 A + M2） ---------------- */

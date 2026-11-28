@@ -1,3 +1,5 @@
+import { useSchedulePreview } from './schedule-preview'
+export { useSchedulePreview } from './schedule-preview'
 /**
  * 定时任务页：任务列表、详情与运行历史、新建 / 编辑表单。
  */
@@ -17,6 +19,8 @@ import {
   X
 } from 'lucide-react'
 import type { Persona } from '../mock/extensions'
+import type { TaskDecision } from '../../../shared/task-decision'
+import { TaskDecisionField } from './TaskDecisionField'
 import type {
   PreviewScheduleResult,
   TaskRecord,
@@ -265,7 +269,7 @@ export function TasksPane({
           task={editTask}
           onClose={() => setEditTaskId(null)}
           onSubmit={async (input) => {
-            await update({ id: editTask.id, ...input })
+            if (!await update({ id: editTask.id, ...input })) return 'tasks.saveFailed'
             setEditTaskId(null)
             return null
           }}
@@ -282,28 +286,6 @@ export function TasksPane({
  * 传 allowPast=true：这里展示的都是**已创建任务**（已完成的一次性任务其墙钟必然已过），
  * 一次性时间过去但日程合法时仍取人读摘要，绝不把「已执行完毕」误标为「日程无效」。
  */
-export function useSchedulePreview(schedule: TaskSchedule): string {
-  const { t, locale } = useI18n()
-  const [desc, setDesc] = useState('')
-  const sig = `${schedule.kind}|${schedule.at ?? ''}|${schedule.cron ?? ''}|${schedule.tz}`
-  useEffect(() => {
-    let alive = true
-    void window.deva.tasks
-      .preview(schedule, locale, true)
-      .then((res) => {
-        if (!alive) return
-        setDesc(res.ok ? res.description : t('tasks.previewInvalid'))
-      })
-      .catch(() => {
-        if (alive) setDesc('')
-      })
-    return () => {
-      alive = false
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sig, locale])
-  return desc
-}
 
 /**
  * 左列表列（对齐角色花名册 .cf-rail）：顶部搜索 + 并排「添加任务」入口（按标题过滤），
@@ -684,6 +666,11 @@ function TaskDetail({
                   <div key={i} className="cf-trun">
                     <span className="cf-trun__time">{fmtAbs(run.firedAt, locale)}</span>
                     <RunStatusIcon status={run.status} label={t(runKey(run.status))} detail={run.error} />
+                    {run.decision && (
+                      <span className="cf-trun__msg" title={run.decision.providerId}>
+                        {t(`tasks.decisionRun.${run.decision.status}`)}
+                      </span>
+                    )}
                     {(run.summary || run.error) && (
                       <span className="cf-trun__msg">{run.summary || run.error}</span>
                     )}
@@ -754,12 +741,18 @@ export function TaskFormModal({
     prompt: string
     schedule: TaskSchedule
     auth: { personaId: string | null; modelRef: string | null }
+    decision?: TaskDecision
     /** 运行方式：会话 id = 在该会话中运行，null = 独立运行。 */
     ownerSessionId: string | null
   }) => Promise<string | null>
 }): React.JSX.Element {
   const { t, locale } = useI18n()
   const creating = task == null
+  const { providers } = useModels()
+  const decisionProviders = providers.filter((p) => p.purpose === 'decision' && p.adapter === 'jev' && p.enabled)
+  const [decisionEnabled, setDecisionEnabled] = useState(task?.decision?.enabled ?? false)
+  const [decisionProvider, setDecisionProvider] = useState(task?.decision?.providerId ?? '')
+  const [decisionThreshold, setDecisionThreshold] = useState(task?.decision?.threshold?.toString() ?? '')
 
   const [title, setTitle] = useState(task?.title ?? '')
   const [prompt, setPrompt] = useState(task?.prompt ?? '')
@@ -816,7 +809,10 @@ export function TaskFormModal({
       : new Date(ms).toLocaleString(locale === 'zh-CN' ? 'zh-CN' : 'en-US')
 
   const scheduleInvalid = preview != null && !preview.ok
-  const canSubmit = !saving && prompt.trim().length > 0 && !scheduleInvalid
+  const threshold = decisionThreshold === '' ? undefined : Number(decisionThreshold)
+  const thresholdValid = threshold === undefined || (Number.isFinite(threshold) && threshold >= 0 && threshold <= 1)
+  const decisionValid = !decisionEnabled || (thresholdValid && decisionProviders.some((p) => p.id === decisionProvider))
+  const canSubmit = !saving && prompt.trim().length > 0 && !scheduleInvalid && decisionValid
 
   const heading = creating ? t('tasks.createTitle') : t('tasks.editTitle')
 
@@ -830,10 +826,19 @@ export function TaskFormModal({
         prompt: prompt.trim(),
         schedule,
         auth: { personaId, modelRef },
+        ...(decisionEnabled || task?.decision ? {
+          decision: {
+            enabled: decisionEnabled,
+            providerId: decisionProvider,
+            ...(threshold !== undefined && thresholdValid ? { threshold } : {})
+          }
+        } : {}),
         ownerSessionId: ownerId
       })
       // 成功（null）→ 由调用方关闭弹窗；失败 → 就地提示，表单保持可改。
       if (failed) setErr(failed)
+    } catch (error) {
+      setErr(`${t('tasks.saveFailed')}: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
       setSaving(false)
     }
@@ -909,9 +914,18 @@ export function TaskFormModal({
             </div>
           </div>
 
+          <TaskDecisionField enabled={decisionEnabled} providerId={decisionProvider}
+            threshold={decisionThreshold} providers={decisionProviders} onThreshold={setDecisionThreshold}
+            onProvider={setDecisionProvider} onEnabled={(enabled) => {
+              setDecisionEnabled(enabled)
+              if (enabled && !decisionProvider && decisionProviders.length === 1) {
+                setDecisionProvider(decisionProviders[0].id)
+              }
+            }} />
+
           {/* 提交失败（主进程校验未过）：复用日程预览的红字行就地提示，弹窗保持打开。 */}
           {err && (
-            <div className="cf-schedprev is-invalid">
+            <div role="alert" className="cf-schedprev is-invalid">
               <AlertTriangle size={13} />
               <span>{t(err)}</span>
             </div>

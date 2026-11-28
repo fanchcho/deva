@@ -1,3 +1,5 @@
+import { isUnread } from './session-unread'
+export { isUnread } from './session-unread'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlarmClock, Archive, ArchiveRestore, ChevronLeft, Menu, Search, SquarePen, Trash2, X } from 'lucide-react'
 import type { WebSession } from '../shared/remote-web'
@@ -26,10 +28,7 @@ export function filterTitle(store: Store, f: Filter): string {
  * 未读：最后一条是助手的回复，且比上次看过的时间新。看过的时间取手机本地记的与电脑记的（两端共用，
  * 任一端看过就算）中较晚的那个——在电脑上看过的，手机上不再显示红点。进行中 / 等你决定的不算未读。
  */
-export function isUnread(s: WebSession, seen: Map<string, number>): boolean {
-  if (s.busy || s.waiting || s.previewRole !== 'assistant') return false
-  return s.updatedAt > Math.max(seen.get(s.id) ?? 0, s.readAt ?? 0)
-}
+
 
 /** 有定时任务：独立运行的任务对话，或绑定了任务的对话。 */
 export function hasTasks(s: WebSession): boolean {

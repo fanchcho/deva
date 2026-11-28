@@ -27,7 +27,7 @@ export interface GeneralServerConfig {
 /** 设备名净化：去 C0/C1 控制符、bidi 覆写与零宽字符，截断 40 字符（配对与改名共用）。 */
 export function sanitizeDeviceName(raw: string): string {
   return raw
-    .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f]/g, '')
+    .replace(/[\p{Cc}\u200b-\u200f\u202a-\u202e\u2060-\u206f]/gu, '')
     .trim()
     .slice(0, 40)
 }

@@ -100,7 +100,7 @@ class DevaControl extends EventEmitter {
       const timer = setTimeout(() => {
         try {
           ws.close()
-        } catch {}
+        } catch (error) { console.warn('[web-gateway]', error.message) }
         reject(new Error('连不上 Deva 调试端口（可能 Deva 已退出）'))
       }, 8000)
       ws.onopen = () => {
@@ -125,6 +125,7 @@ class DevaControl extends EventEmitter {
         this.alive = false
         this.pageReady = false
         this.ws = null
+        this._rejectPending()
         this.emit('state', { deva: 'stopped', page: false })
         if (wasAlive && !this.stopping) this.log('[deva] 连接断开（Deva 关掉了？）')
       }
@@ -163,9 +164,10 @@ class DevaControl extends EventEmitter {
     if (this.ws) {
       try {
         this.ws.close()
-      } catch {}
+      } catch (error) { console.warn('[web-gateway]', error.message) }
     }
     this.ws = null
+    this._rejectPending()
     this.emit('state', { deva: 'stopped', page: false })
   }
 
@@ -195,6 +197,14 @@ class DevaControl extends EventEmitter {
     this.stopping = true
     if (this.retryTimer) clearInterval(this.retryTimer)
     this.retryTimer = null
+  }
+
+  _rejectPending() {
+    for (const { reject, timer } of this.pending.values()) {
+      clearTimeout(timer)
+      reject(new Error('CDP connection closed'))
+    }
+    this.pending.clear()
   }
 
   // ───────── CDP 传输 ─────────

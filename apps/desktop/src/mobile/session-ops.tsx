@@ -3,7 +3,7 @@ import { Archive, ArchiveRestore, MailOpen, Trash2 } from 'lucide-react'
 import type { WebModel, WebSession } from '../shared/remote-web'
 import type { Store } from './App'
 import { SessionFace } from './avatar'
-import { isUnread } from './home'
+import { isUnread } from './session-unread'
 import type { Link } from './link'
 import { fmtListTime, t } from './strings'
 

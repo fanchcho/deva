@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { useI18n } from '../i18n/i18n'
+import { useToast } from '../components/ToastProvider'
 
 /**
  * 可拖动尺寸（左侧对话面板宽 / 输入框高）：拖拽手柄 + 上下限 + 落盘。
@@ -55,11 +57,25 @@ export function loadLayout(): Layout {
   }
 }
 
-/** 写入一项尺寸；值为 undefined 即删除该项（恢复默认）。 */
-export function saveLayout(patch: Layout): void {
-  const next: Record<string, unknown> = { ...loadLayout(), ...patch }
-  for (const k of Object.keys(next)) if (next[k] === undefined) delete next[k]
-  void window.deva.config.set({ layout: next })
+let layoutWrites = Promise.resolve()
+
+/** 写入一项尺寸；值为 undefined 即删除该项（恢复默认）。失败恢复磁盘值并提示。 */
+export function useSaveLayout(): (patch: Layout, rollBack: (saved: Layout) => void) => void {
+  const { t } = useI18n()
+  const toast = useToast()
+  return (patch, rollBack) => {
+    layoutWrites = layoutWrites.then(async () => {
+      const saved = loadLayout()
+      const next = { ...saved, ...patch }
+      for (const k of Object.keys(patch) as (keyof Layout)[]) if (next[k] === undefined) delete next[k]
+      try {
+        await window.deva.config.set({ layout: next })
+      } catch (error) {
+        rollBack(saved)
+        toast.show({ variant: 'error', title: t('settings.saveFailed'), message: String(error) })
+      }
+    })
+  }
 }
 
 /** 窗口尺寸（resize 时刷新），供按窗口收缩上限。 */

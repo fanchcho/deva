@@ -26,7 +26,7 @@ async function migrateLegacy(): Promise<void> {
     const parsed = JSON.parse(raw)
     if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
       store = parsed as Record<string, string>
-      await persist() // 写到新位置 ~/.deva/secrets.json（旧文件保留，作兜底，不删）
+      persist() // 写到新位置 ~/.deva/secrets.json（旧文件保留，作兜底，不删）
     }
   } catch {
     // 无旧文件 / 解析失败 —— 视为空库
@@ -48,10 +48,10 @@ async function ensureLoaded(): Promise<void> {
   loaded = true
 }
 
-async function persist(): Promise<void> {
+function persist(next = store): void {
   // 原子写（同步）：写到一半崩溃不会留下半截 JSON——那样下次载入解析失败即视为空库，全部密钥丢失。
   // 同步写还免得两次并发的 persist 同时写同一个临时文件。
-  writeFileAtomic(filePath, JSON.stringify(store, null, 2))
+  writeFileAtomic(filePath, JSON.stringify(next, null, 2))
 }
 
 /**
@@ -81,14 +81,12 @@ export async function setSecret(
 ): Promise<{ ok: boolean; available: boolean }> {
   await ensureLoaded()
   const available = safeStorage.isEncryptionAvailable()
-  if (!value) {
-    delete store[key]
-    await persist()
-    return { ok: true, available }
-  }
-  if (!available) return { ok: false, available }
-  store[key] = safeStorage.encryptString(value).toString('base64')
-  await persist()
+  if (value && !available) return { ok: false, available }
+  const next = { ...store }
+  if (value) next[key] = safeStorage.encryptString(value).toString('base64')
+  else delete next[key]
+  persist(next)
+  store = next
   return { ok: true, available }
 }
 
@@ -101,42 +99,33 @@ export async function hasSecret(key: string): Promise<boolean> {
 /** 删除某密钥（幂等）。 */
 export async function deleteSecret(key: string): Promise<void> {
   await ensureLoaded()
-  if (key in store) {
-    delete store[key]
-    await persist()
+  if (key in store) await setSecret(key, '')
+}
+
+/** 先载入密钥库，再提供同步删除操作，便于 MCP 与其配置一起提交或回滚。 */
+export async function prepareSecretPrefixDeletion(prefix: string): Promise<() => void> {
+  await ensureLoaded()
+  return () => {
+    const keys = Object.keys(store).filter((key) => key.startsWith(prefix))
+    if (keys.length === 0) return
+    const next = { ...store }
+    for (const key of keys) delete next[key]
+    persist(next)
+    store = next
   }
 }
 
 /** 删除某前缀下的所有密钥（如删除 MCP 服务时清 `mcp:<id>:` 全部字段）。 */
 export async function deleteSecretsByPrefix(prefix: string): Promise<void> {
-  await ensureLoaded()
-  let changed = false
-  for (const k of Object.keys(store)) {
-    if (k.startsWith(prefix)) {
-      delete store[k]
-      changed = true
-    }
-  }
-  if (changed) await persist()
+  const remove = await prepareSecretPrefixDeletion(prefix)
+  remove()
 }
 
 export function registerSecretsIpc(): void {
   // 写入 / 更新密钥；空串视为删除。加密不可用时拒绝写入（绝不静默存明文）。
   ipcMain.handle(
     'secrets:set',
-    async (_e, providerId: string, key: string): Promise<{ ok: boolean; available: boolean }> => {
-      await ensureLoaded()
-      const available = safeStorage.isEncryptionAvailable()
-      if (!key) {
-        delete store[providerId]
-        await persist()
-        return { ok: true, available }
-      }
-      if (!available) return { ok: false, available }
-      store[providerId] = safeStorage.encryptString(key).toString('base64')
-      await persist()
-      return { ok: true, available }
-    }
+    (_e, providerId: string, key: string) => setSecret(providerId, key)
   )
 
   // 是否已配置密钥（布尔，不回显明文）
@@ -146,9 +135,7 @@ export function registerSecretsIpc(): void {
   })
 
   ipcMain.handle('secrets:delete', async (_e, providerId: string): Promise<{ ok: true }> => {
-    await ensureLoaded()
-    delete store[providerId]
-    await persist()
+    await deleteSecret(providerId)
     return { ok: true }
   })
 

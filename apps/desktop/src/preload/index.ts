@@ -1,3 +1,5 @@
+import type { HistoryPage } from '../shared/history-page'
+import type { TaskDecision, TaskDecisionResult } from '../shared/task-decision'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { EffortLevel } from '../shared/effort'
 import type { UpdateState } from '../shared/update'
@@ -395,6 +397,7 @@ export interface TaskAuthorization {
 }
 export interface TaskRun {
   firedAt: number
+  decision?: TaskDecisionResult
   finishedAt?: number
   status: 'ok' | 'error' | 'skipped' | 'aborted'
   summary?: string
@@ -408,6 +411,7 @@ export interface TaskRecord {
   prompt: string
   schedule: TaskSchedule
   auth: TaskAuthorization
+  decision?: TaskDecision
   sessionId: string
   /** 运行方式「在会话中运行」所在的会话 id（见 services/tasks-types.ts）；缺省 = 独立运行。 */
   ownerSessionId?: string
@@ -426,6 +430,7 @@ export interface TaskCreateInput {
   prompt: string
   schedule: TaskSchedule
   auth: TaskAuthorization
+  decision?: TaskDecision
   /** 在哪个对话里创建的（由主进程 resolveAutotask 填，渲染层不传）。 */
   originSessionId?: string
   /** 运行方式：在这个会话中运行；缺省 = 独立运行。 */
@@ -437,6 +442,7 @@ export interface TaskUpdateInput {
   prompt?: string
   schedule?: TaskSchedule
   auth?: Partial<TaskAuthorization>
+  decision?: TaskDecision
   /** 运行方式：会话 id = 在该会话中运行，null = 独立运行，缺省 = 不改。 */
   ownerSessionId?: string | null
 }
@@ -693,7 +699,7 @@ const api = {
     /** 同步取整份配置，供首帧读取主题/语言，避免闪烁 */
     getSync: (): Record<string, unknown> => ipcRenderer.sendSync('config:get-sync'),
     get: (): Promise<Record<string, unknown>> => ipcRenderer.invoke('config:get'),
-    /** 顶层浅合并补丁（值为 undefined 删除该键） */
+    /** 顶层浅合并补丁（值为 undefined 删除该键）；原子落盘失败会 reject，保留旧值。 */
     set: (patch: Record<string, unknown>): Promise<{ ok: true }> =>
       ipcRenderer.invoke('config:set', patch)
   },
@@ -774,6 +780,7 @@ const api = {
   mcp: {
     list: (): Promise<McpServerView[]> => ipcRenderer.invoke('mcp:list'),
     get: (id: string): Promise<McpServerConfig | null> => ipcRenderer.invoke('mcp:get', id),
+    /** 写入并读回校验；失败 reject，调用方须等待成功再更新视图。 */
     upsert: (input: McpServerInput): Promise<McpServerConfig> =>
       ipcRenderer.invoke('mcp:upsert', input),
     remove: (id: string): Promise<{ ok: true }> => ipcRenderer.invoke('mcp:remove', id),
@@ -832,6 +839,9 @@ const api = {
     }): Promise<Extract<ChatStreamEvent, { type: 'context_usage' }> | null> =>
       ipcRenderer.invoke('chat:set-compact-ratio', req),
 
+    retrySave: (id: string): Promise<void> => ipcRenderer.invoke('chat:retry-save', id),
+    historyPage: (id: string, revision: string, from: number): Promise<HistoryPage | null> => ipcRenderer.invoke('chat:history-page', id, revision, from),
+    pinSession: (id: string): Promise<void> => ipcRenderer.invoke('chat:pin-session', id),
     send: (req: ChatSendRequest): Promise<{ turnId: string }> =>
       ipcRenderer.invoke('chat:send', req),
     /** 回合进行中插入一条消息（见 ChatInsertRequest）。 */
@@ -875,6 +885,7 @@ const api = {
       ipcRenderer.invoke('chat:attachment-image', sessionId, ref, full),
     /** 载入历史 + 进行中回合的 turnId（同一时刻取出，用于接上别处发起、仍在跑的一轮） */
     /** 接上某会话：历史 + 进行中的回合（turnId 与开始时刻 startedAt，空闲时都为 null）。 */
+    recoverCorrupt: (id: string, confirmed: boolean): Promise<string> => ipcRenderer.invoke('chat:recover-corrupt', id, confirmed),
     attachSession: (
       sessionId: string
     ): Promise<{ messages: DisplayMessage[]; turnId: string | null; startedAt: number | null }> =>
@@ -1322,8 +1333,14 @@ if (process.contextIsolated) {
     console.error(error)
   }
 } else {
-  // @ts-ignore (仅在未启用隔离的回退场景)
+  // 未启用隔离的回退场景：没有 contextBridge，直接挂到 window 上。
   window.deva = api
 }
 
 export type DevaApi = typeof api
+
+declare global {
+  interface Window {
+    deva: DevaApi
+  }
+}

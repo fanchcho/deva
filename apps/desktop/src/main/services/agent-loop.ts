@@ -95,18 +95,20 @@ import {
   type PlanVerdict,
   pendingAsk,
   pendingPlan,
-  pendingMount,
   timedWait,
   genId,
   emit,
   notifyPending
 } from './chat-state'
 import { insertAttachmentChips, plainTaskText, subagentDisplayArgs } from './chat-display'
+import type { PendingNotice } from './background-tasks'
 import type { InsertDelivery } from './chat-inserts'
 import { skillDirNote } from './chat-prompts'
 import { type MemberToolResult } from './chat-members'
 import { baseDir } from './role-home'
 import { MOUNT_TOOL, runMountTool } from './workspace-mount'
+import { requestMount } from './mount-request'
+export { requestMount } from './mount-request'
 
 /** runAgentLoop 的入参：主轮与子智能体共用同一套编排逻辑，仅参数不同。 */
 interface AgentLoopArgs {
@@ -165,6 +167,8 @@ interface AgentLoopArgs {
    * 工具结果之后，模型下一步即可看到。仅主轮传入。
    */
   takeNotices?: () => string | null
+  /** 本轮的后台完成出口，由回合编排层传入；保持同步排队与唤醒顺序。 */
+  enqueueNotice: (sessionId: string, notice: PendingNotice) => void
   /**
    * 取走本会话待送达的插入消息（见 pendingInserts），返回合并后的原文与附件内容块（没有则 null，见
    * chat-inserts.ts）：每步工具结果回灌前、取完通知之后调用，有则附在最后（附件在前、原文在后），并发 insert 事件。
@@ -270,6 +274,8 @@ type LoopResult = {
  */
 export interface LoopRun {
   args: AgentLoopArgs
+  /** 递归执行使用本轮显式持有的执行器，不反向依赖编排模块。 */
+  runChild: typeof runAgentLoop
   /** 子智能体事件的戳（主轮 undefined），见 runAgentLoop。 */
   evMeta: { depth: number; agent?: string; parent?: string; bg?: true } | undefined
   /** 是否子智能体（depth>0）：其流式噪声不进主对话流，见 runAgentLoop。 */
@@ -349,29 +355,6 @@ function reviewPlan(
 }
 
 /**
- * 请求用户挂载工作区（mount_workspace）或为成员选文件夹（create_member 的 pick_folder）、暂停循环等其处置。
- * 返回已选目录的绝对路径，或 null（暂不挂载/取消/中止）。路径**只可能**来自用户的选择（系统目录对话框，或
- * 卡片里列出的、用户自己挂过的文件夹）：这里既不接受模型给的目录、也不替用户预选，故它不是一条能被模型诱导的
- * 提权通道。question = 卡片上的问句（模型给的，可空）。
- */
-export function requestMount(
-  turnId: string,
-  sessionId: string,
-  question: string,
-  member?: string
-): Promise<string | null> {
-  const key = genId('mount')
-  emit(turnId, sessionId, {
-    type: 'mount_request',
-    key,
-    ...(question ? { question } : {}),
-    ...(member ? { member } : {})
-  })
-  notifyPending(turnId, sessionId, { kind: 'mount' })
-  return timedWait(turnId, new Promise((resolve) => pendingMount.set(key, { resolve, turnId, sessionId })))
-}
-
-/**
  * Agent 编排核心：单步流式 → 收集工具调用 → 过权限闸门 → 执行 → 结果回灌 → 继续。
  * 主轮与子智能体共用此逻辑；**不发终态 `done`**，仅返回 `{text, stopReason}` 交调用方处置
  * （主轮由 runTurn 发 done；子轮把 text 作结论回灌父轮）。流式内的 text/tool/usage/error/
@@ -399,6 +382,7 @@ export async function runAgentLoop(args: AgentLoopArgs): Promise<LoopResult> {
   const hasTool = (n: string): boolean => offeredTools.has(n)
   const run: LoopRun = {
     args,
+    runChild: runAgentLoop,
     evMeta,
     isSub,
     listsSkills,

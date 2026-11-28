@@ -1,3 +1,4 @@
+import { collectMediaReferences } from './media-reference-index'
 import { createHash } from 'crypto'
 import { existsSync, mkdirSync, promises as fsp, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
@@ -156,33 +157,10 @@ export async function sweepMedia(): Promise<void> {
   }
   if (names.length === 0) return
 
-  const referenced = new Set<string>()
-  const refRe = /"blob":\s*"([0-9a-f]{64})"/g
-  const scan = async (dir: string): Promise<boolean> => {
-    let entries
-    try {
-      entries = await fsp.readdir(dir, { withFileTypes: true })
-    } catch (e) {
-      // 目录不存在 = 没有引用；读不了则放弃整次清扫，免得误删仍被引用的 blob。
-      return (e as NodeJS.ErrnoException)?.code === 'ENOENT'
-    }
-    for (const d of entries) {
-      const p = join(dir, d.name)
-      if (d.isDirectory()) {
-        if (!(await scan(p))) return false
-      } else if (d.name.endsWith('.json') || d.name.endsWith('.jsonl')) {
-        // .jsonl = 对话拆分存盘的较早记录（见 chat-store.ts），里面同样引用 blob。
-        try {
-          const text = await fsp.readFile(p, 'utf8')
-          for (const m of text.matchAll(refRe)) referenced.add(m[1])
-        } catch {
-          return false
-        }
-      }
-    }
-    return true
-  }
-  if (!(await scan(join(root, 'chats'))) || !(await scan(join(root, 'subagents')))) return
+  const referenced = await collectMediaReferences(root)
+  if (!referenced) return
+  // A stale index may retain too much, but cannot authorize a deletion.
+  let verified: Set<string> | null | undefined
 
   const now = Date.now()
   for (const name of names) {
@@ -191,6 +169,9 @@ export async function sweepMedia(): Promise<void> {
     if (HASH_RE.test(name) && referenced.has(name)) continue
     try {
       if ((await fsp.stat(p)).mtimeMs < now - SWEEP_GRACE_MS) {
+        if (verified === undefined) verified = await collectMediaReferences(root, true)
+        if (!verified) return
+        if (verified.has(name)) continue
         rmSync(p, { force: true })
         stored.delete(name)
       }

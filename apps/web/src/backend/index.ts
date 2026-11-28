@@ -1,4 +1,5 @@
 import { registerChannelServerIpc } from '@deva/main/services/channel-server'
+import { hasActiveTurns } from '@deva/main/services/chat-state'
 /**
  * Web 后端入口：按 main/index.ts 的顺序注册真实业务模块，
  * 只是不创建窗口，事件改由 SSE 广播。
@@ -14,12 +15,13 @@ import {
 } from 'electron'
 
 import { registerConfigIpc } from '@deva/main/services/config'
+import { registerRoleHomeIpc } from '@deva/main/services/role-home'
 import { registerWorkspaceIpc } from '@deva/main/services/workspace'
 import { registerSecretsIpc } from '@deva/main/services/secrets'
 import { registerProviderIpc } from '@deva/main/services/provider'
-import { registerChatIpc } from '@deva/main/services/chat'
-import { registerReadSyncIpc } from '@deva/main/services/read-sync'
 import { registerContextUsageIpc } from '@deva/main/services/context-usage'
+import { registerReadSyncIpc } from '@deva/main/services/read-sync'
+import { registerChatIpc } from '@deva/main/services/chat'
 import { listSessions } from '@deva/main/services/chat-store'
 import { sweepCheckpoints } from '@deva/main/services/checkpoints'
 import { sweepSubagents } from '@deva/main/services/subagent-store'
@@ -53,6 +55,7 @@ export interface Backend {
   invoke: (channel: string, args: unknown[]) => Promise<unknown>
   send: (channel: string, args: unknown[]) => void
   channels: () => string[]
+  hasActiveTurns: () => boolean
 }
 
 function step(name: string, fn: () => void): void {
@@ -93,19 +96,20 @@ export async function createBackend(options: BackendOptions): Promise<Backend> {
   })
 
   step('config', () => registerConfigIpc())
+  step('role-home', () => registerRoleHomeIpc())
   step('workspace', () => registerWorkspaceIpc(getWindow))
   step('secrets', () => registerSecretsIpc())
   step('provider', () => registerProviderIpc())
   step('chat', () => registerChatIpc(getWindow))
-  step('context usage', () => registerContextUsageIpc())
-  step('read sync', () => registerReadSyncIpc(getWindow))
+  step('context-usage', () => registerContextUsageIpc())
+  step('read-sync', () => registerReadSyncIpc(getWindow))
   step('remote', () => registerRemoteIpc(getWindow))
   step('general devices', () => registerChannelServerIpc(getWindow))
 
   const ids = listSessions().map((m) => m.id)
   void sweepCheckpoints(ids).catch((e) => console.warn('[web] sweepCheckpoints:', e))
   void sweepSubagents(ids).catch((e) => console.warn('[web] sweepSubagents:', e))
-  void sweepMedia().catch((e) => console.warn('[web] sweepMedia:', e))
+  setTimeout(() => { void sweepMedia().catch((e) => console.warn('[web] sweepMedia:', e)) }, 10000).unref()
 
   step('skills', () => {
     registerSkillsIpc(getWindow)
@@ -137,6 +141,7 @@ export async function createBackend(options: BackendOptions): Promise<Backend> {
   return {
     invoke: (channel, args) => __invoke(channel, args),
     send: (channel, args) => __send(channel, args),
-    channels: () => __listChannels()
+    channels: () => __listChannels(),
+    hasActiveTurns
   }
 }

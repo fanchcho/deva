@@ -1,10 +1,11 @@
-# PR 与推到 main 时做类型检查 + 构建，挡住编不过的改动。打包与发版仍由 release.yml 负责。
+# PR 与推到 main 时做类型检查 + 构建 + lint + Web 层回归，挡住编不过 / 跑不对的改动。
+# 打包与发版仍由 release.yml 负责。
 name: CI
 
 on:
   pull_request:
   push:
-    branches: [main, deva_web]
+    branches: [main]
 
 permissions:
   contents: read
@@ -18,24 +19,148 @@ jobs:
   check:
     runs-on: ubuntu-latest
     env:
-      # 只做类型检查和 electron-vite 构建，用不到 Electron 二进制，跳过下载以加快安装
+      # 只做类型检查和 electron-vite / esbuild 构建，用不到 Electron 二进制，跳过下载以加快安装
       ELECTRON_SKIP_BINARY_DOWNLOAD: 1
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
 
+      # 语法兜底：.mjs 不经 tsc / 打包，单独做一次解析检查。范围 = 仓库内所有提交的脚本与源码
+      # （node_modules、构建产物、证据目录、插件里的第三方模板除外）。
+      - name: node --check (JS/ESM 语法)
+        run: |
+          mapfile -t files < <(git ls-files '*.mjs' '*.js' | grep -v -E '^(apps/desktop/out|out|\.tmp)/' || true)
+          echo "检查 ${#files[@]} 个文件"
+          for f in "${files[@]}"; do
+            node --check "$f" || { echo "语法错误: $f"; exit 1; }
+          done
+
+      - run: pnpm lint
+
       - run: pnpm typecheck
 
-      - run: pnpm --filter @deva/web typecheck
+      # 版本单一事实源：apps/desktop/package.json 的 version 决定 Web 层的展示版本、user-agent
+      # 与更新检查（build.mjs → manifest.json → server.mjs → DEVA_VERSION），web 包必须跟随。
+      - run: pnpm check:versions
 
-      - run: pnpm build:web
+      # 主进程纯逻辑单测（node --test + 原生 type stripping，electron 由 test/support 里的替身提供）。
+      - run: pnpm test:desktop
+      - run: node --test apps/web/test/*.test.mjs
 
-      - run: node apps/web/test/build-smoke.mjs
+      - run: pnpm build
+
+      # web 层构建：复用上一步产出的 renderer，把 preload 打成浏览器 shim、主进程服务打成 CJS bundle。
+      - run: pnpm --filter @deva/web build
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: web-build
+          path: |
+            apps/desktop/out
+            apps/web/dist
+
+      # 插件单测：plugins/deva-agent 不在 pnpm workspace 里（in-place node --test）。
+      # 全部用本地临时目录与假 host，不访问外网。
+      - name: deva-agent 插件单测
+        working-directory: plugins/deva-agent
+        run: node scripts/plugin-harness.mjs check && node --test tests/*.test.mjs
+
+  # 端到端回归：起一个真实 Web 实例（不需要 Chromium：浏览器能力是惰性启动的；
+  # 终端用 @lydell/node-pty 的 linux-x64 预编译包，无 npm 编译步骤）。
+  web-e2e:
+    runs-on: ubuntu-latest
+    needs: check
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: web-build
+          path: apps
+
+      - name: 启动实例
+        run: |
+          node apps/web/server.mjs > /tmp/deva-web.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://127.0.0.1:7080/healthz; then break; fi
+            sleep 1
+          done
+          curl -fsS -o /dev/null http://127.0.0.1:7080/healthz || {
+            echo '实例未就绪'; tail -50 /tmp/deva-web.log; exit 1; }
+        env:
+          DEVA_WEB_DATA: ${{ runner.temp }}/deva-web-data
+          DEVA_WEB_ADMIN_PASSWORD: ci-pass
+          DEVA_UPDATE_CHECK_MINUTES: '-1'
+
+      - name: 冒烟（登录 / CSRF / 闸门 / 工作区读写 / 用户隔离 / PTY 回显）
+        env:
+          BASE: http://127.0.0.1:7080
+          ADMIN_USER: admin
+          ADMIN_PASSWORD: ci-pass
+          SMOKE_CREATE_USER: '1'
+        working-directory: apps/web
+        run: node test/smoke.mjs
+
+      - name: 路径闸门与安全回归探针
+        env:
+          BASE: http://127.0.0.1:7080
+          ADMIN_PASSWORD: ci-pass
+        run: |
+          node out/probe.mjs
+          node out/git-e2e.mjs
+          node out/channel-coverage.mjs
+          node out/browse-check.mjs
+          node out/icon-check.mjs
+
+      - name: 失败时输出服务日志
+        if: failure()
+        run: tail -200 /tmp/deva-web.log
+
+  # 镜像构建在 .github/workflows/image.yml（PR 上构建但不推送，集成分支/tag 上推送）。
+  # 这里不再重复一个 push:false 的 docker job：两处构建会各自漂移，最终谁也说不清
+  # 「镜像到底是不是这一版源码编出来的」。
+  #
+  # 明确不覆盖的部分（不是漏跑，是本环境确实跑不了）。这里只声明，不执行。
+  #   · 浏览器能力（Chromium/CDP）：Web 后端的 browser 模块在首次真正开页时才拉起系统 Chromium
+  #     （apps/web/src/backend/chromium.mjs 的 ensureBrowser 是惰性的），所以上面的启动 / 探针都不需要它；
+  #     但真正「开一个网页」的断言要 Chromium，runner 上没有预装，故未纳入 CI
+  #     （仓库现有探针/冒烟也都不含浏览器断言，所以本工作流没有任何「假装修过」的浏览器覆盖）。
+  #   · 容器运行期：image.yml 只证明镜像能构建 / 能推送；entrypoint 降权、/data 属主修正、
+  #     健康检查、watchtower 真正拉取并重启这些要真起容器才看得到，CI 里没有跑，
+  #     也没有对应的本地实测（本机无 docker daemon）。
+
+  platform-logic:
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:desktop
+      - run: node --test plugins/deva-agent/tests/sse.test.mjs

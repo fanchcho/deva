@@ -43,11 +43,11 @@ jobs:
       # 没有 Apple 开发者证书，跳过钥匙串查找签名身份；mac 包改由 afterPack 钩子做 ad-hoc 签名
       CSC_IDENTITY_AUTO_DISCOVERY: false
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
           cache: pnpm
@@ -71,7 +71,7 @@ jobs:
         # 显式 --publish never：CI 环境下 electron-builder 默认会尝试自己发布，发布统一交给下面的 release job
         run: pnpm exec electron-builder ${{ matrix.args }} --publish never
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ matrix.name }}
           # latest.yml + blockmap 是 Windows「检查更新」要读的：前者告诉客户端最新版本与安装包校验值，后者用于增量下载
@@ -94,21 +94,21 @@ jobs:
       contents: write
     steps:
       # 版本说明要读上一个 tag 以来的提交，得拉完整历史与全部 tag
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
 
       - name: 生成版本说明
         run: node .github/scripts/release-notes.mjs "$GITHUB_REF_NAME" > release-notes.md
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: release
           merge-multiple: true
 
       - name: 创建 / 更新 Release
         id: release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: release/*
           body_path: release-notes.md

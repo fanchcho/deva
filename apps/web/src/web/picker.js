@@ -353,6 +353,11 @@
   function connect() {
     if (typeof EventSource === 'undefined') return
     var source = new EventSource('/api/events')
+    var resync = function () { source.close(); setTimeout(function () { window.location.reload() }, 1000) }
+    source.addEventListener('resync', resync)
+    var interrupted = false
+    source.onerror = function () { interrupted = true }
+    source.onopen = function () { if (interrupted) resync() }
     source.onmessage = function (event) {
       try {
         var msg = JSON.parse(event.data)
