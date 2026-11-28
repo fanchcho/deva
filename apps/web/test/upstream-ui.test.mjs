@@ -141,3 +141,11 @@ test('project memory lists active entries and opens details in the project scope
     assert.match(panel,/<ProjectMemory key=\{currentBinding.focusRoot\} root=\{currentBinding.focusRoot\}/)
   } finally {delete globalThis.__projectMemory}
 })
+
+test('archive ID recall preserves upstream case-insensitive prefix matching',async()=>{
+  const built=await build({entryPoints:[new URL('../../desktop/src/main/services/memory-archive.ts',import.meta.url).pathname],bundle:true,write:false,format:'esm',platform:'node'})
+  const {recallArchive}=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].text).toString('base64'))
+  const entry={id:'A_LegacyMixed',originalId:'m_old',type:'reference',title:'Legacy',body:'original body',createdAt:1,updatedAt:1,archivedAt:2}
+  assert.deepEqual(recallArchive([entry],' a_LEGACY '),[entry])
+  assert.deepEqual(recallArchive([entry],'missing'),[])
+})

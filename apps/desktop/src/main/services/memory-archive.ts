@@ -16,7 +16,7 @@ export function evictionCandidates(entries: MemoryEntry[]): MemoryEntry[] {
 
 export function recallArchive(entries: ArchivedMemory[], query: string): ArchivedMemory[] {
   const q = query.trim().toLowerCase()
-  return entries.filter(e => !q || e.id.startsWith(q) || e.originalId === q ||
+  return entries.filter(e => !q || e.id.toLowerCase().startsWith(q) || e.originalId === q ||
     (e.title + '\n' + e.body).toLowerCase().includes(q))
 }
 
