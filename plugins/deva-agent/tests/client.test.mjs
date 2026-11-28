@@ -1030,3 +1030,30 @@ test('all declared settings pages keep headings and render theme/state evidence'
     if(view==='skills' && populated){const toggle=findAll(root,n=>n.role==='switch')[0];assert.equal(toggle.disabled,true,'readonly permission remains')}
   }
 })
+
+test('memory row hierarchy uses a neutral scope badge, timestamp and editing selection feedback', async () => {
+  const root = await mountPage(fakeContext('zh', async () => ({ entries: [{ id:'m_example', scope:'global', scopeLabel:'全局', title:'长标题'.repeat(20), body:'正文'.repeat(100), updatedAt:1700000000000 }] }), { view:'memory' }))
+  const row = findAll(root, n => n.role === 'listitem')[0]
+  assert.deepEqual(row.children[0].children.map(n => n.tag), ['strong','p','div'])
+  const badge = findAll(row, n => n['data-badge'] === 'scope')[0]
+  assert.equal(badge.textContent, '全局')
+  assert.equal(findAll(row, n => n.tag === 'time')[0].datetime, '2023-11-14T22:13:20.000Z')
+  assert.equal(row['aria-current'], 'false')
+  findAll(row, n => n.textContent === '编辑')[0].onclick()
+  assert.equal(row['aria-current'], 'true')
+  findAll(root, n => n.textContent === '取消')[0].onclick()
+  assert.equal(row['aria-current'], 'false')
+  assert.equal(findAll(root, n => n.role === 'list')[0]['aria-busy'], 'false')
+})
+
+test('memory appearance uses host tokens without literal colors and defines focus hover and badge states', async () => {
+  const { readFileSync } = await import('node:fs')
+  const source = readFileSync(new URL('../client.mjs', import.meta.url), 'utf8')
+  const css = source.match(/\.deva-memory-page[^]*?(?=\n@media)/)[0]
+  assert.doesNotMatch(css, /#[\da-f]{3,8}\b|rgba?\(|hsla?\(/i)
+  for (const token of ['--bg-secondary','--bg-input','--text-primary','--text-secondary','--text-muted','--border-light','--border-color','--accent-primary','--error']) assert.ok(css.includes(`var(${token}`), token)
+  for (const selector of [':hover', ':focus-visible', ':focus-within', '[aria-current=true]', '[data-badge=scope]', '.deva-memory-meta', '.deva-field-error']) assert.ok(css.includes(selector), selector)
+  assert.match(css, /text-overflow:ellipsis/)
+  assert.match(css, /-webkit-line-clamp:2/)
+  assert.doesNotMatch(css, /\.dark|prefers-color-scheme/, 'same semantic tokens serve both themes')
+})

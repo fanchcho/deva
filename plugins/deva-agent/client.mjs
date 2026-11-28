@@ -1385,15 +1385,33 @@ const STYLES = `
 .deva-memory-page .deva-memory-form{display:grid;gap:12px;margin:0 0 16px;padding:16px 0}
 .deva-memory-page .deva-memory-form[hidden]{display:none}
 .deva-memory-page .deva-memory-form textarea{min-height:180px;padding:12px;line-height:1.6;resize:vertical}
-.deva-memory-field{display:grid;gap:6px;font-size:12px;color:var(--text-secondary,#666)}
-.deva-memory-field .deva-select{width:100%;color:var(--text-primary,#1a1a1a)}
-.deva-memory-empty{padding:24px 0;margin:0;text-align:center;font-size:13px;color:var(--text-muted,#888)}
-.deva-memory-page .deva-memory-list{display:flex;flex-direction:column;gap:0;border-top:1px solid var(--border-color,#e0e0e0)}
-.deva-memory-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:14px 0;border-bottom:1px solid var(--border-light,var(--border-color,#e0e0e0));font-size:14px;line-height:1.6}
-.deva-memory-copy{min-width:0;flex:1}.deva-memory-copy strong{font-size:14px;font-weight:600;color:var(--text-primary,#1a1a1a)}
-.deva-memory-scope{display:block;font-size:11px;color:var(--text-muted,#888);overflow-wrap:anywhere}
-.deva-memory-copy p{margin:4px 0 0;color:var(--text-secondary,#666);white-space:pre-wrap;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.deva-memory-actions{display:flex;gap:8px;justify-content:flex-end}.deva-memory-note{margin-top:16px;color:var(--text-muted,#888);font-size:12px}.deva-memory-note summary{cursor:pointer}
+.deva-memory-field{display:grid;gap:6px;font-size:12px;font-weight:600;color:var(--text-secondary)}
+.deva-memory-field .deva-select{width:100%;color:var(--text-primary)}
+.deva-memory-empty{padding:24px 0;margin:0;text-align:center;font-size:13px;color:var(--text-muted)}
+.deva-memory-page .deva-memory-list{display:flex;flex-direction:column;gap:0;border-top:1px solid var(--border-color)}
+.deva-memory-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:14px 0;border-bottom:1px solid var(--border-light,var(--border-color));font-size:14px;line-height:1.6}
+.deva-memory-copy{min-width:0;flex:1}.deva-memory-copy strong{font-size:14px;font-weight:600;color:var(--text-primary)}
+.deva-memory-scope{display:block;font-size:11px;color:var(--text-muted);overflow-wrap:anywhere}
+.deva-memory-copy p{font-size:13px;line-height:1.6;margin:4px 0 0;color:var(--text-secondary);white-space:pre-wrap;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.deva-memory-actions{display:flex;gap:8px;justify-content:flex-end}.deva-memory-note{margin-top:16px;color:var(--text-muted);font-size:12px}.deva-memory-note summary{cursor:pointer}
+
+.deva-memory-page{font-family:var(--font-family,inherit);color:var(--text-primary)}
+.deva-memory-page .deva-memory-row:hover{background:var(--bg-secondary)}
+.deva-memory-page .deva-memory-row[aria-current=true]{background:var(--bg-secondary)}
+.deva-memory-page .deva-memory-row:focus-within{outline:1px solid var(--accent-primary);outline-offset:-1px}
+.deva-memory-page .deva-memory-copy{padding-inline:calc(12px * var(--spacing-scale,1))}
+.deva-memory-page .deva-memory-copy strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.5}
+.deva-memory-meta{display:flex;align-items:center;gap:calc(8px * var(--spacing-scale,1));flex-wrap:wrap;margin-top:calc(8px * var(--spacing-scale,1));font-size:11px;line-height:1.5;color:var(--text-muted)}
+.deva-memory-page .deva-memory-scope{display:inline-flex;max-width:100%}
+.deva-memory-page [data-badge=scope]{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:calc(var(--font-size-base,14px) * 11 / 14);font-weight:500;padding:calc(2px * var(--spacing-scale,1)) calc(8px * var(--spacing-scale,1));border:1px solid var(--border-color);border-radius:var(--radius-component,10px);background:transparent;color:var(--text-secondary)}
+.deva-memory-page .deva-btn{height:var(--control-height,32px);padding:0 12px;font-size:13px;line-height:1.5;border:1px solid var(--border-color);border-radius:var(--radius-component,6px);background:var(--bg-input);color:var(--text-primary)}
+.deva-memory-page .deva-btn.ghost{border-color:transparent;background:transparent;color:var(--text-secondary)}
+.deva-memory-page .deva-btn:hover:not(:disabled){background:var(--bg-secondary);color:var(--text-primary)}
+.deva-memory-page .deva-btn:focus-visible,.deva-memory-page .deva-select:focus-visible{outline:2px solid var(--accent-primary);outline-offset:2px}
+.deva-memory-page .deva-select{font-weight:400;background:var(--theme-input-bg,var(--bg-input));border-color:var(--border-color);border-radius:var(--radius-component,6px)}
+.deva-memory-page .deva-select:focus{border-color:var(--accent-primary)}
+.deva-memory-page .deva-field-error{color:var(--error);font-size:13px;line-height:1.6;margin-bottom:calc(12px * var(--spacing-scale,1))}
+.deva-memory-page .deva-memory-note .deva-muted{color:var(--text-muted)}
 
 @media(max-width:768px){.deva-skills-layout{grid-template-columns:1fr}.deva-skills-sidebar{max-height:none}}
 
@@ -2317,18 +2335,23 @@ async function mountMemory(container, ctx) {
   list.setAttribute('role', 'list')
   container.className += ' deva-memory-page'
   container.append(header, error, form, list, disclosure)
+  const rows = new Map()
+  const selectRow = entry => { for (const [key, row] of rows) row.setAttribute('aria-current', String(key === `${entry?.scope}:${entry?.id}`)) }
   let current = null, generation = 0, pending = false
   const busy = value => { pending = value; for (const control of [title, body, type, add, save, remove, refresh, cancel]) control.disabled = value; scopes.disabled = value || !!current }
   const showError = cause => { error.textContent = String(cause?.message || cause) }
   const edit = entry => {
     if (pending) return
     scopes.value = entry?.scope || 'global'; scopes.disabled = !!entry
+    selectRow(entry)
     current = entry; title.value = entry?.title || ''; body.value = entry?.body || ''; type.value = entry?.type || 'user'
     typeField.hidden = !!entry; type.hidden = !!entry; remove.hidden = !entry; form.hidden = false; error.textContent = ''
   }
   const load = async () => {
     const request = ++generation
-    list.replaceChildren(el('p', 'deva-memory-empty', words[9])); error.textContent = ''; busy(true)
+    rows.clear(); list.setAttribute('aria-busy', 'true')
+    const loading = el('p', 'deva-memory-empty', words[9]); loading.setAttribute('role', 'status')
+    list.replaceChildren(loading); error.textContent = ''; busy(true)
     try {
       const result = await ctx.rpc.call('memory-page', { action: 'list' })
       if (request !== generation) return
@@ -2342,12 +2365,24 @@ async function mountMemory(container, ctx) {
       for (const entry of result.entries) {
         const row = el('div', 'deva-memory-row'); row.setAttribute('role', 'listitem')
         const content = el('div', 'deva-memory-copy')
-        content.append(el('strong', '', entry.title), el('span', 'deva-memory-scope', scopeLabel(entry.scope || 'global', entry.scopeLabel || entry.scope || words[1])), el('p', '', entry.body || ''))
+        const heading = el('strong', '', entry.title); heading.title = entry.title
+        const label = scopeLabel(entry.scope || 'global', entry.scopeLabel || entry.scope || words[1])
+        const scope = el('span', 'deva-memory-scope', label)
+        // Use the Studio type-badge dimensions with neutral host theme tokens.
+        scope.setAttribute('data-badge', 'scope'); scope.title = label
+        const meta = el('div', 'deva-memory-meta'); meta.append(scope)
+        const stamp = new Date(entry.updatedAt || entry.createdAt || 0)
+        if (stamp.getTime() > 0 && Number.isFinite(stamp.getTime())) {
+          const time = el('time', '', stamp.toLocaleString(zh ? 'zh-CN' : 'en-US'))
+          time.setAttribute('datetime', stamp.toISOString()); meta.append(time)
+        }
+        content.append(heading, el('p', '', entry.body || ''), meta)
+        rows.set(`${entry.scope}:${entry.id}`, row); row.setAttribute('aria-current', 'false')
         const item = button(zh ? '编辑' : 'Edit', 'deva-btn ghost'); item.onclick = () => edit(entry)
         row.append(content, item); list.append(row)
       }
     } catch (cause) { if (request === generation) { list.replaceChildren(); showError(cause) } }
-    finally { if (request === generation) busy(false) }
+    finally { if (request === generation) { list.setAttribute('aria-busy', 'false'); busy(false) } }
   }
   const mutate = async action => {
     if (pending) return
@@ -2361,7 +2396,7 @@ async function mountMemory(container, ctx) {
   }
 
   add.onclick = () => edit(null); refresh.onclick = () => { void load() }
-  save.onclick = () => mutate('save'); remove.onclick = () => mutate('delete'); cancel.onclick = () => { form.hidden = true }
+  save.onclick = () => mutate('save'); remove.onclick = () => mutate('delete'); cancel.onclick = () => { form.hidden = true; selectRow(null) }
   await load()
 }
 
