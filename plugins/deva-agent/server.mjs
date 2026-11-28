@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { mergedMcpHost } from './lib/mcp-merged.mjs'
 import { registerMemorySettings } from './lib/memory-settings.mjs'
 import { registerSkillSettings } from './lib/skill-settings.mjs'
@@ -131,6 +132,9 @@ export function apply(ctx) {
   })
   // 只注册一个通用 Agent（跟随设置/会话身份）：会话内用 /deva:identity 或 @deva:<id> 切身份，
   // 不再为每个身份各注册一个固定 Agent——插件对外只暴露一个 Deva Agent。
+  const buildVersion = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version
+  const entryHash = createHash('sha256').update(readFileSync(new URL('./client.mjs', import.meta.url))).digest('hex')
+  ctx.log.info(`deva: loaded version=${buildVersion} clientSha256=${entryHash}`)
   const definition = createAgentDefinition({ log: ctx.log, plugin: ctx })
   const registration = ctx.extensions.agents.register(definition)
   ctx.log.info(`deva: Agent 已注册（${registration.id}），身份目录 ${listIdentities().map(item => item.id).join('/')}，支持 /deva:identity 与 @deva:<id> 切换`)

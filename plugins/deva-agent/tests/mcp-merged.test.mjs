@@ -61,3 +61,21 @@ test('atomic writer preserves original on injected failure and malformed input',
   assert.equal(readFileSync(path, 'utf8'), '{bad')
   console.log(JSON.stringify({ failureOriginalSha256: hash(raw), preserved: true, temporaryFiles: 0 }))
 })
+
+test('desktop tools/list probe supplies real names and counts to the page', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'merged-tools-'))
+  const script = join(root, 'server.cjs')
+  writeFileSync(script, `require('node:readline').createInterface({input:process.stdin}).on('line', line => {
+    const q=JSON.parse(line); if(q.id === undefined) return;
+    const result=q.method==='initialize'?{protocolVersion:'2024-11-05',capabilities:{tools:{}},serverInfo:{name:'fixture',version:'1'}}:{tools:[{name:'actual_fixture_tool',description:'from tools/list',inputSchema:{type:'object'}}]};
+    console.log(JSON.stringify({jsonrpc:'2.0',id:q.id,result}));
+  })`)
+  writeFileSync(join(root,'mcp.json'), JSON.stringify({mcpServers:{fixture:{command:process.execPath,args:[script]}}}))
+  writeFileSync(join(root,'config.json'), JSON.stringify({mcp:{enabled:{fixture:true}}}))
+  const run={identity:{userId:1},config:{sharedDevaUserId:1,sharedDevaHome:root},host:{request:async()=>({ok:true,servers:[]})}}
+  const page=await readStudioMcpPage({...run,host:mergedMcpHost(run)})
+  assert.equal(page.servers[0].toolCount,1)
+  assert.equal(page.servers[0].tools[0].name,'actual_fixture_tool')
+  assert.equal(page.servers[0].toolCountUnavailable,undefined)
+  console.log('real isolated stdio probe:',JSON.stringify(page.servers[0]))
+})

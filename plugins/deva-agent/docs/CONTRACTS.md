@@ -453,3 +453,7 @@ Windows 桌面端的 safeStorage **不是**“明文直接 DPAPI 后写盘”。
 页面与运行时使用同一合并适配器，宿主服务通过官方 API 访问，桌面独有服务由插件管理和连接。显式空勾选不连接服务；读取错误明确返回，不静默回退。
 
 桌面与宿主清单合并为 `servers`，不再返回 `desktopCompatibility`。桌面原始扩展数据留在文件，前端只接收可编辑字段与 env/headers 掩码。详见 [MCP-MERGED.md](MCP-MERGED.md)。
+
+## 0.8.53 MCP 页面兼容
+
+`studioMcpList.servers[].tools` 为实际探测的名称/描述数组，失败省略并置 toolCountUnavailable；启用服务仅在探测成功后显示已连接。开关即时调用 set-mcp-server-enabled；页面与运行时均以 enabled 为唯一入口，旧 storage.mcp 勾选不再过滤运行时，兼容 RPC 保留。启动日志包含插件版本及 client SHA-256，供升级/回滚核验。信任确认属于宿主管理面，不由插件自行写入。

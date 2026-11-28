@@ -400,59 +400,35 @@ test('model settings show the shared file and per-app credential warning in each
   }
 })
 
-test('mcp view lists Studio servers, summarizes them, and saves the checked names', async () => {
+test('MCP parity: one catalog, real chips, fractions, switches and no selection controls', async () => {
+  const names = [['ekko_studio_api_openapi_get', 'ekko_studio_api_request'], ['ekko_studio_browser_toolset'], ['ekko_studio_use_toolset'], []]
   const calls = []
-  const rpc = async (name, input) => {
+  const root = await mountPage(fakeContext('zh', async (name, input) => {
     calls.push([name, input])
-    if (name === 'get-mcp-servers') {
-      return { servers: [server('files', { toolCount: 2 }), server('ekko-studio-api', { managed: true, toolCount: 3 }), server('off', { enabled: false, toolCount: 0 })], selected: calls.findLast(([method]) => method === 'save-mcp-selection')?.[1].servers || [] }
-    }
-    if (name === 'save-mcp-selection') return { ok: true, selected: input.servers }
-    throw new Error(`unexpected rpc ${name}`)
+    if (name === 'set-mcp-server-enabled') return { ok: true }
+    return { servers: names.map((tools, i) => server(`service-${i}`, { managed: true, tools: tools.map(name => ({ name, description: '' })), toolCount: tools.length })), selected: [] }
+  }))
+  assert.deepEqual(calls.map(x => x[0]), ['get-mcp-servers'])
+  assert.equal(findAll(root, n => n.className === 'deva-grid').length, 1)
+  assert.deepEqual(findAll(root, n => n.className === 'deva-summary')[0].children.map(n => n.children[1].textContent), ['4','4','4','4'])
+  assert.deepEqual(findAll(root, n => n.className === 'deva-info-value').map(n => n.textContent), ['2/2 个工具','1/1 个工具','1/1 个工具','0/0 个工具'])
+  assert.deepEqual(findAll(root, n => n.className === 'deva-tool').map(n => n.textContent), names.flat())
+  assert.equal(findAll(root, n => /保存勾选|本 Agent 使用|已勾选|在 Studio 中打开/.test(n.textContent)).length, 0)
+  assert.equal(findAll(root, n => n.textContent === 'Studio 管理').length, 5)
+  assert.ok(findAll(root, n => n.textContent === '0 个工具').length)
+  const switches = findAll(root, n => n.role === 'switch')
+  assert.equal(switches.length, 4)
+  assert.equal(switches[0]['aria-checked'], 'true')
+  await switches[0].onclick()
+  assert.deepEqual(calls[1], ['set-mcp-server-enabled', { name: 'service-0', enabled: false }])
+  if (process.env.MCP_SNAPSHOT) {
+    const { writeFileSync, readFileSync } = await import('node:fs')
+    const escape = value => String(value || '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;')
+    const html = n => `<${n.tag}${n.className ? ` class="${escape(n.className)}"` : ''}${n.role ? ` role="${n.role}"` : ''}${n.placeholder ? ` placeholder="${escape(n.placeholder)}"` : ''}${n.style.display ? ` style="display:${n.style.display}"` : ''}${n['aria-checked'] ? ` aria-checked="${n['aria-checked']}"` : ''}>${escape(n.textContent)}${n._html || ''}${n.children.map(html).join('')}</${n.tag}>`
+    const source = readFileSync(new URL('../client.mjs', import.meta.url), 'utf8')
+    const css = source.match(/const STYLES = `([\s\S]*?)`/)[1]
+    writeFileSync(process.env.MCP_SNAPSHOT, '<!doctype html><meta charset="utf-8"><title>MCP parity fixture</title><style>:root{--bg-card:#282828;--bg-input:#282828;--text-primary:#ddd;--text-secondary:#aaa;--text-muted:#888;--border-color:#3c3c3c;--accent-primary:#ddd;--accent-primary-rgb:220,220,220;--success:#61bd65;--error:#ed7777}body{background:#191919;color:#ddd}</style><style>'+css+'</style>'+html(root))
   }
-  const ctx = fakeContext('zh', rpc)
-  const root = await mountPage(ctx)
-
-  assert.deepEqual(calls.map(([name]) => name), ['get-mcp-servers'], 'MCP 页仅通过宿主清单 RPC 读取')
-
-  // 顶部四张汇总卡：总计 / 已启用 / Studio 管理 / 工具
-  const summary = findAll(root, node => node.className === 'deva-summary')[0]
-  assert.deepEqual(summary.children.map(card => [card.children[0].textContent, card.children[1].textContent]), [
-    ['总计', '3'],
-    ['已启用', '2'],
-    ['Studio 托管', '1'],
-    ['工具', '5'],
-  ], '汇总卡与 Studio 原生页一致，固定四张')
-
-  const boxes = findAll(root, node => node.tag === 'input' && node.type === 'checkbox')
-  assert.equal(boxes.length, 3, '每张服务卡片一个「本 Agent 使用」勾选')
-  assert.deepEqual(boxes.map(box => box.checked), [false, false, false])
-
-  boxes[0].checked = true
-  boxes[0].onchange()
-  boxes[1].checked = true
-  boxes[1].onchange()
-  const counter = findAll(root, node => node.className === 'deva-muted' && /已勾选/.test(node.textContent))[0]
-  assert.equal(counter.textContent, '已勾选 2 个服务', '勾选计数在工具栏里立刻更新')
-
-  const save = findAll(root, node => node.tag === 'button' && node.textContent === '保存勾选')[0]
-  assert.ok(save, 'MCP 页必须有保存勾选按钮')
-  await save.onclick()
-  assert.deepEqual(calls.at(-2), ['save-mcp-selection', { servers: ['files', 'ekko-studio-api'] }])
-  assert.equal(calls.at(-1)[0], 'get-mcp-servers')
-  assert.match(ctx.notices.at(-1)[0], /已勾选 2 个 MCP 服务/)
-  assert.equal(ctx.notices.at(-1)[1], 'success')
-})
-
-test('mcp view shows Studio servers that disappeared from the selection instead of hiding them', async () => {
-  const rpc = async (name) => {
-    if (name === 'get-mcp-servers') return { servers: [server('files')], selected: ['files', 'gone'] }
-    throw new Error(`unexpected rpc ${name}`)
-  }
-  const root = await mountPage(fakeContext('en', rpc))
-  const statuses = findAll(root, node => node.tag === 'div' && /Missing from Studio/.test(node.textContent))
-  assert.equal(statuses.length, 1)
-  assert.match(statuses[0].textContent, /gone/)
 })
 
 test('mcp view surfaces a failing host request as an error, not as "no servers"', async () => {
@@ -477,7 +453,7 @@ test('mcp view creates servers from the JSON config dialog and validates before 
   }
   const root = await mountPage(fakeContext('en', rpc))
 
-  const add = findAll(root, node => node.tag === 'button' && node.textContent === '+ Add Server')[0]
+  const add = findAll(root, node => node.tag === 'button' && node.textContent === 'Add Server')[0]
   add.onclick()
   // 新表单打开时不立刻读配置
   assert.equal(calls.filter(([name]) => name === 'get-mcp-server').length, 0)
@@ -569,12 +545,12 @@ test('mcp view toggles, tests and deletes servers through Studio', async () => {
   assert.match(ctx.notices.at(-1)[0], /Test succeeded — 1 tools available/)
   assert.equal(findAll(root, node => node.className === 'deva-tool' && node.textContent === 'files__read').length, 1, '测试拿到的工具渲染成标签')
 
-  const disable = findAll(root, node => node.tag === 'button' && node.textContent === 'Disable')[0]
+  const disable = findAll(root, node => node.tag === 'button' && node.role === 'switch')[0]
   await disable.onclick()
   assert.ok(calls.some(([name, input]) => name === 'set-mcp-server-enabled' && input.enabled === false))
   assert.equal(calls.at(-1)[0], 'get-mcp-servers', '启停后刷新清单')
 
-  const remove = findAll(root, node => node.tag === 'button' && node.textContent === 'Delete')[0]
+  const remove = findAll(root, node => node.tag === 'button' && node.textContent === 'Remove')[0]
   await remove.onclick()
   assert.match(ctx.confirmed.at(-1), /Delete MCP server “files” from Studio\?/)
   assert.ok(calls.some(([name, input]) => name === 'delete-mcp-server' && input.name === 'files'))
@@ -624,9 +600,8 @@ test('mcp view offers a jump to Studio’s own MCP page only when navigation exi
   const visited = []
   const withNav = await mountPage(fakeContext('en', rpc, { navigate: path => visited.push(path) }))
   const open = findAll(withNav, node => node.tag === 'button' && node.textContent === 'Open in Studio')[0]
-  assert.ok(open, '有 navigate 时给出原生页面入口')
-  open.onclick()
-  assert.deepEqual(visited, ['/ekko/mcp'])
+  assert.equal(open, undefined, '原版页头没有额外跳转按钮')
+  assert.deepEqual(visited, [])
 
   const withoutNav = await mountPage(fakeContext('en', rpc))
   assert.equal(findAll(withoutNav, node => node.tag === 'button' && /Open Studio/.test(node.textContent)).length, 0)

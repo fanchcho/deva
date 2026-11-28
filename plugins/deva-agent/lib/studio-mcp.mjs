@@ -180,9 +180,10 @@ export async function readStudioMcpPage(run) {
   const byName = new Map(catalog.map(server => [server.name, server]))
   const servers = await Promise.all(catalog.map(async server => {
     const summary = publicServer(server)
-    if (!server.enabled) return { ...summary, toolCount: 0 }
+    if (!server.enabled) return { ...summary, toolCount: 0, tools: [] }
     try {
-      return { ...summary, toolCount: (await testStudioServer(run.host, server)).length }
+      const tools = await testStudioServer(run.host, server)
+      return { ...summary, toolCount: tools.length, tools }
     } catch {
       return { ...summary, toolCountUnavailable: true }
     }

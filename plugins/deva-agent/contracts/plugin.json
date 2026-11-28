@@ -1054,6 +1054,29 @@
               "toolCountUnavailable": {
                 "type": "boolean",
                 "description": "探测失败，数量未知而非零。"
+              },
+              "tools": {
+                "type": "array",
+                "description": "真实 tools/list 或宿主 test 返回的工具名称与描述；探测失败省略。",
+                "items": {
+                  "type": "object",
+                  "description": "探测发现的工具。",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "description": "真实工具名称。"
+                    },
+                    "description": {
+                      "type": "string",
+                      "description": "工具说明。"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "description"
+                  ],
+                  "additionalProperties": false
+                }
               }
             },
             "required": [

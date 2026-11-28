@@ -23,7 +23,7 @@ import { formatFacts, projectFacts } from './project.mjs'
 import { runAgentTurn } from './loop.mjs'
 import { executeTool } from './tools.mjs'
 import { McpPool, parseServerConfig } from './mcp.mjs'
-import { listStudioServers, readStoredMcpSelection } from './studio-mcp.mjs'
+import { listStudioServers } from './studio-mcp.mjs'
 
 function packageVersion() {
   try {
@@ -101,10 +101,8 @@ async function runWithMcp({ run, input, system, workspaceDir, facts, identity, l
   let servers = []
   try {
     const catalog = await listStudioServers(mergedMcpHost(run, run.mcpOwnerUserId))
-    const selected = await readStoredMcpSelection(run)
-    const wanted = selected === null ? null : new Set(selected)
     const parsed = injectedServers(Object.fromEntries(catalog
-      .filter(server => server.enabled && (wanted === null || wanted.has(server.name)))
+      .filter(server => server.enabled)
       .flatMap(server => {
         try { return [[server.name, runtimeMcpConfig(server.config)]] }
         catch (error) { problems.push(`${server.name}: ${error.message}`); return [] }

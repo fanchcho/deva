@@ -351,12 +351,12 @@ const labels = {
     "mcpTitle": "MCP 服务器",
     "mcpHint": "统一显示 MCP 服务。启停同步桌面配置；保存勾选只控制当前 Profile 的 Deva。“+”表示还有服务未能完成探测。",
     "search": "搜索服务器...",
-    "add": "+ 添加服务器",
+    "add": "添加服务",
     "reload": "刷新",
     "openStudio": "在 Studio 中打开",
     "summaryTotal": "总计",
     "summaryEnabled": "已启用",
-    "summaryManaged": "Studio 托管",
+    "summaryManaged": "Studio 管理",
     "summaryTools": "工具",
     "selectionCount": "已勾选 {count} 个服务",
     "connectedStatus": "已连接",
@@ -371,7 +371,7 @@ const labels = {
     "test": "测试",
     "enable": "启用",
     "disable": "禁用",
-    "remove": "删除",
+    "remove": "移除",
     "testing": "测试中…",
     "testSuccess": "测试成功 — {count} 个工具可用",
     "testFailed": "连接测试失败",
@@ -410,7 +410,7 @@ const labels = {
     "mcpTitle": "MCP servers",
     "mcpHint": "These are the services from Studio → MCP, including built-ins. Enable/disable changes Studio; saved checkboxes apply only to Deva in this profile. Studio probes enabled services for tools.",
     "search": "Search servers...",
-    "add": "+ Add Server",
+    "add": "Add Server",
     "reload": "Refresh",
     "openStudio": "Open in Studio",
     "summaryTotal": "Total",
@@ -430,7 +430,7 @@ const labels = {
     "test": "Test",
     "enable": "Enable",
     "disable": "Disable",
-    "remove": "Delete",
+    "remove": "Remove",
     "testing": "Testing…",
     "testSuccess": "Test succeeded — {count} tools available",
     "testFailed": "Connection test failed",
@@ -1297,6 +1297,21 @@ const STYLES = `
 .deva-btn.primary:hover{opacity:.9;border-color:var(--accent-primary,#333)}
 .deva-btn.ghost{height:auto;padding:2px 8px;border-color:transparent;background:transparent;color:var(--text-secondary,#666)}
 .deva-btn.ghost:hover{background:rgba(var(--accent-primary-rgb,51,51,51),.08);color:var(--text-primary,#1a1a1a)}
+
+.deva-mcp-parity .deva-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.deva-mcp-parity .deva-card{display:flex;flex-direction:column;padding:16px;border-radius:8px}
+.deva-mcp-parity .deva-card-body{flex:1;min-height:116px}
+.deva-mcp-parity .deva-tools{height:88px}
+.deva-mcp-parity .deva-tool{max-width:100%;font-weight:400}
+.deva-mcp-parity .deva-summary-card.managed strong{color:var(--warning,#ffb347)}
+.deva-mcp-parity .danger{color:var(--error,#ef7777)}
+.deva-switch{width:32px;height:18px;border:0;border-radius:12px;padding:2px;background:#777;cursor:pointer;flex:none}
+.deva-switch:after{content:'';display:block;width:14px;height:14px;border-radius:50%;background:white;box-shadow:0 1px 3px #0004}
+.deva-switch[aria-checked=true]{background:var(--accent-primary,#ddd)}
+.deva-switch[aria-checked=true]:after{transform:translateX(14px)}
+.deva-host{display:flex;align-items:center;gap:6px}
+@media(max-width:768px){.deva-mcp-parity .deva-grid{grid-template-columns:1fr}}
+
 .deva-grid{display:grid;gap:calc(14px * var(--spacing-scale,1));grid-template-columns:repeat(auto-fill,minmax(min(100%,420px),1fr))}
 .deva-card{min-width:0;background:var(--theme-card-bg,var(--bg-card,#fff));border:var(--border-width,1px) solid var(--border-color,#e0e0e0);border-radius:var(--radius-component,8px);padding:calc(16px * var(--spacing-scale,1));transition:border-color .15s}
 .deva-card:hover{border-color:rgba(var(--accent-primary-rgb,51,51,51),.3)}
@@ -2294,18 +2309,15 @@ async function mountMemory(container, ctx) {
 }
 
 async function mountMcp(container, ctx, text) {
+  container.className += ' deva-mcp-parity'
   const header = el('div', 'deva-header')
   const heading = el('div')
-  heading.append(el('h2', '', text.mcpTitle), el('p', 'deva-muted', text.mcpHint))
+  heading.append(el('h2', '', text.mcpTitle))
   const headerActions = el('div', 'deva-header-actions')
-  const reload = button(text.reload, 'deva-btn')
+  const reload = button(text.reload, 'deva-btn ghost')
   headerActions.append(reload)
-  // 宿主原生 MCP 页面入口（能跳转时才给按钮，避免点了没反应）
-  if (typeof ctx.ui?.navigate === 'function') {
-    const openStudio = button(text.openStudio, 'deva-btn ghost')
-    openStudio.onclick = () => ctx.ui.navigate('/ekko/mcp')
-    headerActions.append(openStudio)
-  }
+  const hostName = globalThis.location?.hostname
+  if (hostName) headerActions.append(el('span', 'deva-host', `▱ ${hostName}`))
   header.append(heading, headerActions)
 
   const alert = el('div', 'deva-alert')
@@ -2321,7 +2333,7 @@ async function mountMcp(container, ctx, text) {
   }
   const totalValue = card(text.summaryTotal)
   const enabledValue = card(text.summaryEnabled, 'ok')
-  const managedValue = card(text.summaryManaged)
+  const managedValue = card(text.summaryManaged, 'managed')
   const toolsValue = card(text.summaryTools)
 
   const toolbar = el('div', 'deva-toolbar')
@@ -2329,10 +2341,7 @@ async function mountMcp(container, ctx, text) {
   search.type = 'search'
   search.placeholder = text.search
   const addButton = button(text.add, 'deva-btn primary')
-  // Deva 独有：勾选计数与保存入口放工具栏，不额外占一张汇总卡
-  const selectionInfo = el('span', 'deva-muted')
-  const saveSelection = button(text.saveSelection, 'deva-btn')
-  toolbar.append(search, addButton, selectionInfo, saveSelection)
+  toolbar.append(search, addButton)
 
   const grid = el('div', 'deva-grid')
   const status = el('div', 'deva-status')
@@ -2343,9 +2352,6 @@ async function mountMcp(container, ctx, text) {
   /** @type {Array<{name: string, transport: string, managed: boolean, enabled: boolean}>} */
   let servers = []
   let loaded = false
-  saveSelection.disabled = true
-  /** 勾选状态只在这里维护；点「保存勾选」才写回后端。 */
-  const checked = new Set()
   /** 测试过的服务工具清单：name → tools[]。 */
   const tools = new Map()
   /** 最近一次测试失败的原因：name → message（Studio 原生卡片也在卡片里显示这一行）。 */
@@ -2370,10 +2376,9 @@ async function mountMcp(container, ctx, text) {
     totalValue.textContent = loaded ? String(servers.length) : '—'
     enabledValue.textContent = loaded ? String(servers.filter(server => server.enabled).length) : '—'
     managedValue.textContent = loaded ? String(servers.filter(server => server.managed).length) : '—'
-    const toolCount = servers.reduce((count, server) => count + (tools.get(server.name)?.length ?? server.toolCount ?? 0), 0)
+    const toolCount = servers.reduce((count, server) => count + (tools.get(server.name)?.length ?? 0), 0)
     const partial = servers.some(server => server.toolCountUnavailable && !tools.has(server.name))
     toolsValue.textContent = !loaded ? '—' : partial ? `${toolCount}+` : String(toolCount)
-    selectionInfo.textContent = loaded ? format(text.selectionCount, { count: checked.size }) : ''
   }
 
   function visibleServers() {
@@ -2402,7 +2407,7 @@ async function mountMcp(container, ctx, text) {
 
   function renderCard(server) {
     const disabled = server.enabled === false
-    const failure = errors.get(server.name) || (server.toolCountUnavailable && !tools.has(server.name) ? text.disconnectedStatus : '')
+    const failure = errors.get(server.name) || (server.enabled && !tools.has(server.name) ? text.disconnectedStatus : '')
     const state = disabled ? 'off' : failure ? 'bad' : 'ok'
     const item = el('div', `deva-card${disabled ? ' off' : ''}${failure ? ' bad' : ''}`)
 
@@ -2413,6 +2418,7 @@ async function mountMcp(container, ctx, text) {
     const badges = el('div', 'deva-badges')
     const transport = String(server.transport || 'stdio')
     badges.append(el('span', 'deva-badge transport', transport === 'http' ? 'streamable_http' : transport))
+    if (server.managed) badges.append(el('span', 'deva-badge context', text.summaryManaged))
     const stateLabel = disabled ? text.disabledStatus : failure ? text.disconnectedStatus : text.connectedStatus
     badges.append(el('span', `deva-badge ${state}`, stateLabel))
     head.append(badges)
@@ -2424,22 +2430,19 @@ async function mountMcp(container, ctx, text) {
       body.append(row)
     }
     const known = tools.get(server.name)
-    const count = known?.length ?? server.toolCount ?? null
+    const count = known?.length ?? null
     const info = el('div', 'deva-info')
     info.append(
       el('span', 'deva-info-label', text.toolList),
-      el('span', 'deva-info-value', count === null ? text.untested : format(text.toolCount, { count })),
+      el('span', 'deva-info-value', count === null ? text.untested : format(text.toolCount, { count: `${count}/${count}` })),
     )
     body.append(info)
     if (Array.isArray(known) && known.length) {
       const list = el('div', 'deva-tools')
-      for (const tool of known.slice(0, 20)) {
+      for (const tool of known) {
         const tag = el('span', 'deva-tool', String(tool?.name ?? ''))
         if (tool?.description) tag.title = String(tool.description)
         list.append(tag)
-      }
-      if (known.length > 20) {
-        list.append(el('span', 'deva-tool more', format(text.moreTools, { count: known.length - 20 })))
       }
       body.append(list)
     } else if (count === null || count === 0) {
@@ -2452,60 +2455,37 @@ async function mountMcp(container, ctx, text) {
     const actions = el('div', 'deva-actions')
     const edit = button(text.edit, 'deva-btn ghost')
     const test = button(testing.has(server.name) ? text.testing : text.test, 'deva-btn ghost')
-    const toggle = button(server.enabled ? text.disable : text.enable, 'deva-btn ghost')
-    const remove = button(text.remove, 'deva-btn ghost')
+    const toggle = button('', 'deva-switch')
+    toggle.setAttribute('role', 'switch')
+    toggle.setAttribute('aria-checked', String(server.enabled))
+    toggle.setAttribute('aria-label', `${text.enable}: ${server.name}`)
+    const remove = button(text.remove, 'deva-btn ghost danger')
 
     edit.onclick = () => openEditor(server.name, 'edit')
     test.onclick = () => runTest(server.name, test)
     toggle.onclick = () => toggleServer(server.name, !server.enabled, toggle)
     remove.onclick = () => removeServer(server.name, remove)
-    if (!server.managed) actions.append(edit)
-    actions.append(test, toggle)
-    if (!server.managed) actions.append(remove)
-
-    // Deva 独有：挑本 Agent 用哪些服务。Studio 卡片这个位置是启停开关，这里放勾选，保持一致的分区。
-    const use = el('label', 'deva-use')
-    const box = el('input', 'deva-check')
-    box.type = 'checkbox'
-    box.checked = checked.has(server.name)
-    box.disabled = disabled
-    box.setAttribute?.('aria-label', `${text.useForAgent}: ${server.name}`)
-    box.onchange = () => {
-      if (box.checked) checked.add(server.name)
-      else checked.delete(server.name)
-      refreshSummary()
-    }
-    use.append(box, el('span', '', text.useForAgent))
-
-    foot.append(actions, use)
+    actions.append(edit, test, remove)
+    foot.append(actions, toggle)
     item.append(head, body, foot)
     return item
   }
 
   async function load({ note } = {}) {
     reload.disabled = true
-    addButton.disabled = saveSelection.disabled = true
+    addButton.disabled = true
     setAlert('')
     setStatus(text.loading)
     try {
       const snapshot = await ctx.rpc.call('get-mcp-servers')
       if (!Array.isArray(snapshot?.servers) || !Array.isArray(snapshot?.selected)) throw new Error('Studio MCP: invalid catalog response')
       servers = snapshot.servers
-      const selected = snapshot.selected
       loaded = true
-      const available = new Set(servers.map(server => server.name))
-      checked.clear()
-      for (const name of selected) if (available.has(name)) checked.add(name)
       tools.clear()
-      for (const name of [...errors.keys()]) if (!available.has(name)) errors.delete(name)
+      errors.clear()
+      for (const server of servers) if (Array.isArray(server.tools)) tools.set(server.name, server.tools)
       render()
-      // 已选但 Studio 里没有的服务：如实提示，运行时也会在提示词里点名，不静默丢弃。
-      const gone = selected.filter(name => !available.has(name))
-      const notes = []
-      if (note) notes.push(note)
-      if (gone.length) notes.push(`${text.mcpGone}: ${gone.join('、')}`)
-      if (!selected.length && servers.length) notes.push(text.mcpEmpty)
-      setStatus(notes.join('；'))
+      setStatus(note || '')
     } catch (error) {
       loaded = false
       servers = []
@@ -2515,7 +2495,7 @@ async function mountMcp(container, ctx, text) {
       setStatus('')
     } finally {
       reload.disabled = false
-      addButton.disabled = saveSelection.disabled = !loaded
+      addButton.disabled = !loaded
     }
   }
 
@@ -2527,7 +2507,7 @@ async function mountMcp(container, ctx, text) {
       await run()
     } finally {
       busy = false
-      target.disabled = target === saveSelection && !loaded
+      target.disabled = false
     }
   }
 
@@ -2547,6 +2527,7 @@ async function mountMcp(container, ctx, text) {
         ctx.ui.notify(message, 'success')
       } catch (error) {
         testing.delete(name)
+        tools.delete(name)
         errors.set(name, errorText(error))
         render()
         const message = `${text.testFailed}: ${errorText(error)}`
@@ -2674,21 +2655,6 @@ async function mountMcp(container, ctx, text) {
   }
   addButton.onclick = () => openEditor('', 'create')
   reload.onclick = () => { void load() }
-
-  saveSelection.onclick = async () => {
-    await withBusy(saveSelection, async () => {
-      try {
-        const result = await ctx.rpc.call('save-mcp-selection', { servers: [...checked] })
-        const count = Array.isArray(result?.selected) ? result.selected.length : checked.size
-        const message = format(text.savedSelection, { count })
-        await load({ note: message })
-        if (loaded) ctx.ui.notify(message, 'success')
-      } catch (error) {
-        setStatus(errorText(error), 'error')
-        ctx.ui.notify(errorText(error), 'error')
-      }
-    })
-  }
 
   await load()
 }

@@ -296,7 +296,7 @@ test('session lifecycle releases the agent and repeated disposal is safe', async
   } finally { await cleanup() }
 })
 
-test('runtime ignores desktop and injected duplicates, honors empty selection and host disable', async () => {
+test('runtime ignores desktop and injected duplicates, ignores legacy selection and honors host disable', async () => {
   const { dir, cleanup } = await workspace()
   const { mkdir } = await import('node:fs/promises')
   const home = join(dir, '.deva')
@@ -318,12 +318,13 @@ test('runtime ignores desktop and injected duplicates, honors empty selection an
     enabled = true
     await state.profile.namespace('1').set('mcp', { servers: [] })
     await session.run({ input: [], history: [], instructions: [] }, run)
-    assert.ok(systems.every(system => !system.includes('## MCP 连接状态')))
+    assert.doesNotMatch(systems[0], /## MCP 连接状态/)
+    assert.match(systems[1], /## MCP 连接状态/)
     assert.equal(await readFile(join(home, 'mcp.json'), 'utf8'), raw)
   } finally { await session.dispose(); await cleanup() }
 })
 
-test('merged desktop catalog drives Agent tools once and honors empty selection', async () => {
+test('merged desktop catalog drives Agent tools once and honors immediate enable state', async () => {
   const { dir, cleanup } = await workspace()
   const config = { sharedDevaHome: dir, sharedDevaUserId: 1 }
   const script = join(dir, 'fixture.mjs'), startLog = join(dir, 'starts.log')
@@ -340,6 +341,9 @@ test('merged desktop catalog drives Agent tools once and honors empty selection'
     assert.equal((await readFile(startLog, 'utf8')).trim().split('\n').length, 1)
     await state.profile.namespace('1').set('mcp', { servers: [] })
     await session.run({ input: [], history: [], instructions: [] }, run)
-    assert.deepEqual(received[1], [])
+    assert.deepEqual(received[1], ['mcp__desktop__echo'], '旧勾选不再隐藏已启用服务')
+    await writeFile(join(dir, 'config.json'), JSON.stringify({ mcp: { enabled: { desktop: false } } }))
+    await session.run({ input: [], history: [], instructions: [] }, run)
+    assert.deepEqual(received[2], [])
   } finally { await session.dispose(); await cleanup() }
 })
