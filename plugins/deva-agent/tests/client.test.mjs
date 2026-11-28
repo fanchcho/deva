@@ -413,7 +413,7 @@ test('mcp view lists Studio servers, summarizes them, and saves the checked name
   const ctx = fakeContext('zh', rpc)
   const root = await mountPage(ctx)
 
-  assert.deepEqual(calls.map(([name]) => name), ['get-mcp-servers'], 'MCP 页不读身份目录')
+  assert.deepEqual(calls.map(([name]) => name), ['desktop-mcp-page', 'get-mcp-servers'], 'MCP 页读取两个来源但不读身份目录')
 
   // 顶部四张汇总卡：总计 / 已启用 / Studio 管理 / 工具
   const summary = findAll(root, node => node.className === 'deva-summary')[0]
@@ -958,4 +958,15 @@ test('memory page shows empty state and preserves draft on failed save', async (
   await findAll(root, n => n.textContent === '保存')[0].onclick()
   assert.equal(title.value, 'draft')
   assert.ok(findAll(root, n => n.textContent === 'MEMORY_CORRUPT').length)
+})
+
+test('MCP page preserves same ID from desktop and Studio with source labels', async () => {
+  const root = await mountPage(fakeContext('zh', async name => name === 'desktop-mcp-page'
+    ? {servers:[{name:'same',source:'desktop',transport:'stdio',enabled:false}]}
+    : {servers:[server('same')],selected:[]}, {view:'mcp'}))
+  await new Promise(resolve=>setTimeout(resolve,0))
+  assert.equal(findAll(root,n=>n.tag==='h3'&&n.textContent==='same').length,2)
+  assert.ok(findAll(root,n=>n.textContent==='Studio 来源').length)
+  assert.ok(findAll(root,n=>String(n.textContent).includes('桌面来源')).length)
+  assert.ok(findAll(root,n=>String(n.textContent).includes('Studio 同名优先')).length)
 })

@@ -448,3 +448,11 @@ Windows 桌面端的 safeStorage **不是**“明文直接 DPAPI 后写盘”。
 旧 state.user memory 命名空间原样保留且不再读取或写入；页面始终提示未自动合并及回滚方法。
 回滚插件可重新访问旧宿主数据；新桌面文件仍保留，不自动反向覆盖旧数据。
 桌面服务不使用插件锁，不能保证两个应用在检查与 rename 的极短窗口内同时写不冲突；未声称分布式事务保证。
+
+## MCP 双来源设置页
+
+MCP 页现在合并展示两个独立来源分区：桌面 ~/.deva 和 Studio。桌面使用 mcp.json 的 mcpServers[id]，启用态使用 config.json 的 mcp.enabled[id]；Studio 继续使用已有宿主 API，不复制内容。
+按 (source, stable ID) 区分，桌面 ID 是映射键，Studio ID 是 name。同源映射天然唯一，宿主重复 ID 仍明确报错；跨来源同名保留两条且分别可编辑。运行时沿用 Studio 同名优先，即使未勾选 Studio 同名服务，也不会偷偷启用桌面同名副本。
+新增 desktop-mcp-page RPC，action=list/get/create/update/delete/toggle，owner 取 sharedDevaUserId 或激活账号，沿用 32/128 RPC 门禁。输入输出见契约。桌面编辑保留未知字段、secretRef 和其他条目顺序；env/header 详情仍仅显示掩码，省略/掩码保留，null 清除。
+文件使用现有 writeAtomic（临时文件、fsync、rename、锁与原内容比较），损坏 JSON/结构只读保护。连接文件与启用态分文件写，第二步失败尝试条件回滚并明确报错；不是跨进程双文件事务。删除同时清理 enabled/roles 引用；不删除或解密桌面 secrets.json，避免跨应用密钥破坏。外部写入不会触发桌面进程内部 changeListener；桌面重新读取可见，实时连接重建未保证。
+页面各来源独立加载，桌面读取失败不隐藏宿主服务。刷新同时重新获取两来源。桌面分区新增写共享文件；Studio 分区已有新增/编辑仍写宿主。

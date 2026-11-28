@@ -2293,10 +2293,51 @@ async function mountMemory(container, ctx) {
   await load()
 }
 
+function mountDesktopMcp(container, ctx) {
+  container.append(el('h2', '', '桌面来源 · ~/.deva/mcp.json'))
+  const note = el('p', '', '编辑保留桌面 secretRef；不会解密或删除桌面密钥。新服务在桌面来源新增；Studio 来源的编辑仍写宿主。')
+  const error = el('div', 'deva-status error'), list = el('div', 'deva-grid'), editor = el('div', 'deva-modal')
+  const id = el('input', 'deva-select'), area = el('textarea', 'deva-textarea')
+  id.placeholder = '服务 ID'; area.rows = 12; editor.hidden = true
+  const add = button('新增桌面 MCP', 'deva-btn'), save = button('保存桌面配置', 'deva-btn'), cancel = button('取消', 'deva-btn')
+  container.append(note, add, error, editor, list)
+  let editing = false, busy = false
+  const call = input => ctx.rpc.call('desktop-mcp-page', input)
+  const execute = async action => {
+    if (busy) return
+    busy = true; save.disabled = add.disabled = true; error.textContent = ''
+    try { await action() } catch (cause) { error.textContent = errorText(cause) }
+    finally { busy = false; save.disabled = add.disabled = false }
+  }
+  const load = async () => {
+    list.innerHTML = ''; list.append(el('p', '', '加载桌面 MCP…'))
+    try {
+      const result = await call({ action: 'list' })
+      if (!Array.isArray(result?.servers)) throw new Error('桌面 MCP 返回格式错误')
+      list.innerHTML = ''
+      if (!result.servers.length) list.append(el('p', '', '暂无桌面 MCP'))
+      for (const server of result.servers) {
+        const row = el('div', 'deva-card')
+        row.append(el('h3', '', server.name), el('p', '', `桌面 · ${server.transport} · ${server.enabled ? '已启用' : '已停用'}`))
+        const edit = button('编辑桌面配置', 'deva-btn'), remove = button('删除桌面服务', 'deva-btn'), toggle = button(server.enabled ? '停用桌面服务' : '启用桌面服务', 'deva-btn')
+        edit.onclick = () => execute(async () => { const result = await call({ action: 'get', name: server.name }); editor.replaceChildren(id, area, save, cancel); editing = true; id.value = server.name; id.disabled = true; area.value = JSON.stringify(result.config, null, 2); editor.hidden = false })
+        remove.onclick = () => execute(async () => { if (await ctx.ui.confirm(`删除桌面 MCP ${server.name}？`)) { await call({ action: 'delete', name: server.name }); await load() } })
+        toggle.onclick = () => execute(async () => { await call({ action: 'toggle', name: server.name, enabled: !server.enabled }); await load() })
+        row.append(edit, toggle, remove); list.append(row)
+      }
+    } catch (cause) { list.innerHTML = ''; error.textContent = errorText(cause) }
+  }
+  add.onclick = () => { if (busy) return; editor.replaceChildren(id, area, save, cancel); editing = false; id.disabled = false; id.value = ''; area.value = JSON.stringify({ type: 'stdio', command: '', args: [], enabled: false }, null, 2); editor.hidden = false }
+  save.onclick = () => execute(async () => { await call({ action: editing ? 'update' : 'create', name: id.value, config: JSON.parse(area.value) }); editor.hidden = true; await load() })
+  cancel.onclick = () => { editor.hidden = true }
+  void load()
+  return load
+}
+
 async function mountMcp(container, ctx, text) {
   const header = el('div', 'deva-header')
   const heading = el('div')
-  heading.append(el('p', '', text.mcpHint))
+  heading.append(el('p', '', '桌面与 Studio 合并展示，按 来源 + ID 去重。跨来源同名保留两条；运行时 Studio 同名优先。桌面配置仅存 ~/.deva；Studio 服务仍由宿主管理。'))
   const headerActions = el('div', 'deva-header-actions')
   const reload = button(text.reload, 'deva-btn')
   headerActions.append(reload)
@@ -2338,7 +2379,9 @@ async function mountMcp(container, ctx, text) {
   const status = el('div', 'deva-status')
   const modalHost = el('div')
 
-  container.append(header, alert, summary, toolbar, grid, status, modalHost)
+  const desktop = el('div', 'deva-desktop-mcp')
+  container.append(header, desktop, el('h2', '', 'Studio 来源'), alert, summary, toolbar, grid, status, modalHost)
+  const reloadDesktop = mountDesktopMcp(desktop, ctx)
 
   /** @type {Array<{name: string, transport: string, managed: boolean, enabled: boolean}>} */
   let servers = []
@@ -2674,7 +2717,7 @@ async function mountMcp(container, ctx, text) {
     render()
   }
   addButton.onclick = () => openEditor('', 'create')
-  reload.onclick = () => load()
+  reload.onclick = async () => { await Promise.all([load(), reloadDesktop()]) }
 
   saveSelection.onclick = async () => {
     await withBusy(saveSelection, async () => {

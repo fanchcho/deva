@@ -173,7 +173,7 @@ test('bundled icon is Deva 的图标：PNG、且不超过宿主 256KB 上限', a
 test('contracts declare the identity, model and Studio MCP RPCs, the identity command and the namespaced storage', async () => {
   const contract = assertContracts(await readJson('contracts/plugin.json'))
   assert.deepEqual(Object.keys(contract.rpc).sort(), [
-    'clear-session-identity', 'create-mcp-server', 'create-persona', 'delete-mcp-server', 'get-identities', 'get-mcp-server', 'get-mcp-servers',
+    'desktop-mcp-page', 'clear-session-identity', 'create-mcp-server', 'create-persona', 'delete-mcp-server', 'get-identities', 'get-mcp-server', 'get-mcp-servers',
     'get-model-selection', 'get-persona-editor', 'get-session-identity', 'list-provider-models', 'save-mcp-selection', 'save-model-selection', 'save-persona-model', 'save-selection', 'save-session-identity',
     'set-mcp-server-enabled', 'test-mcp-server', 'update-mcp-server', 'update-persona',
     'memory-page', 'get-skills', 'get-skill', 'save-skill', 'set-skill-enabled', 'delete-skill', 'get-skill-files', 'read-skill-file', 'get-skill-directories', 'save-skill-directories',
@@ -189,7 +189,7 @@ test('contracts declare the identity, model and Studio MCP RPCs, the identity co
 test('apply registers the Agent, all RPCs and the identity command, and disposes on unload', async () => {
   const { rpcs, commands, agents, disposers, dispose } = setup()
   assert.deepEqual([...rpcs.keys()].sort(), [
-    'clear-session-identity', 'create-mcp-server', 'create-persona', 'delete-mcp-server', 'get-identities', 'get-mcp-server', 'get-mcp-servers',
+    'desktop-mcp-page', 'clear-session-identity', 'create-mcp-server', 'create-persona', 'delete-mcp-server', 'get-identities', 'get-mcp-server', 'get-mcp-servers',
     'get-model-selection', 'get-persona-editor', 'get-session-identity', 'list-provider-models', 'save-mcp-selection', 'save-model-selection', 'save-persona-model', 'save-selection', 'save-session-identity',
     'set-mcp-server-enabled', 'test-mcp-server', 'update-mcp-server', 'update-persona',
     'memory-page', 'get-skills', 'get-skill', 'save-skill', 'set-skill-enabled', 'delete-skill', 'get-skill-files', 'read-skill-file', 'get-skill-directories', 'save-skill-directories',

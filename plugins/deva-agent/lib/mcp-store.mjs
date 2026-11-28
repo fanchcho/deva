@@ -1,5 +1,7 @@
-import { markCorrupt } from './corrupt-files.mjs'
-// 遗留兼容与测试：页面 CRUD 走 Studio API；本模块仅保留旧桌面服务兜底。
+import { acquireFileLock } from './file-lock.mjs'
+import { unlinkSync } from 'node:fs'
+import { assertWritable, markCorrupt } from './corrupt-files.mjs'
+// 桌面 MCP 共享文件后端；页面与运行时共用，不复制到 Studio。
 /**
  * 插件管理的 MCP 服务：**与桌面同构**，落在 `~/.deva/mcp.json` 的 `mcpServers`，
  * 启用态落 `~/.deva/config.json → mcp.enabled[id]`（桌面既有位置）。
@@ -38,12 +40,14 @@ export function mcpFilePath(config = {}) {
 
 function readStore(config) {
   const path = mcpFilePath(config)
+  assertWritable(path)
   const file = readStrictText(path)
   if (!file) return { path, raw: null, value: {}, servers: {}, exists: false }
   let value
   try { value = JSON.parse(file.raw) } catch { throw markCorrupt(path, new DevaIdentityError('DEVA_MCP_INVALID_JSON', `桌面 mcp.json 不是合法 JSON：${path}；没有覆盖`, { path })) }
   if (!object(value)) throw markCorrupt(path, new DevaIdentityError('DEVA_MCP_INVALID_SHAPE', `桌面 mcp.json 顶层应为对象：${path}`, { path }))
-  const servers = object(value.mcpServers) ? value.mcpServers : {}
+  if (!object(value.mcpServers) || Object.entries(value.mcpServers).some(([id, entry]) => !isServerName(id) || !object(entry))) throw markCorrupt(path, new DevaIdentityError('DEVA_MCP_INVALID_SHAPE', 'mcpServers 必须是合法 ID 到对象的映射'))
+  const servers = value.mcpServers
   return { path, raw: file.raw, value, servers, exists: true }
 }
 
@@ -53,10 +57,32 @@ function writeStore(config, store, servers) {
   writeAtomic(store.path, `${JSON.stringify(value, null, 2)}\n`, { expectedRaw: store.exists ? store.raw : null })
 }
 
+// Both files are independently atomic. Roll back our connection snapshot if state fails;
+// compare bytes first so a concurrent writer is never overwritten by rollback.
+function writePair(config, store, servers, stateWrite) {
+  writeStore(config, store, servers)
+  const written = `${JSON.stringify({ ...store.value, mcpServers: servers }, null, 2)}\n`
+  try { stateWrite() }
+  catch (error) {
+    try {
+      if (store.raw !== null) writeAtomic(store.path, store.raw, { expectedRaw: written })
+      else {
+        const release = acquireFileLock(store.path)
+        try {
+          if (readStrictText(store.path)?.raw !== written) throw new Error('DEVA_CONCURRENT_WRITE')
+          unlinkSync(store.path)
+        } finally { release() }
+      }
+    } catch { throw new DevaIdentityError('DEVA_MCP_ROLLBACK_FAILED', '启用态写入失败且配置回滚失败；请刷新核对，未报告成功') }
+    throw error
+  }
+}
+
 function enabledMap(config) {
   const cfg = readDevaConfig(config)
-  const mcp = object(cfg.value.mcp) ? cfg.value.mcp : {}
-  return object(mcp.enabled) ? mcp.enabled : {}
+  const mcp = cfg.value.mcp ?? {}
+  if (!object(mcp) || (mcp.enabled !== undefined && (!object(mcp.enabled) || Object.values(mcp.enabled).some(value => typeof value !== 'boolean'))) || (mcp.roles !== undefined && !object(mcp.roles))) throw markCorrupt(cfg.path, new DevaIdentityError('DEVA_MCP_INVALID_SHAPE', 'config.json 的 mcp/enabled/roles 结构非法，拒绝覆盖'))
+  return mcp.enabled ?? {}
 }
 
 function writeEnabled(config, id, enabled) {
@@ -67,12 +93,13 @@ function removeEnabled(config, id) {
   updateConfigSection(config, 'mcp', section => {
     const map = { ...(object(section.enabled) ? section.enabled : {}) }
     delete map[id]
-    return { ...section, enabled: map }
+    const roles = { ...(object(section.roles) ? section.roles : {}) }; delete roles[id]
+    return { ...section, enabled: map, roles }
   })
 }
 
 function transportOf(entry) {
-  return entry?.transport === 'http' || entry?.url ? 'http' : 'stdio'
+  return entry?.transport === 'sse' ? 'sse' : entry?.transport === 'http' || entry?.url ? 'http' : 'stdio'
 }
 
 function publicServer(id, entry, enabled) {
@@ -100,14 +127,14 @@ export function getDevamcpServer(config, name) {
   return {
     name: id, transport, managed: false, enabled,
     config: transport === 'stdio'
-      ? { type: 'stdio', command: entry.command || '', args: Array.isArray(entry.args) ? entry.args : [], env: object(entry.env) ? entry.env : {}, enabled }
-      : { type: 'http', url: entry.url || '', headers: object(entry.headers) ? entry.headers : {}, enabled },
+      ? { name: entry.name, description: entry.description, type: 'stdio', command: entry.command || '', args: Array.isArray(entry.args) ? entry.args : [], env: object(entry.env) ? entry.env : {}, enabled }
+      : { name: entry.name, description: entry.description, type: transport, url: entry.url || '', headers: object(entry.headers) ? entry.headers : {}, enabled },
   }
 }
 
 function toDesktopEntry(name, config) {
-  const transport = config.type === 'http' ? 'http' : 'stdio'
-  const entry = { name, description: '', transport }
+  const transport = ['http', 'sse'].includes(config.type) ? config.type : 'stdio'
+  const entry = { name: config.name ?? name, description: config.description ?? '', transport }
   if (transport === 'stdio') {
     entry.command = config.command
     entry.args = Array.isArray(config.args) ? config.args : []
@@ -128,18 +155,18 @@ export function normalizeConfig(input, { previous } = {}) {
   if (type === 'stdio') {
     if (typeof merged.command !== 'string' || !merged.command.trim()) throw new DevaIdentityError('DEVA_MCP_INVALID_CONFIG', 'stdio MCP 缺少 command')
     const config = {
-      type: 'stdio', command: merged.command.trim(),
+      name: merged.name, description: merged.description, type: 'stdio', command: merged.command.trim(),
       args: Array.isArray(merged.args) ? merged.args.map(String) : [],
-      env: object(merged.env) ? Object.fromEntries(Object.entries(merged.env).map(([k, v]) => [k, String(v)])) : {},
+      env: object(merged.env) ? Object.fromEntries(Object.entries(merged.env).map(([k, v]) => [k, v])) : {},
       enabled: merged.enabled !== false,
     }
     return config
   }
-  if (type === 'http') {
+  if (type === 'http' || type === 'sse') {
     if (typeof merged.url !== 'string' || !/^https?:\/\//.test(merged.url)) throw new DevaIdentityError('DEVA_MCP_INVALID_CONFIG', 'HTTP MCP 需要 http(s) 的 url')
     return {
-      type: 'http', url: merged.url,
-      headers: object(merged.headers) ? Object.fromEntries(Object.entries(merged.headers).map(([k, v]) => [k, String(v)])) : {},
+      name: merged.name, description: merged.description, type, url: merged.url,
+      headers: object(merged.headers) ? Object.fromEntries(Object.entries(merged.headers).map(([k, v]) => [k, v])) : {},
       enabled: merged.enabled !== false,
     }
   }
@@ -152,9 +179,9 @@ export function createDevamcpServer(config, { name, config: input }) {
   if (store.servers[id]) throw new Error(`MCP server already exists: ${id}`)
   if (Object.keys(store.servers).length >= MAX_SELECTED_SERVERS) throw new Error(`最多 ${MAX_SELECTED_SERVERS} 个 MCP 服务`)
   const normalized = normalizeConfig(input)
+  enabledMap(config) // preflight config corruption before touching mcp.json
   const servers = { ...store.servers, [id]: toDesktopEntry(id, normalized) }
-  writeStore(config, store, servers)
-  writeEnabled(config, id, normalized.enabled !== false)
+  writePair(config, store, servers, () => writeEnabled(config, id, normalized.enabled !== false))
   return publicServer(id, servers[id], normalized.enabled !== false)
 }
 
@@ -165,9 +192,9 @@ export function updateDevamcpServer(config, { name, config: input }) {
   if (!previousEntry) throw new Error('MCP server not found')
   const previous = getDevamcpServer(config, id).config
   const normalized = normalizeConfig({ ...input, enabled: input?.enabled ?? previous.enabled }, { previous })
-  const servers = { ...store.servers, [id]: toDesktopEntry(id, normalized) }
-  writeStore(config, store, servers)
-  writeEnabled(config, id, normalized.enabled !== false)
+  enabledMap(config) // preflight config corruption before touching mcp.json
+  const servers = { ...store.servers, [id]: { ...store.servers[id], ...toDesktopEntry(id, normalized), ...(store.servers[id] ? { name: normalized.name ?? store.servers[id].name, description: normalized.description ?? store.servers[id].description } : {}) } }
+  writePair(config, store, servers, () => writeEnabled(config, id, normalized.enabled !== false))
   return publicServer(id, servers[id], normalized.enabled !== false)
 }
 
@@ -176,6 +203,7 @@ export function setDevamcpServerEnabled(config, { name, enabled }) {
   if (typeof enabled !== 'boolean') throw new Error('enabled 必须是布尔值')
   const store = readStore(config)
   if (!store.servers[id]) throw new Error('MCP server not found')
+  enabledMap(config)
   writeEnabled(config, id, enabled)
   return publicServer(id, store.servers[id], enabled)
 }
@@ -184,10 +212,10 @@ export function deleteDevamcpServer(config, { name }) {
   const id = assertServerName(name)
   const store = readStore(config)
   if (!store.servers[id]) throw new Error('MCP server not found')
+  enabledMap(config)
   const servers = { ...store.servers }
   delete servers[id]
-  writeStore(config, store, servers)
-  removeEnabled(config, id)
+  writePair(config, store, servers, () => removeEnabled(config, id))
   return { name: id }
 }
 

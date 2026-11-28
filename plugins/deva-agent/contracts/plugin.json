@@ -2491,6 +2491,102 @@
         "legacyNotice"
       ],
       "additionalProperties": false
+    },
+    "desktopMcpInput": {
+      "type": "object",
+      "description": "桌面 MCP 共源操作；不复制宿主服务。",
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "操作",
+          "enum": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete",
+            "toggle"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "description": "稳定映射 ID"
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "启停"
+        },
+        "config": {
+          "type": "object",
+          "description": "stdio/http/sse 连接配置，掩码保留密钥引用",
+          "properties": {},
+          "additionalProperties": true,
+          "required": []
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    },
+    "desktopMcpOutput": {
+      "type": "object",
+      "description": "桌面服务与按需掩码配置",
+      "properties": {
+        "servers": {
+          "type": "array",
+          "description": "按文件顺序列出桌面服务",
+          "items": {
+            "type": "object",
+            "description": "Studio 里一个 MCP 服务的展示字段（不含连接配置与密钥）。",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "服务名，Studio 与插件都用它做工具命名空间。",
+                "maxLength": 64
+              },
+              "transport": {
+                "type": "string",
+                "description": "传输类型：stdio 或 http（Studio 的 streamable_http 统一显示为 http）。",
+                "maxLength": 32
+              },
+              "managed": {
+                "type": "boolean",
+                "description": "保留字段；插件自带服务恒为 false。"
+              },
+              "enabled": {
+                "type": "boolean",
+                "description": "是否启用；停用的服务本轮不会连接。"
+              },
+              "source": {
+                "type": "string",
+                "description": "固定 desktop",
+                "enum": [
+                  "desktop"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "transport",
+              "managed",
+              "enabled"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "config": {
+          "type": "object",
+          "description": "env/header 掩码配置",
+          "properties": {},
+          "additionalProperties": true,
+          "required": []
+        }
+      },
+      "required": [
+        "servers"
+      ],
+      "additionalProperties": false
     }
   },
   "rpc": {
@@ -2643,6 +2739,11 @@
       "description": "读写桌面共享记忆；沿用 owner 权限与 RPC 门禁",
       "input": "memoryPageInput",
       "output": "memoryPageOutput"
+    },
+    "desktop-mcp-page": {
+      "description": "桌面文件共享 MCP CRUD，owner 校验及 RPC 门禁",
+      "input": "desktopMcpInput",
+      "output": "desktopMcpOutput"
     }
   },
   "tools": {},

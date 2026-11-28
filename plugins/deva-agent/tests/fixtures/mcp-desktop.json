@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "interop": {
+      "name": "Interop",
+      "description": "",
+      "transport": "stdio",
+      "command": "node",
+      "args": [],
+      "env": {
+        "TOKEN": {
+          "secretRef": "token"
+        }
+      }
+    }
+  }
+}
