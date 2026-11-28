@@ -1365,6 +1365,29 @@ const STYLES = `
 .deva-persona-detail{overflow-wrap:anywhere}
 @media (max-width:480px){.deva-identity-row{flex-direction:column;align-items:flex-start}}
 @media (max-width:768px){.deva-summary{grid-template-columns:repeat(2,1fr)}.deva-toolbar{flex-direction:column;align-items:stretch}.deva-search{max-width:none}.deva-grid{grid-template-columns:1fr}}
+/* Shared settings baseline: screenshot MCP spacing; scoped so forms keep their semantics. */
+.deva-settings>.deva-header{align-items:center;margin-bottom:16px}
+.deva-settings>.deva-header h2{font-weight:600;font-size:16px;line-height:1.4}
+.deva-settings>.deva-muted{margin:0 0 16px}
+.deva-settings .deva-card{border-radius:var(--radius-component,8px)}
+.deva-settings .deva-card h3{margin:0 0 8px;font-size:14px;font-weight:600}
+.deva-settings .deva-btn{border-radius:var(--radius-component,6px)}
+.deva-settings .deva-status:empty,.deva-settings .deva-field-error:empty{display:none}
+.deva-settings .deva-empty,.deva-settings .deva-memory-list:empty{padding:24px;text-align:center;color:var(--text-muted,#888)}
+.deva-settings [role=alert],.deva-settings .deva-status.error{color:var(--error,#c62828);white-space:pre-wrap;overflow-wrap:anywhere}
+.deva-settings .deva-card-foot{border-top-color:var(--border-color,#e0e0e0)}
+.deva-settings .deva-btn:focus-visible,.deva-settings .deva-switch:focus-visible{outline:2px solid var(--accent-primary,#333);outline-offset:2px}
+.deva-settings .deva-switch:disabled{opacity:.5;cursor:not-allowed}
+.deva-skills-layout{display:grid;grid-template-columns:minmax(240px,320px) minmax(0,1fr);gap:16px;align-items:start}
+.deva-skills-sidebar{display:flex;flex-direction:column;gap:16px;max-height:70vh;overflow:auto}
+.deva-skill-detail{white-space:pre-wrap;overflow-wrap:anywhere;min-width:0;min-height:240px;padding:16px;border:1px solid var(--border-color,#e0e0e0);border-radius:var(--radius-component,8px);background:var(--theme-card-bg,var(--bg-card,#fff));margin:0}
+.deva-skill-detail:empty{border-style:dashed}
+.deva-memory-form{display:grid;gap:12px;margin-bottom:16px}
+.deva-memory-form[hidden]{display:none}
+.deva-memory-list{display:flex;flex-direction:column;gap:8px}
+.deva-memory-list .deva-btn{text-align:start;height:auto;min-height:var(--control-height,30px);white-space:normal}
+@media(max-width:768px){.deva-skills-layout{grid-template-columns:1fr}.deva-skills-sidebar{max-height:none}}
+
 `
 
 function ensureStyles() {
@@ -1495,6 +1518,7 @@ async function mountContent(root, ctx) {
   ensureStyles()
 
   const container = el('div', 'deva-settings')
+  container.setAttribute('data-view', ctx.view || 'identity')
   root.append(container)
 
   // 路由变化会重新挂载，按 view 只渲染对应页面。
@@ -1781,7 +1805,7 @@ async function mountModel(container, ctx, text, [addressLabel, nameLabel, keyLab
   const sourceLabels = keySourceLabels[pickLocale(ctx.locale)] || keySourceLabels.en
   const header = el('div', 'deva-header')
   const heading = el('div')
-  heading.append(el('p', '', sharedHint))
+  heading.append(el('h2', '', ({ zh: '模型', 'zh-tw': '模型', en: 'Models', ja: 'モデル', ko: '모델', fr: 'Modèles', es: 'Modelos', de: 'Modelle', pt: 'Modelos', ru: 'Модели', ar: 'النماذج', tr: 'Modeller' })[pickLocale(ctx.locale)]), el('p', '', sharedHint))
   header.append(heading)
   const card = el('div', 'deva-card')
   const body = el('div', 'deva-card-body deva-model-form')
@@ -2057,7 +2081,7 @@ async function mountIdentity(container, ctx, text, copy) {
   const [intro, defaultLabel, addLabel, editLabel, , , , , , noPrompt, enabledLabel] = copy
   const header = el('div', 'deva-header')
   const heading = el('div')
-  heading.append(el('p', '', intro), el('p', 'deva-muted', text.hint))
+  heading.append(el('h2', '', text.title), el('p', '', intro), el('p', 'deva-muted', text.hint))
   header.append(heading)
   const card = el('div', 'deva-card')
   const body = el('div', 'deva-card-body')
@@ -2257,7 +2281,9 @@ async function mountMemory(container, ctx) {
   const words = zh
     ? ['记忆', '全局', '当前角色', '当前项目', '新增', '保存', '删除', '取消', '刷新', '加载中…', '暂无记忆', '确认删除这条记忆？', '旧 Studio 记忆原样保留，未自动合并。当前页面和工具仅使用桌面记忆文件；回滚插件可恢复访问旧数据。']
     : ['Memory', 'Global', 'Current persona', 'Current project', 'Add', 'Save', 'Delete', 'Cancel', 'Refresh', 'Loading…', 'No memories', 'Delete this memory?', 'Legacy Studio memory is retained without merging. This page and tools use Desktop files only; rolling back the plugin restores access to legacy data.']
-  container.append(el('h2', '', words[0]), el('p', '', words[12]))
+  const header = el('div', 'deva-header')
+  header.append(el('h2', '', words[0]))
+  const hint = el('p', 'deva-muted', words[12])
   const scopes = el('select', 'deva-select')
   for (const [index, value] of ['global', 'role', 'project'].entries()) {
     const option = el('option', '', words[index + 1]); option.value = value; scopes.append(option)
@@ -2272,7 +2298,12 @@ async function mountMemory(container, ctx) {
   for (const value of ['user', 'feedback', 'project', 'reference']) { const option = el('option', '', value); option.value = value; type.append(option) }
   const add = button(words[4], 'deva-btn'), save = button(words[5], 'deva-btn'), remove = button(words[6], 'deva-btn'), cancel = button(words[7], 'deva-btn'), refresh = button(words[8], 'deva-btn')
   form.append(type, title, body, save, remove, cancel)
-  container.append(scopes, add, refresh, error, form, list)
+  header.append(refresh)
+  const toolbar = el('div', 'deva-toolbar')
+  toolbar.append(scopes, add)
+  form.className += ' deva-card'
+  list.setAttribute('role', 'status')
+  container.append(header, hint, toolbar, error, form, list)
   let current = null, generation = 0, pending = false
   const busy = value => { pending = value; for (const control of [scopes, add, save, remove, refresh, cancel]) control.disabled = value }
   const showError = cause => { error.textContent = String(cause?.message || cause) }
@@ -2671,9 +2702,12 @@ async function mountSkills(container, ctx, text) {
   status.setAttribute('role', 'status')
   const dirs = el('div', 'deva-card')
   const list = el('div', 'deva-grid')
-  const detail = el('pre', 'deva-value-preview')
-  detail.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere'
-  container.append(header, el('p', 'deva-muted', copy.hint), status, dirs, list, detail)
+  const detail = el('pre', 'deva-value-preview deva-skill-detail')
+  detail.setAttribute('aria-live', 'polite')
+  const layout = el('div', 'deva-skills-layout')
+  list.className = 'deva-skills-sidebar'
+  layout.append(list, detail)
+  container.append(header, el('p', 'deva-muted', copy.hint), status, dirs, layout)
   const call = async (name, input = null) => {
     let timer
     try {
@@ -2702,12 +2736,17 @@ async function mountSkills(container, ctx, text) {
     const warnings = warningText(skill.warnings)
     if (warnings) card.append(el('p', 'deva-status error', `${copy.warnings}: ${warnings}`))
     if (skill.validationError) card.append(el('p', 'deva-status error', String(skill.validationError)))
-    const toggle = button(skill.enabled === false ? copy.enable : copy.disable, 'deva-btn')
+    const toggle = button('', 'deva-switch')
+    toggle.setAttribute('role', 'switch')
+    toggle.setAttribute('aria-checked', String(skill.enabled !== false))
+    toggle.setAttribute('aria-label', `${skill.enabled === false ? copy.enable : copy.disable}: ${skill.name}`)
     toggle.disabled = skill.readOnly === true
     toggle.onclick = async () => { toggle.disabled = true; try { await call('set-skill-enabled', { name: skill.name, enabled: skill.enabled === false }); await load() } catch (error) { fail(error); toggle.disabled = false } }
     const view = button(copy.view, 'deva-btn')
     view.onclick = async () => { try { const data = await call('get-skill', { name: skill.name }); detail.textContent = data.content; detail.scrollIntoView({ block: 'nearest' }) } catch (error) { fail(error) } }
-    card.append(el('p', '', skill.enabled === false ? text.disabledStatus : copy.enabled), toggle, view)
+    const foot = el('div', 'deva-card-foot')
+    foot.append(view, toggle)
+    card.append(el('p', 'deva-muted', skill.enabled === false ? text.disabledStatus : copy.enabled), foot)
     return card
   }
   async function load() {
