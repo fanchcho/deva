@@ -1,5 +1,6 @@
 import { registerChannelServerIpc } from '@deva/main/services/channel-server'
 import { hasActiveTurns } from '@deva/main/services/chat-state'
+import { registerWebBrowserIpc } from './browser-controls'
 /**
  * Web 后端入口：按 main/index.ts 的顺序注册真实业务模块，
  * 只是不创建窗口，事件改由 SSE 广播。
@@ -71,6 +72,7 @@ export async function createBackend(options: BackendOptions): Promise<Backend> {
   ;(setEventSink as unknown as (fn: BackendOptions['onEvent']) => void)(options.onEvent)
 
   await app.whenReady()
+  registerWebBrowserIpc()
 
   // 窗口对象只作为事件出口；所有 send 都转到 SSE
   const win = new BrowserWindow({ width: 1440, height: 900 })

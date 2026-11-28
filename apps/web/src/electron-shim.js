@@ -1,5 +1,6 @@
 import { downloadDeliverable } from './web/deliverables.js'
 import { encodeAttachment, pickAttachments } from './web/attachments.js'
+import { installBrowserControls } from './web/browser-controls.js'
 /**
  * 浏览器侧 electron 模块替身。
  * preload/index.ts 只用到 contextBridge / ipcRenderer / webUtils 三个成员，
@@ -115,4 +116,10 @@ if (typeof EventSource !== 'undefined') {
       console.error('[deva-web] bad event', error)
     }
   }
+}
+
+if (typeof document !== 'undefined' && typeof EventSource !== 'undefined') {
+  const start = () => installBrowserControls((...args) => ipcRenderer.invoke(...args), (channel, cb) => ipcRenderer.on(channel, (_event, value) => cb(value)))
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true })
+  else start()
 }

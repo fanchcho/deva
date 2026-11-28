@@ -1,0 +1,7 @@
+.deva-browser{width:min(95vw,1440px);max-height:94vh;background:var(--bg,#fff);color:var(--fg,#222);border:1px solid #888;border-radius:8px;padding:12px}
+.deva-browser::backdrop{background:#0008}
+.deva-browser__bar{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.deva-browser__bar select{max-width:25vw}
+.deva-browser img{display:block;width:100%;height:auto;outline-offset:2px}
+.deva-browser textarea{width:100%;box-sizing:border-box;margin-top:8px}
+.deva-browser [role=alert]{color:#c22;white-space:pre-wrap}

@@ -189,10 +189,18 @@ export class BrowserWindow extends EventEmitter {
     this.options = options
     // 只有真正承载网页的窗口（offscreen 网页视图 / 浏览器窗口）才需要 Chromium 页面；
     // 事件出口用的虚拟窗口继续用轻量假对象，省一个 tab。
-    this._realContents = Boolean(options.webPreferences)
+    // Browser host chrome is rendered by the Web dialog. Only offscreen pages
+    // and WebContentsView own a remote CDP target.
+    this._realContents = Boolean(options.webPreferences?.offscreen)
     this.webContents = this._realContents ? new CDPWebContents(options) : fakeWebContents
     this.id = 1
     this._destroyed = false
+    this._bounds = { x: 0, y: 0, width: options.width ?? 1440, height: options.height ?? 900 }
+    this._views = new Set()
+    this.contentView = {
+      addChildView: view => { this._views.delete(view); this._views.add(view) },
+      removeChildView: view => this._views.delete(view)
+    }
   }
   static getAllWindows() {
     return [mainWindow]
@@ -231,6 +239,7 @@ export class BrowserWindow extends EventEmitter {
     return true
   }
   show() {}
+  showInactive() {}
   hide() {}
   focus() {}
   blur() {}
@@ -238,7 +247,10 @@ export class BrowserWindow extends EventEmitter {
   destroy() {
     if (this._destroyed) return
     this._destroyed = true
+    for (const view of this._views) void view.webContents.close()
+    this._views.clear()
     if (this._realContents) void this.webContents.close()
+    this.emit('closed')
   }
   minimize() {}
   maximize() {}
@@ -247,26 +259,32 @@ export class BrowserWindow extends EventEmitter {
   setTitle() {}
   setMenuBarVisibility() {}
   setTitleBarOverlay() {}
-  setBounds() {}
-  setPosition() {}
-  setSize() {}
+  setBounds(bounds) { this._bounds = { ...this._bounds, ...bounds } }
+  setPosition(x, y) { this.setBounds({ x, y }) }
+  setSize(width, height) { this.setBounds({ width, height }) }
   center() {}
-  async loadURL() {}
-  async loadFile() {}
+  async loadURL(url) {
+    if (this._realContents) return this.webContents.loadURL(url)
+    if (!String(url).endsWith('/browser.html')) throw new Error('WEB_WINDOW_UNSUPPORTED: only browser chrome has a Web dialog')
+  }
+  async loadFile(file) {
+    if (path.basename(file) !== 'browser.html') throw new Error('WEB_WINDOW_UNSUPPORTED: native window content is unavailable')
+    // browser.html is the native host frame; browser-controls.js provides its Web UI.
+  }
   getBounds() {
-    return { x: 0, y: 0, width: 1440, height: 900 }
+    return { ...this._bounds }
   }
   getContentBounds() {
-    return { x: 0, y: 0, width: 1440, height: 900 }
+    return this.getBounds()
   }
   getPosition() {
-    return [0, 0]
+    return [this._bounds.x, this._bounds.y]
   }
   getSize() {
-    return [1440, 900]
+    return [this._bounds.width, this._bounds.height]
   }
   getContentSize() {
-    return [1440, 900]
+    return this.getSize()
   }
   scrollBy() {}
   setAlwaysOnTop() {}
@@ -536,7 +554,8 @@ export const screen = {
     scaleFactor: 1,
     bounds: { x: 0, y: 0, width: 1440, height: 900 }
   }),
-  getAllDisplays: () => [],
+  getDisplayMatching: () => ({ workArea: { x: 0, y: 0, width: 1440, height: 900 } }),
+  getAllDisplays: () => [screen.getPrimaryDisplay()],
   getCursorScreenPoint: () => ({ x: 0, y: 0 }),
   on() {}
 }
@@ -567,10 +586,10 @@ const fakeUtility = {
 export const utilityProcess = fakeUtility
 
 export class WebContentsView {
-  constructor() {
-    this.webContents = fakeWebContents
+  constructor(options = {}) {
+    this.webContents = new CDPWebContents(options)
   }
-  setBounds() {}
+  setBounds(bounds) { this.bounds = { ...bounds } }
 }
 
 export default {

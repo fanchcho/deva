@@ -342,6 +342,7 @@ function injectIndex(source) {
     `<link rel="alternate icon" href="/favicon.ico" sizes="any">` +
     `<link rel="stylesheet" href="/mobile.css">` +
     `<link rel="stylesheet" href="/picker.css">` +
+    `<link rel="stylesheet" href="/browser-controls.css">` +
     `<script src="/boot.js"></script><script src="/shim.js"></script>` +
     `<script src="/shell.js"></script><script src="/picker.js"></script>`
   return source.replace('</head>', `${boot}</head>`)

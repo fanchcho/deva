@@ -33,7 +33,7 @@ const MIME = {
 }
 
 // Web 层自有静态资源（Renderer 产物之外的那些），统一放 src/web，按扩展名给 MIME。
-const WEB_ASSETS = new Set(['/mobile.css', '/picker.css', '/picker.js', '/favicon.svg', '/favicon.ico'])
+const WEB_ASSETS = new Set(['/mobile.css', '/picker.css', '/picker.js', '/browser-controls.css', '/favicon.svg', '/favicon.ico'])
 
 function etagOf(info) {
   return `W/"${info.size.toString(16)}-${Math.floor(info.mtimeMs).toString(16)}"`
