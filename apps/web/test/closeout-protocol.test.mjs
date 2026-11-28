@@ -8,6 +8,7 @@ import {WebSocketServer} from 'ws'
 import {once,EventEmitter} from 'node:events'
 const require=createRequire(import.meta.url)
 const repo=new URL('../../../',import.meta.url).pathname
+await fs.mkdir(repo+'.tmp/web-closeout',{recursive:true})
 async function bundle(file,plugins=[]) {return (await build({entryPoints:[repo+file],bundle:true,write:false,platform:'node',format:'cjs',plugins})).outputFiles[0].text}
 function evaluate(code,extra={}) {const module={exports:{}};vm.runInNewContext(code,{module,exports:module.exports,require,console,Buffer,URL,Date,process,...extra});return module.exports}
 
