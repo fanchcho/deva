@@ -110,3 +110,34 @@ test('context chip opens threshold controls, resets ratio and displays compressi
  globalThis.__modelUI={chat:{contextUsage:{used:64000,window:128000,compactAt:90000,cacheRead:32000,cacheWrite:1000,ratio:0.7,actualRatio:0.7,minRatio:0.2,maxRatio:0.95,defaultRatio:0.8,windowUncapped:128000,compactLog:[{at:1,turn:2,scope:'manual',before:80000,after:12000,folded:3}]}},actions:{setCompactRatio:v=>calls.push(v),refreshContextUsage:()=>{}}}
  try {state([true]);const tree=nodes(ContextChip());assert.ok(tree.some(n=>n.props?.role==='dialog'));const range=tree.find(n=>n.type==='input'&&n.props.type==='range');assert.equal(range.props.value,70);range.props.onChange({target:{value:'45'}});assert.equal(calls[0],0.45);const reset=tree.find(n=>n.type==='button'&&String(n.props.children).includes('panelReset'));assert.ok(reset);reset.props.onClick();assert.equal(calls[1],null);assert.ok(JSON.stringify(tree).includes('80K'));}finally{delete globalThis.__modelUI;delete globalThis.__ui}
 })
+
+test('project memory lists active entries and opens details in the project scope',async()=>{
+  const calls=[]
+  const updates=[]
+  globalThis.__projectMemory={open:null,calls,updates}
+  const result=await build({entryPoints:[new URL('../../desktop/src/renderer/src/redesign/ProjectMemory.tsx',import.meta.url).pathname],bundle:true,write:false,format:'esm',platform:'node',jsx:'automatic',plugins:[{
+    name:'project-memory-boundaries',setup(b){
+      b.onResolve({filter:/^(react|react\/jsx-runtime)$|\/i18n\/i18n$|^\.\/(MemoryArchive|MemoryDetail|memory-editor)$/},args=>({path:args.path,namespace:'project-fixture'}))
+      b.onLoad({filter:/.*/,namespace:'project-fixture'},args=>({contents:
+        args.path==='react'?'export const useState=()=>[globalThis.__projectMemory.open,v=>globalThis.__projectMemory.updates.push(v)]':
+        args.path==='react/jsx-runtime'?'export const jsx=(type,props)=>({type,props}); export const jsxs=jsx;':
+        args.path.endsWith('/i18n/i18n')?'export const useI18n=()=>({t:k=>k})':
+        args.path==='./MemoryArchive'?"export const MemoryArchive='MemoryArchive'":
+        args.path==='./MemoryDetail'?"export const MemoryDetail='MemoryDetail'":
+        "export const useMemoryList=root=>{globalThis.__projectMemory.calls.push(root);return {mem:{entries:[{id:'p_1',title:'project rule',body:'body'}]},apply:()=>{}}}",loader:'js'}))
+    }
+  }]})
+  try {
+    const {ProjectMemory}=await import('data:text/javascript;base64,'+Buffer.from(result.outputFiles[0].text).toString('base64'))
+    let tree=nodes(ProjectMemory({root:'/project/a'}))
+    tree.find(n=>n.type==='button').props.onClick()
+    assert.deepEqual(updates,['p_1'])
+    globalThis.__projectMemory.open='p_1'
+    tree=nodes(ProjectMemory({root:'/project/a'}))
+    assert.equal(tree.find(n=>n.type==='MemoryDetail').props.scope,'/project/a')
+    assert.equal(tree.find(n=>n.type==='MemoryArchive').props.scope,'/project/a')
+    assert.deepEqual(calls,['/project/a','/project/a'])
+    const panel=await (await import('node:fs/promises')).readFile(new URL('../../desktop/src/renderer/src/redesign/ProfilePanel.tsx',import.meta.url),'utf8')
+    assert.match(panel,/<ProjectMemory key=\{currentBinding.focusRoot\} root=\{currentBinding.focusRoot\}/)
+  } finally {delete globalThis.__projectMemory}
+})
