@@ -12,6 +12,41 @@ await fs.mkdir(repo+'.tmp/web-closeout',{recursive:true})
 async function bundle(file,plugins=[]) {return (await build({entryPoints:[repo+file],bundle:true,write:false,platform:'node',format:'cjs',plugins})).outputFiles[0].text}
 function evaluate(code,extra={}) {const module={exports:{}};vm.runInNewContext(code,{module,exports:module.exports,require,console,Buffer,URL,Date,process,...extra});return module.exports}
 
+test('relay client heartbeat reconnects dead sockets, preserves envelopes and slows rejected keys',async()=>{
+ const sockets=[],timers=new Map(),states=[],received=[];let now=0,seq=0,attached,closed=0
+ const timer=(fn,ms)=>{const id={n:++seq,unref(){return this}};timers.set(id,{fn,ms});return id}
+ class Socket extends EventEmitter {static OPEN=1;readyState=1;sent=[];constructor(url,options){super();this.url=url;this.options=options;sockets.push(this)}send(s){this.sent.push(s)}terminate(){if(this.readyState===3)return;this.readyState=3;this.emit('close')}close(){this.terminate()}}
+ class Clock extends Date {static now(){return now}}
+ const plugin={name:'relay-socket-boundary',setup(b){b.onResolve({filter:/^ws$/},()=>({path:'ws',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export default globalThis.Socket;',loader:'js'}))}}
+ const m=evaluate(await bundle('apps/desktop/src/main/services/remote/web/relay.ts',[plugin]),{Socket,Date:Clock,setInterval:timer,setTimeout:timer,clearInterval:id=>timers.delete(id),clearTimeout:id=>timers.delete(id)})
+ const client=m.startRelayClient({url:'https://relay.example/path/',deskId:'desk',key:'key',onState:s=>states.push(s),sink:{attach:c=>{attached=c;return {onText:x=>received.push(x),onClose:()=>closed++}}}})
+ const s=sockets[0];assert.equal(s.url,'wss://relay.example/path/desk/desk');assert.equal(s.options.headers.authorization,'Bearer key')
+ s.emit('open');const beat=[...timers.values()].find(t=>t.ms===20000);now=20000;beat.fn();assert.equal(s.sent.at(-1),'ping')
+ s.emit('message',Buffer.from('pong'),false);s.emit('message',Buffer.from('{"t":"open","c":"phone"}'),false)
+ s.emit('message',Buffer.from('{"t":"msg","c":"phone","d":"ciphertext"}'),false);assert.deepEqual(received,['ciphertext'])
+ attached.sendText('reply');assert.deepEqual(JSON.parse(s.sent.at(-1)),{t:'msg',c:'phone',d:'reply'})
+ now=66001;beat.fn();assert.equal(s.readyState,3);assert.equal(closed,1);assert.equal(states.at(-1),'connecting')
+ const retry=[...timers.values()].find(t=>t.ms===1000);assert.ok(retry);timers.clear();retry.fn()
+ sockets[1].emit('unexpected-response',null,{statusCode:403});assert.equal(states.at(-1),'error');assert.ok([...timers.values()].some(t=>t.ms===60000))
+ client.close();assert.equal(timers.size,0)
+ const invalid=[];m.startRelayClient({url:'file:///tmp',onState:(...args)=>invalid.push(args)}).close();assert.equal(invalid[0][0],'error')
+})
+
+test('browser injected dialog, focus, selection and badge scripts execute their DOM contracts',async()=>{
+ const scripts=evaluate(await bundle('apps/desktop/src/main/services/browser/page-scripts.ts'))
+ const window={},events=[];const document={activeElement:null};class Navigator {setAppBadge(){throw new Error('native badge must not run')}clearAppBadge(){throw new Error('native badge must not run')}}
+ const ctx=vm.createContext({window,document,Navigator,Promise,Event:class {constructor(type){this.type=type}}})
+ vm.runInContext(scripts.DIALOG_SHIM,ctx);assert.equal(window.confirm('delete?'),false);window.__devaDialogAnswer={accept:true};assert.equal(window.confirm('delete?'),true);assert.equal(window.confirm('again?'),false)
+ window.__devaDialogAnswer={accept:true,text:'answer'};assert.equal(window.prompt('input'), 'answer');assert.equal(window.prompt('input'),null);assert.equal(window.__devaDialogs.length,5)
+ const el={isConnected:true,tagName:'SELECT',multiple:true,options:[{value:'a',textContent:' First '},{value:'b',textContent:'Second'}],focus(){document.activeElement=this},dispatchEvent:e=>events.push(e.type)}
+ window.__devaRefs=new Map([['e1',{deref:()=>el}]])
+ assert.equal(vm.runInContext(scripts.callScript(scripts.FOCUS_FN,'e1',false),ctx).ok,true)
+ assert.equal(vm.runInContext(scripts.callScript(scripts.SELECT_FN,'e1',['Second']),ctx).picked[0],'Second');assert.equal(el.options[1].selected,true);assert.deepEqual(events,['input','change'])
+ assert.equal(vm.runInContext(scripts.callScript(scripts.SELECT_FN,'e1',['missing']),ctx).error,'no-match')
+ el.isConnected=false;assert.equal(vm.runInContext(scripts.callScript(scripts.FOCUS_FN,'e1'),ctx).error,'stale')
+ vm.runInContext(scripts.BADGE_SHIM,ctx);await new Navigator().setAppBadge(99);await new Navigator().clearAppBadge()
+})
+
 test('gateway attaches over CDP, forwards API/events and rejects transport loss promptly',async()=>{
  const {DevaControl}=require('../../desktop/web-gateway/deva.js')
  const dir=await fs.mkdtemp(repo+'.tmp/web-closeout/cdp-')
