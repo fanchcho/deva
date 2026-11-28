@@ -935,6 +935,75 @@ test('memory page shows empty state and preserves draft on failed save', async (
   assert.ok(findAll(root, n => n.textContent === 'MEMORY_CORRUPT').length)
 })
 
+test('memory page lists three scopes together with one RPC and keeps scope in the editor', async () => {
+  const entries = ['global', 'role', 'project'].map((scope, index) => ({ id: `entry-${index}`, scope, scopeLabel: ['全局', '角色:deva', '项目:/workspace'][index], title: scope, body: 'content', type: 'user' }))
+  const calls = []
+  const root = await mountPage(fakeContext('zh', async (name, input) => {
+    calls.push([name, input])
+    return { entries, scopes: entries.map(e => ({ scope: e.scope, label: e.scopeLabel })) }
+  }, { view: 'memory' }))
+  assert.deepEqual(calls, [['memory-page', { action: 'list' }]])
+  const lists = findAll(root, n => n.role === 'list')
+  assert.equal(lists.length, 1)
+  assert.equal(findAll(lists[0], n => n.role === 'listitem').length, 3)
+  assert.deepEqual(findAll(root, n => n.className === 'deva-memory-scope').map(n => n.textContent), entries.map(e => e.scopeLabel))
+  assert.equal(findAll(root, n => n.role === 'tab' || n.className === 'deva-toolbar').length, 0)
+  const scope = findAll(root, n => n['aria-label'] === '作用域')[0]
+  assert.equal(scope.parent.parent.className, 'deva-memory-form')
+  findAll(root, n => n.textContent === '编辑')[1].onclick()
+  assert.equal(scope.value, 'role'); assert.equal(scope.disabled, true)
+  await findAll(root, n => n.textContent === '保存')[0].onclick()
+  assert.equal(calls[1][1].scope, 'role'); assert.equal(calls[1][1].id, 'entry-1')
+  assert.deepEqual(calls[2], ['memory-page', { action: 'list' }])
+  assert.equal(findAll(root, n => n.role === 'listitem').length, 3, 'refresh replaces rows rather than duplicating them')
+})
+
+test('memory editor retains scope and draft on failure; delete confirmation preserves original routing', async () => {
+  const calls = [], entry = { id: 'p_same', scope: 'project', scopeLabel: '项目:/work', title: 'project', body: 'body' }
+  const ctx = fakeContext('zh', async (name, input) => {
+    calls.push(input)
+    if (input.action === 'save') throw new Error('MEMORY_CORRUPT')
+    return { entries: [entry] }
+  }, { view: 'memory' })
+  const root = await mountPage(ctx)
+  findAll(root, n => n.textContent === '编辑')[0].onclick()
+  const title = findAll(root, n => n.tag === 'input')[0]
+  title.value = 'unsaved draft'
+  await findAll(root, n => n.textContent === '保存')[0].onclick()
+  assert.equal(title.value, 'unsaved draft')
+  const scope = findAll(root, n => n['aria-label'] === '作用域')[0]
+  assert.equal(scope.value, 'project'); assert.equal(scope.disabled, true)
+  assert.equal(findAll(root, n => n.className === 'deva-memory-form')[0].hidden, false)
+  const remove = findAll(root, n => n.textContent === '删除')[0]
+  ctx.ui.confirm = async () => false
+  await remove.onclick()
+  assert.equal(calls.filter(c => c.action === 'delete').length, 0)
+  ctx.ui.confirm = async () => true
+  await remove.onclick()
+  assert.deepEqual(calls.find(c => c.action === 'delete'), { action: 'delete', scope: 'project', id: entry.id })
+})
+
+test('memory load errors are visible, loading is observable and styles inherit both host themes', async () => {
+  let release
+  const pending = new Promise(resolve => { release = resolve })
+  globalThis.document = { createElement: tag => new StubElement(tag) }
+  const root = new StubElement('div')
+  const { mount } = await import('../client.mjs')
+  const mounting = mount(root, fakeContext('zh', async () => { await pending; throw new Error('MEMORY_CORRUPT') }, { view: 'memory' }))
+  assert.ok(findAll(root, n => n.textContent === '加载中…').length)
+  release(); await mounting
+  assert.ok(findAll(root, n => n.role === 'alert' && n.textContent === 'MEMORY_CORRUPT').length)
+  assert.equal(findAll(root, n => n.role === 'listitem').length, 0)
+  const { readFileSync } = await import('node:fs')
+  const source = readFileSync(new URL('../client.mjs', import.meta.url), 'utf8')
+  const css = source.match(/\.deva-memory-page[^]*?(?=\n@media)/)[0]
+  for (const token of ['--text-primary', '--text-secondary', '--text-muted', '--border-color', '--border-light']) assert.ok(css.includes(`var(${token}`), token)
+  assert.match(css, /gap:0/)
+  assert.match(css, /font-size:14px/)
+  assert.match(css, /padding:14px 0/)
+  assert.doesNotMatch(css, /box-shadow|#[0-9a-f]{6}(?!\))/i)
+})
+
 test('MCP page requests once and renders one merged editable catalog', async () => {
   const calls = []
   const root = await mountPage(fakeContext('zh', async name => {

@@ -1382,10 +1382,19 @@ const STYLES = `
 .deva-skills-sidebar{display:flex;flex-direction:column;gap:16px;max-height:70vh;overflow:auto}
 .deva-skill-detail{white-space:pre-wrap;overflow-wrap:anywhere;min-width:0;min-height:240px;padding:16px;border:1px solid var(--border-color,#e0e0e0);border-radius:var(--radius-component,8px);background:var(--theme-card-bg,var(--bg-card,#fff));margin:0}
 .deva-skill-detail:empty{border-style:dashed}
-.deva-memory-form{display:grid;gap:12px;margin-bottom:16px}
-.deva-memory-form[hidden]{display:none}
-.deva-memory-list{display:flex;flex-direction:column;gap:8px}
-.deva-memory-list .deva-btn{text-align:start;height:auto;min-height:var(--control-height,30px);white-space:normal}
+.deva-memory-page .deva-memory-form{display:grid;gap:12px;margin:0 0 16px;padding:16px 0}
+.deva-memory-page .deva-memory-form[hidden]{display:none}
+.deva-memory-page .deva-memory-form textarea{min-height:180px;padding:12px;line-height:1.6;resize:vertical}
+.deva-memory-field{display:grid;gap:6px;font-size:12px;color:var(--text-secondary,#666)}
+.deva-memory-field .deva-select{width:100%;color:var(--text-primary,#1a1a1a)}
+.deva-memory-empty{padding:24px 0;margin:0;text-align:center;font-size:13px;color:var(--text-muted,#888)}
+.deva-memory-page .deva-memory-list{display:flex;flex-direction:column;gap:0;border-top:1px solid var(--border-color,#e0e0e0)}
+.deva-memory-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:14px 0;border-bottom:1px solid var(--border-light,var(--border-color,#e0e0e0));font-size:14px;line-height:1.6}
+.deva-memory-copy{min-width:0;flex:1}.deva-memory-copy strong{font-size:14px;font-weight:600;color:var(--text-primary,#1a1a1a)}
+.deva-memory-scope{display:block;font-size:11px;color:var(--text-muted,#888);overflow-wrap:anywhere}
+.deva-memory-copy p{margin:4px 0 0;color:var(--text-secondary,#666);white-space:pre-wrap;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.deva-memory-actions{display:flex;gap:8px;justify-content:flex-end}.deva-memory-note{margin-top:16px;color:var(--text-muted,#888);font-size:12px}.deva-memory-note summary{cursor:pointer}
+
 @media(max-width:768px){.deva-skills-layout{grid-template-columns:1fr}.deva-skills-sidebar{max-height:none}}
 
 `
@@ -2289,6 +2298,8 @@ async function mountMemory(container, ctx) {
     const option = el('option', '', words[index + 1]); option.value = value; scopes.append(option)
   }
   scopes.value = 'global'
+  scopes.setAttribute('aria-label', zh ? '作用域' : 'Scope')
+  const scopeLabel = (scope, label) => zh ? label : scope === 'global' ? words[1] : label.replace(/^[^:]*:/, scope === 'role' ? 'Persona:' : 'Project:')
   const list = el('div', 'deva-memory-list')
   const error = el('div', 'deva-field-error'); error.setAttribute('role', 'alert')
   const form = el('div', 'deva-memory-form'); form.hidden = true
@@ -2297,30 +2308,45 @@ async function mountMemory(container, ctx) {
   const type = el('select', 'deva-select')
   for (const value of ['user', 'feedback', 'project', 'reference']) { const option = el('option', '', value); option.value = value; type.append(option) }
   const add = button(words[4], 'deva-btn'), save = button(words[5], 'deva-btn'), remove = button(words[6], 'deva-btn'), cancel = button(words[7], 'deva-btn'), refresh = button(words[8], 'deva-btn')
-  form.append(type, title, body, save, remove, cancel)
-  header.append(refresh)
-  const toolbar = el('div', 'deva-toolbar')
-  toolbar.append(scopes, add)
-  form.className += ' deva-card'
-  list.setAttribute('role', 'status')
-  container.append(header, hint, toolbar, error, form, list)
+  const actions = el('div', 'deva-memory-actions'); actions.append(remove, cancel, save)
+  const field = (caption, control) => { const label = el('label', 'deva-memory-field', caption); label.append(control); return label }
+  const typeField = field(zh ? '类型' : 'Type', type)
+  form.append(field(zh ? '作用域' : 'Scope', scopes), typeField, field(zh ? '标题' : 'Title', title), field(zh ? '内容' : 'Content', body), actions)
+  const tools = el('div', 'deva-memory-actions'); tools.append(refresh, add); header.append(tools)
+  const disclosure = el('details', 'deva-memory-note'); disclosure.append(el('summary', '', zh ? '旧记忆数据' : 'Legacy memory'), hint)
+  list.setAttribute('role', 'list')
+  container.className += ' deva-memory-page'
+  container.append(header, error, form, list, disclosure)
   let current = null, generation = 0, pending = false
-  const busy = value => { pending = value; for (const control of [scopes, add, save, remove, refresh, cancel]) control.disabled = value }
+  const busy = value => { pending = value; for (const control of [title, body, type, add, save, remove, refresh, cancel]) control.disabled = value; scopes.disabled = value || !!current }
   const showError = cause => { error.textContent = String(cause?.message || cause) }
   const edit = entry => {
     if (pending) return
+    scopes.value = entry?.scope || 'global'; scopes.disabled = !!entry
     current = entry; title.value = entry?.title || ''; body.value = entry?.body || ''; type.value = entry?.type || 'user'
-    type.hidden = !!entry; remove.hidden = !entry; form.hidden = false; error.textContent = ''
+    typeField.hidden = !!entry; type.hidden = !!entry; remove.hidden = !entry; form.hidden = false; error.textContent = ''
   }
   const load = async () => {
-    const request = ++generation; const scope = scopes.value
-    list.textContent = words[9]; error.textContent = ''; busy(true)
+    const request = ++generation
+    list.replaceChildren(el('p', 'deva-memory-empty', words[9])); error.textContent = ''; busy(true)
     try {
-      const result = await ctx.rpc.call('memory-page', { action: 'list', scope })
+      const result = await ctx.rpc.call('memory-page', { action: 'list' })
       if (request !== generation) return
-      list.textContent = result.entries.length ? '' : words[10]
-      for (const entry of result.entries) { const item = button(entry.title, 'deva-btn'); item.onclick = () => edit(entry); list.append(item) }
-    } catch (cause) { if (request === generation) { list.textContent = ''; showError(cause) } }
+      list.replaceChildren(...(result.entries.length ? [] : [el('p', 'deva-memory-empty', words[10])]))
+      if (result.scopes) {
+        const selected = scopes.value
+        scopes.innerHTML = ''
+        for (const layer of result.scopes) { const option = el('option', '', scopeLabel(layer.scope, layer.label)); option.value = layer.scope; scopes.append(option) }
+        scopes.value = result.scopes.some(layer => layer.scope === selected) ? selected : 'global'
+      }
+      for (const entry of result.entries) {
+        const row = el('div', 'deva-memory-row'); row.setAttribute('role', 'listitem')
+        const content = el('div', 'deva-memory-copy')
+        content.append(el('strong', '', entry.title), el('span', 'deva-memory-scope', scopeLabel(entry.scope || 'global', entry.scopeLabel || entry.scope || words[1])), el('p', '', entry.body || ''))
+        const item = button(zh ? '编辑' : 'Edit', 'deva-btn ghost'); item.onclick = () => edit(entry)
+        row.append(content, item); list.append(row)
+      }
+    } catch (cause) { if (request === generation) { list.replaceChildren(); showError(cause) } }
     finally { if (request === generation) busy(false) }
   }
   const mutate = async action => {
@@ -2333,7 +2359,7 @@ async function mountMemory(container, ctx) {
     } catch (cause) { showError(cause) }
     finally { busy(false) }
   }
-  scopes.onchange = () => { form.hidden = true; void load() }
+
   add.onclick = () => edit(null); refresh.onclick = () => { void load() }
   save.onclick = () => mutate('save'); remove.onclick = () => mutate('delete'); cancel.onclick = () => { form.hidden = true }
   await load()

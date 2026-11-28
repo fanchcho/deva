@@ -59,3 +59,34 @@ test('concurrent stale snapshot fails explicitly and preserves the winning write
   await assert.rejects(b.set('entries', []), {code:'DEVA_CONCURRENT_WRITE'})
   assert.equal(JSON.parse(readFileSync(path)).entries[0].title, 'winner')
 })
+
+test('unified memory page returns all available scopes in one request and routes edits/deletes to original files', async () => {
+  const ctx = context()
+  const scopes = ['global', 'role', 'project']
+  for (const scope of scopes) await memoryPage({ action: 'save', scope, type: 'user', title: scope, body: 'original' }, ctx)
+  const page = await memoryPage({ action: 'list' }, ctx)
+  assert.deepEqual(page.entries.map(entry => entry.scope), scopes)
+  assert.deepEqual(page.entries.map(entry => entry.scopeLabel), ['全局', '角色:general', `项目:${ctx.workspaceDir}`])
+  assert.deepEqual(page.scopes.map(layer => layer.scope), scopes)
+  for (const entry of page.entries) {
+    await memoryPage({ action: 'save', scope: entry.scope, id: entry.id, body: `edited ${entry.scope}` }, ctx)
+    assert.equal((await listMemories(entry.scope, ctx))[0].body, `edited ${entry.scope}`)
+  }
+  for (const entry of page.entries) {
+    await memoryPage({ action: 'delete', scope: entry.scope, id: entry.id }, ctx)
+    assert.equal((await listMemories(entry.scope, ctx)).length, 0)
+  }
+  assert.deepEqual((await memoryPage({ action: 'list' }, ctx)).entries, [])
+})
+
+test('unified memory page does not invent missing contexts or swallow corruption; mutations require scope', async () => {
+  const ctx = { config: {} }
+  const page = await memoryPage({ action: 'list' }, ctx)
+  assert.deepEqual(page.scopes, [{ scope: 'global', label: '全局' }])
+  for (const action of ['save', 'delete']) await assert.rejects(memoryPage({ action }, ctx), /MEMORY_SCOPE_REQUIRED/)
+  const path = join(process.env.DEVA_HOME, 'memory.json')
+  writeFileSync(path, '{bad')
+  await assert.rejects(memoryPage({ action: 'list' }, context()), { code: 'MEMORY_CORRUPT' })
+  await assert.rejects(memoryPage({ action: 'save', scope: 'global', type: 'user', title: 'never written' }, context()), { code: 'SESSION_CORRUPT_READ_ONLY' })
+  assert.equal(readFileSync(path, 'utf8'), '{bad')
+})

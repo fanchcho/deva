@@ -3,6 +3,7 @@ import { resolveIdentityId } from './selection.mjs'
 import { listMemories, writeMemory, deleteMemory, scopeOfId } from './memory.mjs'
 
 export async function memoryPage(input, ctx) {
+  if (input.action !== 'list' && !input.scope) throw new Error('MEMORY_SCOPE_REQUIRED')
   if (input.id && scopeOfId(input.id) !== input.scope) throw new Error('MEMORY_SCOPE_MISMATCH')
   if (input.scope === 'role' && !ctx.identityId) throw new Error('MEMORY_PERSONA_REQUIRED')
   if (input.scope === 'project' && !ctx.workspaceDir) throw new Error('MEMORY_WORKSPACE_REQUIRED')
@@ -11,7 +12,14 @@ export async function memoryPage(input, ctx) {
     if (!input.id) throw new Error('MEMORY_ID_REQUIRED')
     await deleteMemory(input.id, ctx)
   }
-  return { entries: await listMemories(input.scope, ctx), legacyNotice: '旧 Studio 记忆仍原样保留在账号存储，未自动合并；当前页面与工具仅使用桌面记忆文件。回滚插件即可重新访问旧数据。' }
+  const scopes = [{ scope: 'global', label: '全局' }]
+  if (ctx.identityId) scopes.push({ scope: 'role', label: `角色:${ctx.identityId}` })
+  if (ctx.workspaceDir) scopes.push({ scope: 'project', label: `项目:${ctx.workspaceDir}` })
+  const entries = input.scope ? await listMemories(input.scope, ctx) : (await Promise.all(scopes.map(async layer => {
+    const entries = await listMemories(layer.scope, ctx)
+    return entries.map(entry => ({ ...entry, scope: layer.scope, scopeLabel: layer.label }))
+  }))).flat()
+  return { entries, scopes, legacyNotice: '旧 Studio 记忆仍原样保留在账号存储，未自动合并；当前页面与工具仅使用桌面记忆文件。回滚插件即可重新访问旧数据。' }
 }
 export function registerMemorySettings(ctx, contract) {
   registerRpc(ctx, contract, 'memory-page', async (input, run) => {

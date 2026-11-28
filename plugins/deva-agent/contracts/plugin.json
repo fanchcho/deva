@@ -2587,7 +2587,7 @@
         },
         "scope": {
           "type": "string",
-          "description": "global/role/project",
+          "description": "global/role/project；list 省略时读取全部可用层，save/delete 必填",
           "enum": [
             "global",
             "role",
@@ -2612,8 +2612,7 @@
         }
       },
       "required": [
-        "action",
-        "scope"
+        "action"
       ],
       "additionalProperties": false
     },
@@ -2657,6 +2656,19 @@
               "updatedAt": {
                 "type": "number",
                 "description": "更新时间；缺省 createdAt。"
+              },
+              "scope": {
+                "type": "string",
+                "description": "全层列表的原始作用域，用于保存/删除路由",
+                "enum": [
+                  "global",
+                  "role",
+                  "project"
+                ]
+              },
+              "scopeLabel": {
+                "type": "string",
+                "description": "全层列表的作用域展示名，含当前角色或项目"
               }
             },
             "required": [
@@ -2673,6 +2685,34 @@
         "legacyNotice": {
           "type": "string",
           "description": "原样保留与回滚说明"
+        },
+        "scopes": {
+          "type": "array",
+          "description": "可用作用域及当前角色/项目标签",
+          "items": {
+            "type": "object",
+            "description": "一个作用域",
+            "properties": {
+              "scope": {
+                "type": "string",
+                "description": "global/role/project",
+                "enum": [
+                  "global",
+                  "role",
+                  "project"
+                ]
+              },
+              "label": {
+                "type": "string",
+                "description": "展示标签"
+              }
+            },
+            "required": [
+              "scope",
+              "label"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [

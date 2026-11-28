@@ -440,11 +440,13 @@ Windows 桌面端的 safeStorage **不是**“明文直接 DPAPI 后写盘”。
 
 `memory-page` RPC 使用已有 32/128 门禁及 sharedDevaUserId/激活账号 owner 校验。
 输入 action=list/save/delete、scope=global/role/project；当前角色与工作区从可信 run 获取。
+list 省略 scope 时一次返回全局、当前角色、当前项目的 entries（各带 scope/scopeLabel）与可用 scopes（scope/label），缺少角色或项目上下文时不虚构该层。旧调用显式传 scope 仍返回该层。save/delete 必须传 scope，并校验条目 ID 与 scope 一致，不能借编辑跨层移动。
+页面只发一次 list 请求并渲染一个列表；列表依次保留三层各自的文件顺序，不合并存储。作用域只在同页编辑器选择/显示，失败保留草稿；每行仅提供编辑，删除在编辑器中确认。损坏任一可用层时整次读取明确失败，不把剩余结果伪装为完整列表。
 条目编辑只传 title/body，新增可选 user/feedback/project/reference；沿用 60/1500 字与 100/60 条、4000/3000 索引预算。
 工具、提示词、归纳与页面共享 lib/memory.mjs：根为 sharedDevaHome、DEVA_HOME、~/.deva，三层路径与桌面一致。
 未知 JSON 字段和未修改条目顺序保留。读改写快照在文件锁内比对，冲突明确拒绝；writeAtomic 使用独占临时文件、fsync、rename。
 坏 JSON、空文件或损坏条目进入只读保护，不覆盖原件；修复文件后重启插件。
-旧 state.user memory 命名空间原样保留且不再读取或写入；页面始终提示未自动合并及回滚方法。
+旧 state.user memory 命名空间原样保留且不再读取或写入；页面「旧记忆数据」折叠说明保留未自动合并及回滚方法。
 回滚插件可重新访问旧宿主数据；新桌面文件仍保留，不自动反向覆盖旧数据。
 桌面服务不使用插件锁，不能保证两个应用在检查与 rename 的极短窗口内同时写不冲突；未声称分布式事务保证。
 

@@ -113,6 +113,24 @@ test('project harness passes: versions, i18n, contracts, docs and SDK files', as
   await checkProject(new URL('../', import.meta.url).pathname)
 })
 
+test('registered unified memory RPC validates output, preserves owner checks and requires mutation scope', async t => {
+  const { rpcs, call, home, dispose } = setup()
+  t.after(async () => { await dispose(); await rm(home, { recursive: true, force: true }) })
+  const invoke = input => rpcs.get('memory-page')(input, {
+    identity: { userId: 1, profile: 'default' },
+    config: { sharedDevaHome: home, sharedDevaUserId: 1 },
+    paths: { workspaceDir: home },
+  })
+  for (const scope of ['global', 'role', 'project']) await invoke({ action: 'save', scope, type: 'user', title: scope })
+  const page = await invoke({ action: 'list' })
+  assert.deepEqual(page.entries.map(entry => entry.scope), ['global', 'role', 'project'])
+  assert.equal(page.scopes.length, 3)
+  await assert.rejects(call('memory-page', { action: 'list' }, { userId: 2, profile: 'default' }), /MEMORY_OWNER_REQUIRED/)
+  await assert.rejects(invoke({ action: 'save', title: 'without scope' }), /MEMORY_SCOPE_REQUIRED/)
+  await assert.rejects(invoke({ action: 'delete', scope: 'global', id: page.entries[2].id }), /MEMORY_SCOPE_MISMATCH/)
+  assert.equal((await invoke({ action: 'list' })).entries.length, 3)
+})
+
 test('registered model settings RPC round-trips the Desktop schema without exposing a key', async t => {
   const { call, home, dispose } = setup()
   t.after(async () => { await dispose(); await rm(home, { recursive: true, force: true }) })
