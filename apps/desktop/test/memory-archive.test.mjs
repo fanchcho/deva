@@ -129,3 +129,18 @@ test('index character limit evicts before count limit and preserves all entries'
   assert.ok(listArchive(scope).length>0)
   assert.equal(listMemories(scope).length+listArchive(scope).length,65)
 })
+
+test('three-layer archive indexes are injected without occupying active memory slots',async()=>{
+ const {memoryListingPart}=await import('../src/main/services/listing.ts')
+ const {memoryPromptSection}=await import('../src/main/services/memory-prompt.ts')
+ const access={global:'rw',role:{personaId:'archive-test',name:'Role',mode:'rw'},project:'rw'}
+ const scopes=[{kind:'global'},{kind:'role',personaId:'archive-test'},{kind:'project',root:process.env.DEVA_HOME}]
+ const before=scopes.map(scope=>listMemories(scope).length)
+ const part=memoryListingPart([],access,process.env.DEVA_HOME)
+ for(const name of ['archive_global','archive_role','archive_project'])assert.ok(part.text.includes(name),name)
+ assert.match(part.text,/memory_recall/)
+ assert.deepEqual(scopes.map(scope=>listMemories(scope).length),before)
+ assert.match(memoryPromptSection(access,process.env.DEVA_HOME).join('\n'),/memory_recall/)
+ const repeated=memoryListingPart([{role:'user',content:[part]}],access,process.env.DEVA_HOME)
+ assert.equal(repeated,null)
+})
