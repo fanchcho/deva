@@ -2,7 +2,8 @@
 export const SECRET_MASK = '__EKKO_SECRET_UNCHANGED__'
 const object = value => value && typeof value === 'object' && !Array.isArray(value)
 export function maskMcpConfig(config = {}) {
-  const copy = structuredClone(config)
+  const copy = Object.fromEntries(Object.entries(structuredClone(config)).filter(([key]) => ['type', 'command', 'args', 'env', 'url', 'headers', 'enabled'].includes(key)))
+  if (!copy.type && config.transport) copy.type = config.transport === 'http' ? 'streamable_http' : config.transport
   for (const field of ['env', 'headers']) if (object(copy[field])) {
     copy[field] = Object.fromEntries(Object.keys(copy[field]).map(key => [key, SECRET_MASK]))
   }

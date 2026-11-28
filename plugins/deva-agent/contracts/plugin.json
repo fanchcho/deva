@@ -1075,69 +1075,11 @@
             "maxLength": 64
           },
           "maxItems": 200
-        },
-        "desktopCompatibility": {
-          "type": "object",
-          "description": "~/.deva/mcp.json 的只读兼容视图。条目由桌面端管理，不导入 Studio，也不参与本 Agent 运行；只用于避免用户误以为桌面配置丢失。",
-          "properties": {
-            "path": {
-              "type": "string",
-              "description": "桌面 mcp.json 的绝对路径；无法解析根目录时为空字符串。",
-              "maxLength": 4096
-            },
-            "exists": {
-              "type": "boolean",
-              "description": "桌面 mcp.json 是否存在。"
-            },
-            "entries": {
-              "type": "array",
-              "description": "桌面 mcp.json → mcpServers 的条目，按文件顺序；不含连接配置与密钥。",
-              "items": {
-                "type": "object",
-                "description": "一个来自桌面配置的 MCP 条目。",
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "description": "桌面 mcpServers 的映射键。",
-                    "maxLength": 64
-                  },
-                  "transport": {
-                    "type": "string",
-                    "description": "stdio 或 http。",
-                    "maxLength": 32
-                  },
-                  "enabled": {
-                    "type": "boolean",
-                    "description": "桌面 config.json → mcp.enabled 的启用态，只用于只读展示。"
-                  }
-                },
-                "required": [
-                  "name",
-                  "transport",
-                  "enabled"
-                ],
-                "additionalProperties": false
-              },
-              "maxItems": 200
-            },
-            "error": {
-              "type": "string",
-              "description": "桌面配置文件损坏或不可读时的只读诊断；不影响 Studio 清单。",
-              "maxLength": 2000
-            }
-          },
-          "required": [
-            "path",
-            "exists",
-            "entries"
-          ],
-          "additionalProperties": false
         }
       },
       "required": [
         "servers",
-        "selected",
-        "desktopCompatibility"
+        "selected"
       ],
       "additionalProperties": false
     },
@@ -1195,10 +1137,12 @@
       "properties": {
         "type": {
           "type": "string",
-          "description": "传输类型；只接受 stdio 或 streamable_http（http 视作 streamable_http）。",
+          "description": "MCP 传输类型，保留桌面 SSE/http 兼容。",
           "enum": [
             "stdio",
-            "streamable_http"
+            "streamable_http",
+            "http",
+            "sse"
           ],
           "maxLength": 32
         },
@@ -1316,10 +1260,12 @@
           "properties": {
             "type": {
               "type": "string",
-              "description": "传输类型；只接受 stdio 或 streamable_http（http 视作 streamable_http）。",
+              "description": "MCP 传输类型，保留桌面 SSE/http 兼容。",
               "enum": [
                 "stdio",
-                "streamable_http"
+                "streamable_http",
+                "http",
+                "sse"
               ],
               "maxLength": 32
             },
@@ -1402,10 +1348,12 @@
           "properties": {
             "type": {
               "type": "string",
-              "description": "传输类型；只接受 stdio 或 streamable_http（http 视作 streamable_http）。",
+              "description": "MCP 传输类型，保留桌面 SSE/http 兼容。",
               "enum": [
                 "stdio",
-                "streamable_http"
+                "streamable_http",
+                "http",
+                "sse"
               ],
               "maxLength": 32
             },
@@ -1473,10 +1421,12 @@
           "properties": {
             "type": {
               "type": "string",
-              "description": "传输类型；只接受 stdio 或 streamable_http（http 视作 streamable_http）。",
+              "description": "MCP 传输类型，保留桌面 SSE/http 兼容。",
               "enum": [
                 "stdio",
-                "streamable_http"
+                "streamable_http",
+                "http",
+                "sse"
               ],
               "maxLength": 32
             },

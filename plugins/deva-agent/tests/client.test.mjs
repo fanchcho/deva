@@ -960,16 +960,16 @@ test('memory page shows empty state and preserves draft on failed save', async (
   assert.ok(findAll(root, n => n.textContent === 'MEMORY_CORRUPT').length)
 })
 
-test('MCP page has one editable catalog and read-only desktop compatibility', async () => {
+test('MCP page requests once and renders one merged editable catalog', async () => {
   const calls = []
   const root = await mountPage(fakeContext('zh', async name => {
     calls.push(name)
-    return { servers: [server('same')], selected: [], desktopCompatibility: {
-      entries: [{ name: 'desktop-only', transport: 'stdio', enabled: true }], exists: true, path: 'fixture/mcp.json',
-    } }
+    return { servers: [server('same'), server('desktop-only')], selected: [] }
   }, { view: 'mcp' }))
   assert.deepEqual(calls, ['get-mcp-servers'])
   assert.equal(findAll(root, n => n.tag === 'h3' && n.textContent === 'same').length, 1)
-  assert.ok(findAll(root, n => String(n.textContent).includes('由桌面端管理')).length)
+  assert.equal(findAll(root, n => String(n.textContent).includes('由桌面端管理')).length, 0)
+  assert.equal(findAll(root, n => n.className === 'deva-grid').length, 1)
+  assert.equal(findAll(root, n => n.tag === 'h3' && n.textContent === 'desktop-only').length, 1)
   assert.equal(findAll(root, n => String(n.textContent).includes('Studio 同名优先')).length, 0)
 })

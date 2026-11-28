@@ -325,22 +325,6 @@ export const skillLabels = {
   }
 }
 
-/** 桌面 MCP 只读兼容区文案：与 Studio 原版 MCP 页的主列表分开，不提供任何写操作。 */
-const desktopCompatLabels = {
-  en: { title: 'Desktop configuration entries (read-only)', hint: 'These entries come from ~/.deva/mcp.json and are managed by the desktop app. They are not imported into Studio and are not connected when this Agent runs.', error: 'Failed to read desktop configuration' },
-  zh: { title: '桌面配置条目（只读）', hint: '以下条目来自 ~/.deva/mcp.json，由桌面端管理；未导入 Studio，也不会在本 Agent 运行时连接。', error: '桌面配置读取失败' },
-  'zh-tw': { title: '桌面設定項目（唯讀）', hint: '以下項目來自 ~/.deva/mcp.json，由桌面版管理；未匯入 Studio，也不會在本 Agent 執行時連線。', error: '桌面設定讀取失敗' },
-  ja: { title: 'デスクトップ設定の項目（読み取り専用）', hint: '以下の項目は ~/.deva/mcp.json に由来し、デスクトップ版が管理します。Studio には取り込まれず、この Agent の実行時にも接続しません。', error: 'デスクトップ設定の読み取りに失敗しました' },
-  ko: { title: '데스크톱 설정 항목(읽기 전용)', hint: '다음 항목은 ~/.deva/mcp.json에서 오며 데스크톱 앱이 관리합니다. Studio로 가져오지 않으며 이 Agent 실행 시 연결하지 않습니다.', error: '데스크톱 설정을 읽지 못했습니다' },
-  fr: { title: 'Entrées de configuration du bureau (lecture seule)', hint: 'Ces entrées proviennent de ~/.deva/mcp.json et sont gérées par l’application de bureau. Elles ne sont pas importées dans Studio et ne sont pas connectées lors de l’exécution de cet Agent.', error: 'Échec de lecture de la configuration du bureau' },
-  es: { title: 'Entradas de configuración del escritorio (solo lectura)', hint: 'Estas entradas provienen de ~/.deva/mcp.json y las gestiona la aplicación de escritorio. No se importan en Studio ni se conectan al ejecutar este Agent.', error: 'No se pudo leer la configuración del escritorio' },
-  de: { title: 'Desktop-Konfigurationseinträge (schreibgeschützt)', hint: 'Diese Einträge stammen aus ~/.deva/mcp.json und werden von der Desktop-App verwaltet. Sie werden nicht in Studio importiert und beim Ausführen dieses Agent nicht verbunden.', error: 'Desktop-Konfiguration konnte nicht gelesen werden' },
-  pt: { title: 'Entradas de configuração do desktop (somente leitura)', hint: 'Estas entradas vêm de ~/.deva/mcp.json e são gerenciadas pelo aplicativo de desktop. Não são importadas para o Studio nem conectadas quando este Agent é executado.', error: 'Falha ao ler a configuração do desktop' },
-  ru: { title: 'Записи конфигурации приложения (только чтение)', hint: 'Эти записи находятся в ~/.deva/mcp.json и управляются настольным приложением. Они не импортируются в Studio и не подключаются при запуске этого Agent.', error: 'Не удалось прочитать конфигурацию приложения' },
-  ar: { title: 'إدخالات إعداد سطح المكتب (للقراءة فقط)', hint: 'تأتي هذه الإدخالات من ‎~/.deva/mcp.json‎ وتديرها تطبيق سطح المكتب. لا تُستورد إلى Studio ولا تُوصَل عند تشغيل هذا الوكيل.', error: 'تعذّر قراءة إعداد سطح المكتب' },
-  tr: { title: 'Masaüstü yapılandırma kayıtları (salt okunur)', hint: 'Bu kayıtlar ~/.deva/mcp.json dosyasından gelir ve masaüstü uygulaması tarafından yönetilir. Studio’ya içe aktarılmaz ve bu Agent çalışırken bağlanmaz.', error: 'Masaüstü yapılandırması okunamadı' },
-}
-
 /** Deva 设置页：按宿主 ctx.view 渲染身份、模型和 MCP。 */
 const identityLabels = {
   "zh": ["选择 Deva 的默认身份，或新增、编辑与桌面端共用的身份。", "设为默认", "新增身份", "编辑身份", "名称", "描述", "提示词正文", "已保存身份：{name}", "请填写名称和提示词正文。", "无提示词；请先编辑。", "已在桌面启用"],
@@ -365,7 +349,7 @@ const labels = {
     "saved": "已保存：{name}",
     "none": "未读取到身份目录",
     "mcpTitle": "MCP 服务器",
-    "mcpHint": "这里显示 Studio「MCP」页的服务（含内置服务）。卡片启停影响 Studio；勾选保存只控制当前 Profile 的 Deva。工具数由 Studio 对已启用服务探测；“+”表示还有服务未能完成探测。",
+    "mcpHint": "统一显示 MCP 服务。启停同步桌面配置；保存勾选只控制当前 Profile 的 Deva。“+”表示还有服务未能完成探测。",
     "search": "搜索服务器...",
     "add": "+ 添加服务器",
     "reload": "刷新",
@@ -2310,7 +2294,6 @@ async function mountMemory(container, ctx) {
 }
 
 async function mountMcp(container, ctx, text) {
-  const compatCopy = desktopCompatLabels[pickLocale(ctx.locale)] || desktopCompatLabels.en
   const header = el('div', 'deva-header')
   const heading = el('div')
   heading.append(el('h2', '', text.mcpTitle), el('p', 'deva-muted', text.mcpHint))
@@ -2355,8 +2338,7 @@ async function mountMcp(container, ctx, text) {
   const status = el('div', 'deva-status')
   const modalHost = el('div')
 
-  const desktopCompat = el('div', 'deva-desktop-compat')
-  container.append(header, alert, summary, toolbar, grid, desktopCompat, status, modalHost)
+  container.append(header, alert, summary, toolbar, grid, status, modalHost)
 
   /** @type {Array<{name: string, transport: string, managed: boolean, enabled: boolean}>} */
   let servers = []
@@ -2402,25 +2384,6 @@ async function mountMcp(container, ctx, text) {
       || (server.managed ? 'studio' : '').includes(needle))
   }
 
-  /** 桌面配置只读兼容区：无任何增删改按钮，明确标注由桌面端管理、不参与本 Agent 运行。 */
-  function renderDesktopCompatibility(data) {
-    desktopCompat.innerHTML = ''
-    if (!data) return
-    if (data.error) {
-      desktopCompat.append(el('div', 'deva-status error', `${compatCopy.error}: ${data.error}`))
-      return
-    }
-    const entries = Array.isArray(data.entries) ? data.entries : []
-    if (!entries.length) return
-    const box = el('div', 'deva-card deva-desktop-compat-card')
-    box.append(el('h3', '', compatCopy.title), el('p', 'deva-muted', `${compatCopy.hint}${data.path ? `（${data.path}）` : ''}`))
-    for (const entry of entries) {
-      const parts = [entry.name, entry.transport === 'http' ? 'streamable_http' : entry.transport, entry.enabled ? text.summaryEnabled : text.disabledStatus]
-      box.append(el('div', 'deva-info', parts.join(' · ')))
-    }
-    desktopCompat.append(box)
-  }
-
   function render() {
     grid.innerHTML = ''
     refreshSummary()
@@ -2446,11 +2409,10 @@ async function mountMcp(container, ctx, text) {
     const head = el('div', 'deva-card-head')
     head.append(el('h3', 'deva-name', server.name))
 
-    // 徽章顺序与 Studio 原生卡片一致：传输方式、来源、连接状态
+    // 徽章顺序与 Studio 原生卡片一致：传输方式、连接状态
     const badges = el('div', 'deva-badges')
     const transport = String(server.transport || 'stdio')
     badges.append(el('span', 'deva-badge transport', transport === 'http' ? 'streamable_http' : transport))
-    if (server.managed) badges.append(el('span', 'deva-badge context', text.summaryManaged))
     const stateLabel = disabled ? text.disabledStatus : failure ? text.disconnectedStatus : text.connectedStatus
     badges.append(el('span', `deva-badge ${state}`, stateLabel))
     head.append(badges)
@@ -2537,7 +2499,6 @@ async function mountMcp(container, ctx, text) {
       tools.clear()
       for (const name of [...errors.keys()]) if (!available.has(name)) errors.delete(name)
       render()
-      renderDesktopCompatibility(snapshot.desktopCompatibility)
       // 已选但 Studio 里没有的服务：如实提示，运行时也会在提示词里点名，不静默丢弃。
       const gone = selected.filter(name => !available.has(name))
       const notes = []
@@ -2549,7 +2510,6 @@ async function mountMcp(container, ctx, text) {
       loaded = false
       servers = []
       grid.innerHTML = ''
-      desktopCompat.innerHTML = ''
       refreshSummary()
       setAlert(errorText(error))
       setStatus('')

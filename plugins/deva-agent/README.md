@@ -20,7 +20,7 @@
 - 只暴露一个 Agent：插件不再按身份各注册一个固定 Agent；身份在会话内切换（见下）
 - 通过 **Agent 管理 → Deva → 设置** 打开设置页；插件不注册单独的主导航快捷入口：
   - **身份**（`views: identity`）：新增、编辑身份直接写 `~/.deva/personas/*.md`（保留桌面专属字段）；默认/会话选择写在桌面 `config.json → personas.selected/sessionSelected`
-  - **MCP**（`views: mcp`）：读写 Studio `/api/ekko/mcp/servers`；插件只保存本 Agent 勾选的服务名
+  - **MCP**（`views: mcp`）：合并 Studio 与桌面 MCP 清单；插件状态只保存本 Agent 勾选的服务名
   - **模型**（`views: model`）：默认「跟随会话当前选择」，也可手填 Base URL、模型名和可选 API Key。
 
 ## 它怎么跑
@@ -84,7 +84,7 @@ Studio 直连只支持有明确 Base URL 的 OpenAI Chat Completions 模型。�
 
 **Studio → Deva → MCP** 显示原生 `/ekko/mcp` 的服务及内置项，并由 Studio 探测已启用服务的工具数。卡片的新增、编辑、启停、测试和删除走官方 Studio 接口，受同样的权限约束。**保存勾选**只改当前账号与 Profile 的 Deva 服务名单；不会启停宿主。未保存过勾选时默认继承所有启用服务，显式空勾选不连接任何 Studio 服务。
 
-既有桌面 `mcp.json` 仅只读展示，由桌面端管理，不参与 Agent 运行。
+桌面 `mcp.json` 与宿主服务合并成单一列表并参与 Agent 运行。新增缺项、安全写盘、字段映射与限制详见 [MCP 合并规则](docs/MCP-MERGED.md)。
 
 配置里的 `${VAR}`（环境变量与请求头的值）从插件进程环境展开；变量缺失时该服务连接失败并在
 系统提示词的「MCP 连接状态」里点名缺哪个变量，不会静默跳过。连接失败只影响该服务，不中断对话。

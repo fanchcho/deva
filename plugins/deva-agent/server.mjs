@@ -1,3 +1,4 @@
+import { mergedMcpHost } from './lib/mcp-merged.mjs'
 import { registerMemorySettings } from './lib/memory-settings.mjs'
 import { registerSkillSettings } from './lib/skill-settings.mjs'
 import { discoverModels } from './lib/model-discovery.mjs'
@@ -98,29 +99,29 @@ export function apply(ctx) {
     const snapshot = await readIdentitySnapshot(run.state, run.identity, run.config)
     return { ok: true, sessionId, identity: snapshot.selected }
   })
-  // Settings and selection use the current caller's Studio catalog, never a copied file.
-  registerRpc(ctx, contract, 'get-mcp-servers', (_input, run) => readStudioMcpPage(run, ctx.identity?.userId))
-  registerRpc(ctx, contract, 'save-mcp-selection', (input, run) => saveStudioSelection(run, input.servers))
+  // Settings and runtime share one lossless merged catalog, scoped to the caller.
+  registerRpc(ctx, contract, 'get-mcp-servers', (_input, run) => readStudioMcpPage({ ...run, host: mergedMcpHost(run, ctx.identity?.userId) }))
+  registerRpc(ctx, contract, 'save-mcp-selection', (input, run) => saveStudioSelection({ ...run, host: mergedMcpHost(run, ctx.identity?.userId) }, input.servers))
   registerRpc(ctx, contract, 'get-mcp-server', async (input, run) => {
-    const server = await getStudioServer(run.host, input.name)
+    const server = await getStudioServer(mergedMcpHost(run, ctx.identity?.userId), input.name)
     return { server: publicServer(server), config: maskMcpConfig(server.config) }
   })
   registerRpc(ctx, contract, 'create-mcp-server', async (input, run) =>
-    saved(await createStudioServer(run.host, { ...input, config: mergeMcpSecrets(input.config, {}) })))
+    saved(await createStudioServer(mergedMcpHost(run, ctx.identity?.userId), { ...input, config: mergeMcpSecrets(input.config, {}) })))
   registerRpc(ctx, contract, 'update-mcp-server', async (input, run) => {
-    const previous = await getStudioServer(run.host, input.name)
-    return saved(await updateStudioServer(run.host, {
+    const previous = await getStudioServer(mergedMcpHost(run, ctx.identity?.userId), input.name)
+    return saved(await updateStudioServer(mergedMcpHost(run, ctx.identity?.userId), {
       name: input.name,
       config: mergeMcpSecrets(input.config, previous.config),
     }))
   })
   registerRpc(ctx, contract, 'set-mcp-server-enabled', async (input, run) =>
-    saved(await setStudioServerEnabled(run.host, input)))
+    saved(await setStudioServerEnabled(mergedMcpHost(run, ctx.identity?.userId), input)))
   registerRpc(ctx, contract, 'delete-mcp-server', async (input, run) => ({
-    ok: true, name: (await deleteStudioServer(run.host, input)).name,
+    ok: true, name: (await deleteStudioServer(mergedMcpHost(run, ctx.identity?.userId), input)).name,
   }))
   registerRpc(ctx, contract, 'test-mcp-server', async (input, run) => ({
-    ok: true, tools: await testStudioServer(run.host, input),
+    ok: true, tools: await testStudioServer(mergedMcpHost(run, ctx.identity?.userId), input),
   }))
   // 会话窗口里切身份：斜杠命令（命令面板可直接用；@deva:<id> 前缀由 Agent 自己消费）
   ctx.extensions.commands.register({

@@ -1,3 +1,4 @@
+import { mergedMcpHost, runtimeMcpConfig } from './mcp-merged.mjs'
 import { createTtlCache } from './bounded-cache.mjs'
 import { createCheckpointController } from './checkpoint.mjs'
 /**
@@ -90,8 +91,8 @@ function makeExecute({ run, getPool, onToolSuccess }) {
 }
 
 /**
- * 只连接宿主清单中的 Studio MCP（`/api/ekko/mcp/servers`），这是 Agent 侧唯一的 MCP 来源。
- * 桌面 `~/.deva/mcp.json` 只做设置页只读兼容展示，不进入运行时；因此不存在同名两份配置互相覆盖。
+ * 连接与设置页相同的合并 MCP 清单。
+ * 桌面配置优先；宿主缺项补入桌面，单一清单不叠加注入副本。
  * 用户保存过「本 Agent 使用」勾选时，按勾选过滤宿主清单；勾选只存服务名，不复制连接配置。
  * 连接跨轮复用；配置或凭证变了才重连。连接失败写进系统提示词，不中断对话。
  */
@@ -99,12 +100,15 @@ async function runWithMcp({ run, input, system, workspaceDir, facts, identity, l
   const problems = []
   let servers = []
   try {
-    const catalog = await listStudioServers(run.host)
+    const catalog = await listStudioServers(mergedMcpHost(run, run.mcpOwnerUserId))
     const selected = await readStoredMcpSelection(run)
     const wanted = selected === null ? null : new Set(selected)
     const parsed = injectedServers(Object.fromEntries(catalog
       .filter(server => server.enabled && (wanted === null || wanted.has(server.name)))
-      .map(server => [server.name, server.config])))
+      .flatMap(server => {
+        try { return [[server.name, runtimeMcpConfig(server.config)]] }
+        catch (error) { problems.push(`${server.name}: ${error.message}`); return [] }
+      })))
     servers = parsed.servers
     problems.push(...parsed.problems)
   } catch (error) {
@@ -228,7 +232,7 @@ export function createAgentDefinition({ log = console, runTurn = runAgentTurn, i
               skillsText: await formatSkillListing({ host: run.host, log, loadSkills: host => skillsCache.get('skills', host) }),
             })
             return await runWithMcp({
-              run, input: consumed.input, system, workspaceDir, facts, identity, log, runTurn, mcp, onToolSuccess, checkpoint, model,
+              run: { ...run, mcpOwnerUserId: plugin?.identity?.userId }, input: consumed.input, system, workspaceDir, facts, identity, log, runTurn, mcp, onToolSuccess, checkpoint, model,
             })
           },
           checkpoint: () => checkpoint.snapshot(),

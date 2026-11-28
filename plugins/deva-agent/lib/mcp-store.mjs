@@ -1,14 +1,5 @@
-/**
- * 桌面 MCP 只读兼容层。
- *
- * Studio 的 `/api/ekko/mcp/servers` 是插件唯一的 MCP 真源：设置页只读它、只写它，
- * Agent 运行时读取同一个宿主清单。本模块只读取 `~/.deva/mcp.json` 的
- * `mcpServers[id]` 与 `~/.deva/config.json → mcp.enabled[id]`，用于设置页的只读说明
- * （「来自桌面配置、由桌面端管理」），不导入、不修改、不参与运行时连接。
- *
- * 为什么不做幂等导入：Studio 宿主的 `normalizeConfig` 只保留 type/command/args/env/url/
- * headers/enabled，且 env/headers 只接受字符串；桌面 `{secretRef}` 与未知扩展字段会被
- * 拒绝或丢弃。导入无法满足「保留 {secretRef} 与未知字段」，因此选择只读呈现。
+/** Shared MCP name/path validation and legacy read-only inspection helper.
+ * The active page and Agent use mcp-merged.mjs; this helper never writes files.
  */
 
 import { join } from 'node:path'

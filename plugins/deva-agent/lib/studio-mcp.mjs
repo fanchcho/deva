@@ -10,14 +10,12 @@
  *  DELETE /api/ekko/mcp/servers/:name    删除
  *  POST   /api/ekko/mcp/servers/:name/test  连一次并列出工具
  *
- * 插件自己不存 MCP 连接配置，也不复制 Studio 的凭据：服务配置只有一份，在 Studio 里；
- * 插件只保存「这个 Agent 用哪些服务」的名字列表（user+profile 作用域的 storage.mcp），
- * 连接配置每次运行现取，用户在 Studio 或本页改完，下一轮即生效。
+ * 调用方通过 mcp-merged 适配器提供统一清单；本模块负责协议校验和用户/Profile 勾选。
  * 失败一律显式暴露（RPC 报错 / 系统提示词的「MCP 连接状态」），不静默当成「没配服务」。
  */
 import { validateStored } from './storage-contracts.mjs'
 import { safeMcpError } from './mcp-secrets.mjs'
-import { isServerName, MAX_SELECTED_SERVERS, readDesktopMcpCompatibility } from './mcp-store.mjs'
+import { isServerName, MAX_SELECTED_SERVERS } from './mcp-store.mjs'
 
 const STORAGE_KEY = 'mcp'
 const SERVERS_PATH = '/api/ekko/mcp/servers'
@@ -176,7 +174,7 @@ export async function testStudioServer(host, { name }) {
 
 /** Mirrors the native Ekko MCP page: probe enabled servers via Studio, never run them in the settings handler.
  * A failed probe is unknown, not a zero; summary count is a lower bound if any probe failed. */
-export async function readStudioMcpPage(run, activationUserId) {
+export async function readStudioMcpPage(run) {
   const catalog = await listStudioServers(run.host)
   const selected = await readSelection(run, catalog)
   const byName = new Map(catalog.map(server => [server.name, server]))
@@ -189,10 +187,5 @@ export async function readStudioMcpPage(run, activationUserId) {
       return { ...summary, toolCountUnavailable: true }
     }
   }))
-  // 桌面兼容视图只读；失败不影响 Studio 清单。
-  const owner = run.config?.sharedDevaUserId ?? activationUserId
-  const desktopCompatibility = owner === run.identity?.userId && Number.isSafeInteger(owner)
-    ? readDesktopMcpCompatibility(run.config)
-    : { path: '', exists: false, entries: [], error: 'DESKTOP_MCP_OWNER_REQUIRED' }
-  return { servers, selected: selected.filter(name => byName.get(name)?.enabled !== false), desktopCompatibility }
+  return { servers, selected: selected.filter(name => byName.get(name)?.enabled !== false) }
 }

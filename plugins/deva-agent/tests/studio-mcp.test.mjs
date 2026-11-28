@@ -17,8 +17,6 @@ test('Studio MCP permission and malformed response failures are explicit; probe 
     return { ok: true, servers: [{ name: 'managed', managed: true, config: { command: 'fixture' } }] }
   } }
   const result = await readStudioMcpPage(run)
-  assert.ok(result.desktopCompatibility)
-  delete result.desktopCompatibility
   assert.deepEqual(result, {
     servers: [{ name: 'managed', enabled: true, transport: 'stdio', managed: true, toolCountUnavailable: true }],
     selected: ['managed'],
@@ -62,5 +60,5 @@ test('host fixture CRUD, test and scoped Agent selection use one Studio catalog'
 test('desktop compatibility is not disclosed to a different account', async () => {
   const { readStudioMcpPage } = await import('../lib/studio-mcp.mjs')
   const result = await readStudioMcpPage({ identity: { userId: 2 }, host: { request: async () => ({ ok: true, servers: [] }) } }, 1)
-  assert.deepEqual(result.desktopCompatibility, { path: '', exists: false, entries: [], error: 'DESKTOP_MCP_OWNER_REQUIRED' })
+  assert.deepEqual(result, { servers: [], selected: [] })
 })

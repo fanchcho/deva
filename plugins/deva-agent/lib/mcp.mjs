@@ -72,6 +72,7 @@ export function parseServerConfig(raw) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) { problems.push(`${key}: 配置必须是对象`); continue }
     if (entry.enabled === false) continue
     const name = sanitizeName(key)
+    if (servers.some(server => server.name === name)) { problems.push(`${key}: 工具命名空间冲突 ${name}`); continue }
     if (!NAME_PATTERN.test(name)) { problems.push(`${key}: 名称无法用作工具命名空间`); continue }
     const type = String(entry.type || entry.transport || (entry.command ? 'stdio' : entry.url ? 'http' : '')).toLowerCase()
     if (type === 'stdio' || (!type && entry.command)) {

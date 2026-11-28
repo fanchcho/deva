@@ -322,3 +322,24 @@ test('runtime ignores desktop and injected duplicates, honors empty selection an
     assert.equal(await readFile(join(home, 'mcp.json'), 'utf8'), raw)
   } finally { await session.dispose(); await cleanup() }
 })
+
+test('merged desktop catalog drives Agent tools once and honors empty selection', async () => {
+  const { dir, cleanup } = await workspace()
+  const config = { sharedDevaHome: dir, sharedDevaUserId: 1 }
+  const script = join(dir, 'fixture.mjs'), startLog = join(dir, 'starts.log')
+  await writeFile(script, STDIO_SERVER)
+  await writeFile(join(dir, 'mcp.json'), JSON.stringify({ mcpServers: { desktop: { command: process.execPath, args: [script], env: { START_LOG: startLog } } } }))
+  await writeFile(join(dir, 'config.json'), JSON.stringify({ mcp: { enabled: { desktop: true } } }))
+  const received = [], state = memoryState()
+  const definition = createAgentDefinition({ log: { info() {}, warn() {} }, runTurn: async ({ extraTools = [] }) => { received.push(extraTools.map(t => t.name)); return { finishReason: 'stop', content: [] } } })
+  const session = await definition.runtime.createSession({ identity: { sessionId: 'merged' }, paths: { workspaceDir: dir } })
+  const run = { mode: 'scoped', config, model: { baseUrl: 'http://127.0.0.1:1', token: 'test', model: 'test' }, paths: { workspaceDir: dir, runtimeDir: dir }, state, identity: { userId: 1, profile: 'default' }, signal: new AbortController().signal, host: { request: async path => path === '/api/ekko/mcp/servers' ? { ok: true, servers: [{ name: 'desktop', config: { command: 'must-not-spawn' } }] } : { skills: [] } } }
+  try {
+    await session.run({ input: [], history: [], instructions: [] }, run)
+    assert.deepEqual(received[0], ['mcp__desktop__echo'])
+    assert.equal((await readFile(startLog, 'utf8')).trim().split('\n').length, 1)
+    await state.profile.namespace('1').set('mcp', { servers: [] })
+    await session.run({ input: [], history: [], instructions: [] }, run)
+    assert.deepEqual(received[1], [])
+  } finally { await session.dispose(); await cleanup() }
+})

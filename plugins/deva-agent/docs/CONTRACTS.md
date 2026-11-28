@@ -5,7 +5,7 @@
 （Agent 自己的工具表见下文，不属于 `contracts/plugin.json#tools`）；业务数据写在两类地方：身份**内容**是桌面端自己的 `~/.deva/personas/<id>.md` + `config.json` 的
 `personas.*`（见[身份与 persona](#身份与-persona文件deva)）；默认/会话选择写桌面 `config.json → personas.selected/sessionSelected`；Studio MCP 管理走宿主 API，Deva 勾选写当前用户/Profile 状态；会话数据写 agent 会话存储（`todos`、`subagents`、附件预算与 checkpoint）。旧 `deva-agent/` 只做一次性迁移备份，不再创建。
 `storage.identity` 只是 0.8.3 的旧记录，仅作 seed 参考。插件的 `configSchema` 定义附件、可选策略和仅管理员可改的自定义模型网络批准列表：
-Studio MCP 连接配置保留在宿主，旧桌面 MCP 文件不迁入 Studio。
+MCP 连接配置经合并适配器对齐桌面，详见 [MCP-MERGED.md](MCP-MERGED.md)。
 
 ## 清单
 
@@ -215,7 +215,7 @@ Studio MCP 连接配置保留在宿主，旧桌面 MCP 文件不迁入 Studio。
 | `run_subagent` / `send_to_subagent` | 复用 `runAgentTurn` 跑隔离子轮：自己的系统提示词与历史（fork 继承主对话），工具表按类型收窄且剔除交互/派生/记忆写删/技能/待办，MCP 工具全量附加；子轮 `silent`，事件不进主对话流；`depth>0` 拒绝再派生；结论 ≤20000 字符并截断标注；派发记录写 `state.agentSession` 的 `subagents`（最近 20 个），记录里保存的是子轮自己的完整消息数组（含它每轮的结论），续聊据此接上 |
 | MCP 工具 | 参数与结果都当数据；单次调用 60s 超时；成功结果超 30000 字符同样落盘 + 首尾预览（错误文本原样回给模型）；服务连接失败只写进系统提示词 |
 
-Studio 权威清单来自 `GET /api/ekko/mcp/servers`，按当前调用者的 Profile 与权限执行。可用工具由 Studio 原生 `/test` 执行 `tools/list`；探测失败计数未知，清单 401/403、结构异常和服务错误都不是空态。桌面文件只读展示；运行时每轮读取同一宿主清单，不合并桌面或注入副本。
+MCP 页面与运行时均通过 `mcp-merged.mjs` 获取单一清单，宿主 GET 一次，桌面缺项补齐。字段投影、所有者限制及失效语义见 [MCP-MERGED.md](MCP-MERGED.md)。
 
 ## Deva MCP（RPC）
 
@@ -450,6 +450,6 @@ Windows 桌面端的 safeStorage **不是**“明文直接 DPAPI 后写盘”。
 
 ## MCP 单一来源与桌面兼容
 
-Studio `/api/ekko/mcp/servers` 是唯一可管理、可运行的 MCP 清单。新增、编辑、启停、删除、测试全部通过宿主 API；Agent 勾选只在当前用户/Profile 保存名称，不复制配置。每轮重新读取宿主清单并应用启用位及勾选；显式空勾选不连接任何服务，读取失败不回退桌面文件或其他注入清单。
+页面与运行时使用同一合并适配器，宿主服务通过官方 API 访问，桌面独有服务由插件管理和连接。显式空勾选不连接服务；读取错误明确返回，不静默回退。
 
-桌面 `mcp.json → mcpServers[id]` 与 `config.json → mcp.enabled[id]` 仅提供只读说明，标注「来自桌面配置、由桌面端管理」。仅共享目录拥有者可读取此说明；没有桌面 CRUD RPC，不迁移、不 chmod、不连接。原文件的 `{secretRef}`、未知字段、顺序和启用位均保留。宿主配置规范仅接受字符串 env/headers，并裁剪未知字段，因此无法无损自动导入；用户需在 Studio 原版或本页显式配置所需服务。旧 `deva-agent/` 身份迁移流程不属于此 MCP 读取路径。
+桌面与宿主清单合并为 `servers`，不再返回 `desktopCompatibility`。桌面原始扩展数据留在文件，前端只接收可编辑字段与 env/headers 掩码。详见 [MCP-MERGED.md](MCP-MERGED.md)。
