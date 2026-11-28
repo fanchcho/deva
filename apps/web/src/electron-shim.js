@@ -1,6 +1,7 @@
 import { downloadDeliverable } from './web/deliverables.js'
 import { encodeAttachment, pickAttachments } from './web/attachments.js'
 import { installBrowserControls } from './web/browser-controls.js'
+import { installNotifications } from './web/notifications.js'
 /**
  * 浏览器侧 electron 模块替身。
  * preload/index.ts 只用到 contextBridge / ipcRenderer / webUtils 三个成员，
@@ -119,7 +120,12 @@ if (typeof EventSource !== 'undefined') {
 }
 
 if (typeof document !== 'undefined' && typeof EventSource !== 'undefined') {
-  const start = () => installBrowserControls((...args) => ipcRenderer.invoke(...args), (channel, cb) => ipcRenderer.on(channel, (_event, value) => cb(value)))
+  const start = () => {
+    const invoke = (...args) => ipcRenderer.invoke(...args)
+    const subscribe = (channel, cb) => ipcRenderer.on(channel, (_event, value) => cb(value))
+    installBrowserControls(invoke, subscribe)
+    installNotifications(invoke, subscribe)
+  }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true })
   else start()
 }

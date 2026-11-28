@@ -117,6 +117,8 @@ for (const [c, args] of [['browser:web-frame', ['missing']], ['browser:web-input
   const denied=await invoke(c,args);assert.equal(denied.ok,false);assert.match(denied.error,/WEB_BROWSER_TAB_UNAVAILABLE/)
 }
 console.log('PASS Web browser controls registered; missing or hidden targets fail explicitly')
+const expired=await invoke('web:notification-click',['missing']);assert.equal(expired.ok,false);assert.match(expired.error,/WEB_NOTIFICATION_EXPIRED/)
+console.log('PASS Web notification click channel rejects unknown notification IDs')
 const ctrl = new AbortController()
 const events = await fetch(base+'/api/events',{headers:{cookie},signal:ctrl.signal})
 assert.equal(events.status,200); console.log('GET /api/events',events.status)

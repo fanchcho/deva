@@ -5,3 +5,5 @@
 .deva-browser img{display:block;width:100%;height:auto;outline-offset:2px}
 .deva-browser textarea{width:100%;box-sizing:border-box;margin-top:8px}
 .deva-browser [role=alert]{color:#c22;white-space:pre-wrap}
+.deva-web-notice{position:fixed;right:16px;bottom:16px;z-index:100000;display:flex;gap:8px;max-width:min(600px,90vw);padding:12px;border:1px solid #888;border-radius:8px;background:var(--bg,#fff);color:var(--fg,#222)}
+.deva-web-notice button{white-space:pre-wrap}

@@ -456,18 +456,38 @@ export const Menu = {
 }
 
 export class Notification extends EventEmitter {
+  static isSupported() { return true }
   constructor(options = {}) {
     super()
     this.options = options
   }
   show() {
-    console.log('[notify]', this.options.title ?? '', this.options.body ?? '')
+    this.close()
+    this.id = crypto.randomUUID()
+    notificationClicks.set(this.id, this)
+    this.expiry = setTimeout(() => this.close(), 300000)
+    this.expiry.unref()
+    emitEvent('web:notification', { id: this.id, title: this.options.title ?? 'Deva', body: this.options.body ?? '' })
   }
-  close() {}
+  close() {
+    if (!this.id) return
+    notificationClicks.delete(this.id)
+    clearTimeout(this.expiry)
+    this.id = null
+    this.emit('close')
+  }
   isSupported() {
     return true
   }
 }
+const notificationClicks = new Map()
+ipcMain.handle('web:notification-click', (_event, id) => {
+  const notification = notificationClicks.get(id)
+  if (!notification) throw new Error('WEB_NOTIFICATION_EXPIRED: notification no longer available')
+  notification.emit('click')
+  notification.close()
+  return { ok: true }
+})
 
 // ───────────────────────── session / net / protocol / screen ─────────────────────────
 const DEFAULT_UA =
