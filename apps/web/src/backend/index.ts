@@ -1,3 +1,4 @@
+import { registerChannelServerIpc } from '@deva/main/services/channel-server'
 /**
  * Web 后端入口：按 main/index.ts 的顺序注册真实业务模块，
  * 只是不创建窗口，事件改由 SSE 广播。
@@ -99,6 +100,7 @@ export async function createBackend(options: BackendOptions): Promise<Backend> {
   step('context usage', () => registerContextUsageIpc())
   step('read sync', () => registerReadSyncIpc(getWindow))
   step('remote', () => registerRemoteIpc(getWindow))
+  step('general devices', () => registerChannelServerIpc(getWindow))
 
   const ids = listSessions().map((m) => m.id)
   void sweepCheckpoints(ids).catch((e) => console.warn('[web] sweepCheckpoints:', e))

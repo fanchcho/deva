@@ -34,7 +34,7 @@ const MIME: Record<string, string> = {
 
 /** 手机网页的静态目录（electron-vite 把主进程打到 out/main，网页构建到 out/mobile）。 */
 export function mobileRoot(): string {
-  return resolve(join(__dirname, '..', 'mobile'))
+  return process.env.DEVA_WEB_USER ? join(__dirname, 'mobile') : resolve(join(__dirname, '..', 'mobile'))
 }
 
 /** 本机可供局域网访问的 IPv4 地址（常见的家用 / 办公网段排前面）。 */
@@ -83,7 +83,7 @@ export function startLanServer(port: number, sink: RawSink): Promise<LanServer> 
       server.removeAllListeners('error')
       server.on('error', (e) => console.warn('[remote/web] 内网服务错误：', (e as Error).message))
       resolvePromise({
-        port,
+        port: (server.address() as import('node:net').AddressInfo).port,
         close: () =>
           new Promise<void>((done) => {
             for (const ws of wss.clients) ws.terminate()

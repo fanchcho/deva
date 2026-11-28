@@ -120,6 +120,8 @@ import {
   abortTurn
 } from './chat-turns'
 export { hasActiveTurns, settleActiveTurns } from './chat-state'
+// 通用设备通道（channel-server）从这里取问答参数解析。
+export { parseAskQuestions } from './ask-questions'
 export type { ScheduledTurnResult } from './chat-turns'
 
 /**
@@ -452,6 +454,43 @@ function purgeSession(sessionId: string): void {
   memberDispatches.delete(sessionId)
   pendingHandoffs.delete(sessionId)
   for (const [g, rec] of memberGroupDone) if (rec.mainId === sessionId) memberGroupDone.delete(g)
+  // 会话删除广播：入站通道（channel-server/sse）据此回收该会话的事件环形缓冲（审查 P1-4）
+  for (const cb of sessionPurgeListeners) try { cb(sessionId) } catch { /* 监听器自吞错误 */ }
+}
+
+const sessionPurgeListeners = new Set<(sessionId: string) => void>()
+/** 会话被彻底删除时回调（channel-server 据此回收该会话的事件缓冲）。返回退订函数。 */
+export function onSessionPurge(cb: (sessionId: string) => void): () => void {
+  sessionPurgeListeners.add(cb)
+  return () => sessionPurgeListeners.delete(cb)
+}
+
+/**
+ * 重命名对话（chat:rename-session 与通用设备通道共用同一实现，规则只此一份）。title 为空即恢复自动标题：
+ * 取首条用户消息（展示用原文，不含随消息附带的提醒）。尚未建档的惰性会话查不到 → null。
+ */
+export function renameSessionTitle(sessionId: string, title: string): { title: string } | null {
+  const session = getSession(sessionId)
+  if (!session) return null
+  let t = String(title ?? '').replace(/\s+/g, ' ').trim().slice(0, TITLE_MAX)
+  if (!t) {
+    const first = displayOf(session).find((m) => m.role === 'user' && !m.notify)
+    if (first?.role === 'user')
+      t = deriveTitle(first.text) || deriveTitle(first.attachments.map((a) => a.name).join(' '))
+  }
+  session.title = t
+  saveProject(sessionId)
+  publishSessionsChanged()
+  return { title: t }
+}
+
+/**
+ * 删除对话（chat:delete-session 与通用设备通道共用同一实现）：主对话连同它的成员会话一并删除；
+ * 在它里面运行的定时任务改为独立运行。返回 true（保留通道侧「委托未就绪返回 false」的约定）。
+ */
+export function deleteSessionFully(sessionId: string): boolean {
+  deleteSessionAll(sessionId)
+  return true
 }
 
 // 用户对权限请求的答复
@@ -654,22 +693,8 @@ export function registerChatIpc(getWin: () => BrowserWindow | null): void {
   // 取首条用户消息（展示用原文，不含随消息附带的提醒）。会话对象全局缓存为同一份，回合进行中改名也不会被
   // 这一轮后续落盘冲掉；自动派生只在标题为空时写，不会覆盖用户起的名字。不改 updatedAt（改名不算新活动，
   // 列表顺序不变）。尚未建档的惰性会话查不到 → null。
-  ipcMain.handle(
-    'chat:rename-session',
-    (_e, payload: ChatRenameSessionRequest): { title: string } | null => {
-      const session = getSession(payload.sessionId)
-      if (!session) return null
-      let title = String(payload.title ?? '').replace(/\s+/g, ' ').trim().slice(0, TITLE_MAX)
-      if (!title) {
-        const first = displayOf(session).find((m) => m.role === 'user' && !m.notify)
-        if (first?.role === 'user')
-          title = deriveTitle(first.text) || deriveTitle(first.attachments.map((a) => a.name).join(' '))
-      }
-      session.title = title
-      saveProject(payload.sessionId)
-      publishSessionsChanged()
-      return { title }
-    }
+  ipcMain.handle('chat:rename-session', (_e, payload: ChatRenameSessionRequest): { title: string } | null =>
+    renameSessionTitle(payload.sessionId, payload.title)
   )
 
   // 归档 / 取消归档：只改这一个标记并落盘，不动 updatedAt（列表顺序不变）。尚未建档的惰性会话回 ok:false。

@@ -17,9 +17,10 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const appDir = path.resolve(process.argv[2] ?? process.env.DEVA_APP_DIR ?? path.join(here, '..', '..'))
 const desktopDir = path.join(appDir, 'apps', 'desktop')
 const rendererDir = path.join(desktopDir, 'out', 'renderer')
+const mobileDir = path.join(desktopDir, 'out', 'mobile')
 const preloadEntry = path.join(desktopDir, 'src', 'preload', 'index.ts')
 
-for (const p of [rendererDir, preloadEntry]) {
+for (const p of [rendererDir, mobileDir, preloadEntry]) {
   if (!fs.existsSync(p)) {
     console.error(`[build] 缺少 ${p}`)
     console.error('[build] 先在 deva 仓库执行 pnpm install && pnpm build，或用 DEVA_APP_DIR 指定仓库路径')
@@ -29,6 +30,7 @@ for (const p of [rendererDir, preloadEntry]) {
 
 const outDir = path.join(here, 'dist')
 fs.mkdirSync(outDir, { recursive: true })
+fs.cpSync(mobileDir, path.join(outDir, 'mobile'), { recursive: true })
 
 // Web 自有资源与上游共享图标统一输出到 dist，运行期不依赖上游源码目录。
 const assetsDir = path.join(outDir, 'web')

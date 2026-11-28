@@ -29,7 +29,7 @@ import { lanAddresses, startLanServer, type LanServer } from './server'
  * 配对：二维码 = 中转页面（或局域网地址）+ 桌面 id + 一次性配对票据，手机扫码打开即自动连接（不用输任何东西）。
  */
 
-const WEB_PORT_DEFAULT = 17800
+const WEB_PORT_DEFAULT = process.env.DEVA_WEB_USER ? 0 : 17800
 /** 二维码 / 链接到期后通道再开这么久：刚扫上的手机可能还在加载页面。 */
 const HOLD_GRACE_MS = 30_000
 /** 二维码收起后通道再留这么久才关。 */
@@ -58,7 +58,7 @@ function settingsOf(bot: BotConfig): PhoneSettings {
           : ''
   return {
     relayUrl,
-    port: typeof s.port === 'number' && s.port >= 1024 && s.port <= 65535 ? Math.floor(s.port) : WEB_PORT_DEFAULT,
+    port: typeof s.port === 'number' && (s.port >= 1024 || (s.port === 0 && !!process.env.DEVA_WEB_USER)) && s.port <= 65535 ? Math.floor(s.port) : WEB_PORT_DEFAULT,
     deskId: typeof s.deskId === 'string' && s.deskId ? s.deskId : randomBytes(8).toString('hex'),
     lastVia: s.lastVia === 'lan' || s.lastVia === 'relay' ? s.lastVia : s.mode === 'lan' ? 'lan' : 'relay'
   }
@@ -130,6 +130,7 @@ class PhoneChannel extends PhoneAdapter {
   /** 每开一次中转加一：旧客户端关掉后（或同步回调早于赋值时）的状态回调据此认出来。 */
   private relayGen = 0
   private lan: LanServer | null = null
+  get lanPort(): number | undefined { return this.lan?.port }
   private closed = false
   /** 扫码（qr）/ 复制的链接（link）要求通道开到什么时候。 */
   private holds: Record<PhoneVia, { qr: number; link: number }> = { relay: { qr: 0, link: 0 }, lan: { qr: 0, link: 0 } }
@@ -419,6 +420,12 @@ export function registerPhoneIpc(getWindow: () => BrowserWindow | null): void {
     if (s.lastVia !== via) updateBot(bot.id, (b) => ({ ...b, settings: { ...b.settings, lastVia: via } }))
     const t = issueTicket(kind)
     await channel.hold(via, kind === 'pair' ? 'qr' : 'link', t.expiresAt)
+    if (via === 'lan') {
+      if (!channel.lanPort) return { ok: false, error: '局域网服务未启动，请检查端口与连接状态。' }
+      const address = new URL(base)
+      address.port = String(channel.lanPort)
+      base = address.toString()
+    }
     const q = new URLSearchParams({ d: s.deskId, p: formatTicket(t.id, t.secret), n: hostname().slice(0, 40) })
     return { ok: true, url: `${base}#${q.toString()}`, expiresAt: t.expiresAt }
   }

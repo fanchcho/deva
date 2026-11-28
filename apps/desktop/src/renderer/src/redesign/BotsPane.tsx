@@ -1,5 +1,6 @@
+import { GeneralDetail } from './GeneralDetail'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ExternalLink, KeyRound, Loader2, Plus, QrCode, RefreshCw, Search, Trash2, UserMinus, X } from 'lucide-react'
+import { ExternalLink, KeyRound, Loader2, Plus, QrCode, RefreshCw, Search, Smartphone, Trash2, UserMinus, X } from 'lucide-react'
 import QRCode from 'qrcode'
 import { useI18n } from '../i18n/i18n'
 import { PhoneDetail, PhoneRow, usePhoneState } from './PhonePane'
@@ -15,6 +16,7 @@ type BotView = RemoteState['bots'][number]
 type Platform = BotView['platform']
 type Scope = BotView['scope']
 type ScopeKind = Exclude<Scope['mode'], 'all'>
+type GeneralView = Awaited<ReturnType<typeof window.deva.general.getState>>
 
 /** 与主进程 hub 同口径：没绑定角色的旧对话算默认角色。 */
 const DEFAULT_PERSONA_ID = 'general'
@@ -39,6 +41,20 @@ export function BotsPane(): React.JSX.Element {
   const [viewId, setViewId] = useState<string | null>(null)
   const [adding, setAdding] = useState<Platform | null>(null)
   const [query, setQuery] = useState('')
+  const [general, setGeneral] = useState<GeneralView | null>(null)
+  // 「+」菜单选通用设备时的自动出码信号
+  const [generalPairTick, setGeneralPairTick] = useState(0)
+
+  // 通用设备通道状态（channel-server）：general:changed 推送为主，30s 轮询兜底
+  useEffect(() => {
+    void window.deva.general.getState().then(setGeneral)
+    const off = window.deva.general.onChanged(setGeneral)
+    const id = window.setInterval(() => void window.deva.general.getState().then(setGeneral), 30_000)
+    return () => {
+      off()
+      window.clearInterval(id)
+    }
+  }, [])
 
   useEffect(() => {
     let alive = true
@@ -67,7 +83,7 @@ export function BotsPane(): React.JSX.Element {
   // 默认选第一项（添加了 Deva 手机版就是它）；选中的一项被删除后同理回落。
   useEffect(() => {
     if (!phone || !loaded) return
-    if (viewId === PHONE ? phoneAdded : viewId && bots.some((b) => b.id === viewId)) return
+    if (viewId === 'general' || (viewId === PHONE ? phoneAdded : viewId && bots.some((b) => b.id === viewId))) return
     setViewId(phoneAdded ? PHONE : (bots[0]?.id ?? null))
   }, [bots, viewId, phone, phoneAdded, loaded])
 
@@ -103,10 +119,30 @@ export function BotsPane(): React.JSX.Element {
               </button>
             )}
           </div>
-          <BotAddMenu onPick={pick} phoneAdded={phoneAdded} />
+          <BotAddMenu onPick={pick} phoneAdded={phoneAdded} onPickGeneral={() => { setViewId('general'); setGeneralPairTick(n => n + 1) }} />
         </div>
         <div className="cf-list">
           {!q && phone && phoneAdded && <PhoneRow state={phone} active={viewId === PHONE} onClick={() => setViewId(PHONE)} />}
+          <button
+            className={`cf-trow bots-row${viewId === 'general' ? ' is-active' : ''}`}
+            onClick={() => setViewId('general')}
+          >
+            <span className="bots-logo">
+              <Smartphone size={18} />
+            </span>
+            <div className="cf-trow__main">
+              <div className="cf-trow__title">{t('bots.general.title')}</div>
+              <div className="bots-row__meta">
+                <span className={`bots-dot bots-dot--${general?.state ?? 'off'}`} />
+                {t(`bots.general.stateLabel.${general?.state ?? 'off'}`)}
+                {general && (
+                  <span className="bots-tag">
+                    {general.devices.filter((d) => d.online).length}/{general.devices.length}
+                  </span>
+                )}
+              </div>
+            </div>
+          </button>
           {!loaded ? null : bots.length === 0 ? (
             q ? (
               <div className="cf-empty">{t('cf.searchNoResults')}</div>
@@ -143,6 +179,13 @@ export function BotsPane(): React.JSX.Element {
           <div className="cf-profile">
             <div className="bots-detail">
               <PhoneDetail state={phone} />
+
+            </div>
+          </div>
+        ) : viewId === 'general' ? (
+          <div className="cf-profile">
+            <div className="bots-detail">
+              <GeneralDetail pairRequest={generalPairTick} />
             </div>
           </div>
         ) : view ? (
@@ -176,7 +219,7 @@ export function BotsPane(): React.JSX.Element {
 }
 
 /** 「添加机器人」：悬停展开支持的平台（交互同角色 / 任务的 AddMenu），点击即开始添加。 */
-function BotAddMenu({ onPick, phoneAdded }: { onPick: (p: Platform) => void; phoneAdded: boolean }): React.JSX.Element {
+function BotAddMenu({ onPick, phoneAdded, onPickGeneral }: { onPick: (p: Platform) => void; phoneAdded: boolean; onPickGeneral: () => void }): React.JSX.Element {
   const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const closeTimer = useRef<number | null>(null)
@@ -214,6 +257,18 @@ function BotAddMenu({ onPick, phoneAdded }: { onPick: (p: Platform) => void; pho
       </button>
       {open && (
         <div className="cf-addmenu__pop" role="menu">
+          <button
+            className="cf-addmenu__item bots-addmenu__item"
+            role="menuitem"
+            onClick={() => {
+              cancelClose()
+              setOpen(false)
+              onPickGeneral()
+            }}
+          >
+            <Smartphone size={14} />
+            {t('bots.general.addMenu')}
+          </button>
           {PLATFORMS.map((p) => (
             <button
               key={p.id}

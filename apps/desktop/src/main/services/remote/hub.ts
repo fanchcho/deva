@@ -17,7 +17,7 @@ import {
   type PersonaRecord
 } from '../personas'
 import { personaWorkspace } from '../role-home'
-import { resolveDefaultEffort, resolveDefaultModel, resolveModelRefOrNull } from '../model-resolve'
+import { resolveDefaultEffort, resolveModelRefForSend } from '../model-resolve'
 import { previewSchedule } from '../tasks'
 import type { TaskCreateInput } from '../tasks-types'
 import { paginate } from './paginate'
@@ -1227,8 +1227,7 @@ async function sendToSession(chat: ChatAddress, text: string, anchor?: MessageHa
 
   const session = getSession(sid)
   const persona = session?.personaId ? getPersona(session.personaId) : null
-  const model =
-    resolveModelRefOrNull(session?.model) ?? resolveModelRefOrNull(persona?.model) ?? resolveDefaultModel()
+  const model = resolveModelRefForSend({ sessionModel: session?.model, personaModel: persona?.model })
   if (!model)
     return notice(chat, { tone: 'error', text: '还没有可用的模型，请先在电脑端的设置里配置并选定模型。' })
 
