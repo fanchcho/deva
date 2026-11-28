@@ -2048,6 +2048,164 @@
                 "length",
                 "tool_limit"
               ]
+            },
+            "runTerminals": {
+              "type": "array",
+              "description": "最近 20 轮终态",
+              "items": {
+                "type": "object",
+                "description": "每轮脱敏终态，最多 20 条，每条字符串最多 1800 字符。",
+                "properties": {
+                  "run_id": {
+                    "type": "string",
+                    "description": "run_id"
+                  },
+                  "session_id": {
+                    "type": "string",
+                    "description": "session_id"
+                  },
+                  "plugin_id": {
+                    "type": "string",
+                    "description": "plugin_id"
+                  },
+                  "profile": {
+                    "type": "string",
+                    "description": "profile"
+                  },
+                  "started_at": {
+                    "type": "string",
+                    "description": "started_at"
+                  },
+                  "finished_at": {
+                    "type": "string",
+                    "description": "finished_at"
+                  },
+                  "terminal_state": {
+                    "type": "string",
+                    "description": "terminal_state"
+                  },
+                  "phase": {
+                    "type": "string",
+                    "description": "phase"
+                  },
+                  "trigger": {
+                    "type": "object",
+                    "description": "归一化入口和 UTC 时间",
+                    "properties": {
+                      "entry": {
+                        "type": "string",
+                        "description": "入口"
+                      },
+                      "at": {
+                        "type": "string",
+                        "description": "UTC"
+                      }
+                    },
+                    "required": [
+                      "entry",
+                      "at"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "error": {
+                    "type": "object",
+                    "description": "脱敏 name/message/stack/cause，最多 7 行 stack，cause 最多两层",
+                    "properties": {},
+                    "additionalProperties": true,
+                    "required": []
+                  }
+                },
+                "required": [
+                  "run_id",
+                  "session_id",
+                  "plugin_id",
+                  "profile",
+                  "started_at",
+                  "finished_at",
+                  "terminal_state",
+                  "phase",
+                  "trigger",
+                  "error"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "lastRunTerminal": {
+              "type": "object",
+              "description": "每轮脱敏终态，最多 20 条，每条字符串最多 1800 字符。",
+              "properties": {
+                "run_id": {
+                  "type": "string",
+                  "description": "run_id"
+                },
+                "session_id": {
+                  "type": "string",
+                  "description": "session_id"
+                },
+                "plugin_id": {
+                  "type": "string",
+                  "description": "plugin_id"
+                },
+                "profile": {
+                  "type": "string",
+                  "description": "profile"
+                },
+                "started_at": {
+                  "type": "string",
+                  "description": "started_at"
+                },
+                "finished_at": {
+                  "type": "string",
+                  "description": "finished_at"
+                },
+                "terminal_state": {
+                  "type": "string",
+                  "description": "terminal_state"
+                },
+                "phase": {
+                  "type": "string",
+                  "description": "phase"
+                },
+                "trigger": {
+                  "type": "object",
+                  "description": "归一化入口和 UTC 时间",
+                  "properties": {
+                    "entry": {
+                      "type": "string",
+                      "description": "入口"
+                    },
+                    "at": {
+                      "type": "string",
+                      "description": "UTC"
+                    }
+                  },
+                  "required": [
+                    "entry",
+                    "at"
+                  ],
+                  "additionalProperties": false
+                },
+                "error": {
+                  "type": "object",
+                  "description": "脱敏 name/message/stack/cause，最多 7 行 stack，cause 最多两层",
+                  "properties": {},
+                  "additionalProperties": true,
+                  "required": []
+                }
+              },
+              "required": [
+                "run_id",
+                "session_id",
+                "plugin_id",
+                "profile",
+                "started_at",
+                "finished_at",
+                "terminal_state",
+                "phase",
+                "trigger",
+                "error"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -2522,6 +2680,174 @@
         "legacyNotice"
       ],
       "additionalProperties": false
+    },
+    "runTerminal": {
+      "type": "object",
+      "description": "每轮脱敏终态，最多 20 条，每条字符串最多 1800 字符。",
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "description": "run_id"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "session_id"
+        },
+        "plugin_id": {
+          "type": "string",
+          "description": "plugin_id"
+        },
+        "profile": {
+          "type": "string",
+          "description": "profile"
+        },
+        "started_at": {
+          "type": "string",
+          "description": "started_at"
+        },
+        "finished_at": {
+          "type": "string",
+          "description": "finished_at"
+        },
+        "terminal_state": {
+          "type": "string",
+          "description": "terminal_state"
+        },
+        "phase": {
+          "type": "string",
+          "description": "phase"
+        },
+        "trigger": {
+          "type": "object",
+          "description": "归一化入口和 UTC 时间",
+          "properties": {
+            "entry": {
+              "type": "string",
+              "description": "入口"
+            },
+            "at": {
+              "type": "string",
+              "description": "UTC"
+            }
+          },
+          "required": [
+            "entry",
+            "at"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "object",
+          "description": "脱敏 name/message/stack/cause，最多 7 行 stack，cause 最多两层",
+          "properties": {},
+          "additionalProperties": true,
+          "required": []
+        }
+      },
+      "required": [
+        "run_id",
+        "session_id",
+        "plugin_id",
+        "profile",
+        "started_at",
+        "finished_at",
+        "terminal_state",
+        "phase",
+        "trigger",
+        "error"
+      ],
+      "additionalProperties": false
+    },
+    "runTerminalHistory": {
+      "type": "object",
+      "description": "当前会话诊断历史",
+      "properties": {
+        "records": {
+          "type": "array",
+          "description": "最近 20 轮终态",
+          "items": {
+            "type": "object",
+            "description": "每轮脱敏终态，最多 20 条，每条字符串最多 1800 字符。",
+            "properties": {
+              "run_id": {
+                "type": "string",
+                "description": "run_id"
+              },
+              "session_id": {
+                "type": "string",
+                "description": "session_id"
+              },
+              "plugin_id": {
+                "type": "string",
+                "description": "plugin_id"
+              },
+              "profile": {
+                "type": "string",
+                "description": "profile"
+              },
+              "started_at": {
+                "type": "string",
+                "description": "started_at"
+              },
+              "finished_at": {
+                "type": "string",
+                "description": "finished_at"
+              },
+              "terminal_state": {
+                "type": "string",
+                "description": "terminal_state"
+              },
+              "phase": {
+                "type": "string",
+                "description": "phase"
+              },
+              "trigger": {
+                "type": "object",
+                "description": "归一化入口和 UTC 时间",
+                "properties": {
+                  "entry": {
+                    "type": "string",
+                    "description": "入口"
+                  },
+                  "at": {
+                    "type": "string",
+                    "description": "UTC"
+                  }
+                },
+                "required": [
+                  "entry",
+                  "at"
+                ],
+                "additionalProperties": false
+              },
+              "error": {
+                "type": "object",
+                "description": "脱敏 name/message/stack/cause，最多 7 行 stack，cause 最多两层",
+                "properties": {},
+                "additionalProperties": true,
+                "required": []
+              }
+            },
+            "required": [
+              "run_id",
+              "session_id",
+              "plugin_id",
+              "profile",
+              "started_at",
+              "finished_at",
+              "terminal_state",
+              "phase",
+              "trigger",
+              "error"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "records"
+      ],
+      "additionalProperties": false
     }
   },
   "rpc": {
@@ -2674,6 +3000,11 @@
       "description": "读写桌面共享记忆；沿用 owner 权限与 RPC 门禁",
       "input": "memoryPageInput",
       "output": "memoryPageOutput"
+    },
+    "get-run-terminals": {
+      "description": "读取当前认证 profile/session 的最近 20 轮脱敏终态；无 session 返回空。",
+      "input": "empty",
+      "output": "runTerminalHistory"
     }
   },
   "tools": {},

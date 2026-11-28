@@ -1,3 +1,4 @@
+import { readRunDiagnostics } from './lib/run-diagnostics.mjs'
 import { createHash } from 'node:crypto'
 import { mergedMcpHost } from './lib/mcp-merged.mjs'
 import { registerMemorySettings } from './lib/memory-settings.mjs'
@@ -46,6 +47,7 @@ export function apply(ctx) {
   const activationUserId = ctx.identity?.userId
   ctx.log.info(`deva: 激活通道 ctx.host.request=${typeof ctx.host?.request === 'function'}`)
   registerMemorySettings(ctx, contract)
+  registerRpc(ctx, contract, 'get-run-terminals', (_input, run) => readRunDiagnostics(run))
   registerCompression(ctx)
   registerSkillSettings(ctx, contract)
   registerRpc(ctx, contract, 'list-provider-models', (input, run) => discoverModels(run, input))

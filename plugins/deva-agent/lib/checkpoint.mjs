@@ -55,6 +55,12 @@ export function createCheckpointController(identity, resumeState) {
     await task
   }
   return {
+    async recordTerminals(run, records) {
+      store = run.state?.agentSession
+      state.data.runTerminals = structuredClone(records)
+      state.data.lastRunTerminal = records.at(-1)
+      await save()
+    },
     async begin(run, freshMessages) {
       store = run.state?.agentSession
       const saved = await store?.get('checkpoint')
@@ -72,7 +78,7 @@ export function createCheckpointController(identity, resumeState) {
       const resumed = state.data.active
       recovered.clear()
       const revision = state.data.revision || 0
-      if (!resumed) state.data = { owner, active: true, messages: structuredClone(freshMessages), calls: {}, reply: '', revision, inputKey }
+      if (!resumed) state.data = { owner, active: true, messages: structuredClone(freshMessages), calls: {}, reply: '', revision, inputKey, runTerminals: state.data.runTerminals || [], ...(state.data.lastRunTerminal ? { lastRunTerminal: state.data.lastRunTerminal } : {}) }
       else {
         // Persisted completed calls win, even if interruption happened before tool result insertion.
         const calls = state.data.calls

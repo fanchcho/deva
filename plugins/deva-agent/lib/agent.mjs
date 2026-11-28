@@ -1,3 +1,4 @@
+import { createRunDiagnostics } from './run-diagnostics.mjs'
 import { mergedMcpHost, runtimeMcpConfig } from './mcp-merged.mjs'
 import { createTtlCache } from './bounded-cache.mjs'
 import { createCheckpointController } from './checkpoint.mjs'
@@ -175,6 +176,7 @@ export function createAgentDefinition({ log = console, runTurn = runAgentTurn, i
       async createSession(session) {
         let disposed = false
         const checkpoint = createCheckpointController(session.identity, session.resumeState)
+        const diagnostics = createRunDiagnostics(session, checkpoint)
         const mcp = createMcpCache(log)
         // 工程事实与技能清单按会话缓存：每轮重读 package.json / 起两个 git、再请求一次技能接口没有必要。
         const factsCache = createTtlCache(workspaceDir => projectFacts(workspaceDir), FACTS_TTL)
@@ -182,6 +184,7 @@ export function createAgentDefinition({ log = console, runTurn = runAgentTurn, i
         const dispose = () => {
           if (disposed) return
           disposed = true
+          diagnostics.dispose()
           mcp.close()
           factsCache.invalidate()
           skillsCache.invalidate()
@@ -196,41 +199,44 @@ export function createAgentDefinition({ log = console, runTurn = runAgentTurn, i
         return {
           async run(input, run) {
             if (disposed) throw new Error('本会话已释放')
-            run = { ...run, desktopActivationUserId: plugin?.identity?.userId }
-            if (run.mode !== 'global' && (!run.model?.baseUrl || !run.model?.token)) throw new Error(INSTRUCTION)
-            const workspaceDir = run.paths.workspaceDir
-            // Studio 原生页面也会修改技能；每轮重新读取，不能沿用上一轮的启停状态。
-            skillsCache.invalidate()
-            log.info?.(`deva: 运行通道 surface=${run.identity.surface || 'unknown'} host.request=${typeof run.host?.request === 'function'} injectedMcp=${Object.keys(run.mcpServers || {}).join('/') || 'none'}`)
-            // 会话窗口里的 `@deva:<id>` 前缀：先切身份，再把前缀从消息里剥掉
-            const consumed = await applyInputIdentity(input, run.state, run.identity,
-              fixed ? { allowSwitch: false, own: fixed.id, config: run.config } : { config: run.config })
-            if (consumed.switched) log.info?.(`deva: 会话内前缀切换身份=${consumed.switched}`)
-            if (consumed.reply) {
-              log.info?.('deva: 会话内命中身份命令，本地回话（不调用模型）')
-              return { content: [{ type: 'text', text: consumed.reply }], finishReason: 'stop' }
-            }
-            // 固定身份的 Agent 不读身份存储，避免「小码酱 Agent」被设置页改成别的身份
-            const resolved = fixed ? { id: fixed.id, source: 'agent' } : await resolveIdentityId(run.state, run.identity, run.config)
-            // 身份正文只从 ~/.deva 的身份文件读；文件损坏时这里直接报错，不回退到宿主旧值或内置正文。
-            const identity = await loadIdentityRecord(run.config, resolved.id)
-            const custom = fixed ? null : await readCustomModel(run, resolved.id)
-            // global 模式没有宿主代理可用：只能走模型页的直连配置，没有就停下说明，不回退。
-            if (run.mode === 'global' && !custom) throw new Error(GLOBAL_NEEDS_MODEL)
-            const model = custom
-              ? createCustomModel(run, { ...custom, reasoningEffort: resolveRunEffort(run, custom.reasoningEffort) })
-              : undefined
-            log.info?.(`deva: 本轮身份=${identity.id}（${identity.name}，来源 ${resolved.source}，文件 ${identity.path}）`)
-            const facts = await factsCache.get(workspaceDir)
-            const instructions = (input.instructions || []).map(item => item.text).filter(Boolean).join('\n\n')
-            const system = buildSystemPrompt({
-              identity,
-              factsText: formatFacts(facts),
-              hostInstructions: instructions,
-              skillsText: await formatSkillListing({ host: run.host, log, loadSkills: host => skillsCache.get('skills', host) }),
-            })
-            return await runWithMcp({
-              run: { ...run, mcpOwnerUserId: plugin?.identity?.userId }, input: consumed.input, system, workspaceDir, facts, identity, log, runTurn, mcp, onToolSuccess, checkpoint, model,
+            return diagnostics.execute(run, async run => {
+              if (disposed) throw new Error('本会话已释放')
+              run = { ...run, desktopActivationUserId: plugin?.identity?.userId }
+              if (run.mode !== 'global' && (!run.model?.baseUrl || !run.model?.token)) throw new Error(INSTRUCTION)
+              const workspaceDir = run.paths.workspaceDir
+              // Studio 原生页面也会修改技能；每轮重新读取，不能沿用上一轮的启停状态。
+              skillsCache.invalidate()
+              log.info?.(`deva: 运行通道 surface=${run.identity.surface || 'unknown'} host.request=${typeof run.host?.request === 'function'} injectedMcp=${Object.keys(run.mcpServers || {}).join('/') || 'none'}`)
+              // 会话窗口里的 `@deva:<id>` 前缀：先切身份，再把前缀从消息里剥掉
+              const consumed = await applyInputIdentity(input, run.state, run.identity,
+                fixed ? { allowSwitch: false, own: fixed.id, config: run.config } : { config: run.config })
+              if (consumed.switched) log.info?.(`deva: 会话内前缀切换身份=${consumed.switched}`)
+              if (consumed.reply) {
+                log.info?.('deva: 会话内命中身份命令，本地回话（不调用模型）')
+                return { content: [{ type: 'text', text: consumed.reply }], finishReason: 'stop' }
+              }
+              // 固定身份的 Agent 不读身份存储，避免「小码酱 Agent」被设置页改成别的身份
+              const resolved = fixed ? { id: fixed.id, source: 'agent' } : await resolveIdentityId(run.state, run.identity, run.config)
+              // 身份正文只从 ~/.deva 的身份文件读；文件损坏时这里直接报错，不回退到宿主旧值或内置正文。
+              const identity = await loadIdentityRecord(run.config, resolved.id)
+              const custom = fixed ? null : await readCustomModel(run, resolved.id)
+              // global 模式没有宿主代理可用：只能走模型页的直连配置，没有就停下说明，不回退。
+              if (run.mode === 'global' && !custom) throw new Error(GLOBAL_NEEDS_MODEL)
+              const model = custom
+                ? createCustomModel(run, { ...custom, reasoningEffort: resolveRunEffort(run, custom.reasoningEffort) })
+                : undefined
+              log.info?.(`deva: 本轮身份=${identity.id}（${identity.name}，来源 ${resolved.source}，文件 ${identity.path}）`)
+              const facts = await factsCache.get(workspaceDir)
+              const instructions = (input.instructions || []).map(item => item.text).filter(Boolean).join('\n\n')
+              const system = buildSystemPrompt({
+                identity,
+                factsText: formatFacts(facts),
+                hostInstructions: instructions,
+                skillsText: await formatSkillListing({ host: run.host, log, loadSkills: host => skillsCache.get('skills', host) }),
+              })
+              return await runWithMcp({
+                run: { ...run, mcpOwnerUserId: plugin?.identity?.userId }, input: consumed.input, system, workspaceDir, facts, identity, log, runTurn, mcp, onToolSuccess, checkpoint, model,
+              })
             })
           },
           checkpoint: () => checkpoint.snapshot(),

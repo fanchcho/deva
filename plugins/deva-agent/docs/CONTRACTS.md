@@ -457,3 +457,37 @@ Windows 桌面端的 safeStorage **不是**“明文直接 DPAPI 后写盘”。
 ## 0.8.53 MCP 页面兼容
 
 `studioMcpList.servers[].tools` 为实际探测的名称/描述数组，失败省略并置 toolCountUnavailable；启用服务仅在探测成功后显示已连接。开关即时调用 set-mcp-server-enabled；页面与运行时均以 enabled 为唯一入口，旧 storage.mcp 勾选不再过滤运行时，兼容 RPC 保留。启动日志包含插件版本及 client SHA-256，供升级/回滚核验。信任确认属于宿主管理面，不由插件自行写入。
+
+### Run terminal diagnostics
+
+`get-run-terminals(null)` reads the authenticated current session's
+`state.session.namespace('run-diagnostics').get('records')`; no caller-supplied session ID
+is accepted. It returns `{ records: RunTerminal[] }`. No session returns an empty list.
+The checkpoint adds optional `data.runTerminals` and `data.lastRunTerminal`; existing
+`finishReason`, `active`, messages and replay semantics remain unchanged. Older checkpoints
+without diagnostics remain readable. The latest terminal is separate from `finishReason`.
+
+Each record contains run/session/plugin/profile IDs, UTC start/end timestamps, terminal
+state, last emitted event type/tool name (no arguments or message bodies), trigger entry
+and timestamp, and redacted error name/message/stack/cause. States are `completed`,
+`tool_limit`, `user_abort`, `timeout`, `host_shutdown`, `plugin_dispose`,
+`plugin_exception`, `uncaught_exception`, `abort_unknown`. Only explicit USER_STOP /
+USER_ABORT codes imply user abort. Generic AbortError does not identify the actor.
+
+Retention is 20 records and 128 KiB, dropping oldest records. Error strings are capped
+at 1800 characters, stack at 7 lines and cause at two nested levels. The plugin writes
+`deva.run_terminal <JSON>` using AgentLog.error for non-completed states. A synchronous,
+mode-0600 atomic replacement of `runtimeDir/run-terminals.json` is the bounded exit
+fallback; asynchronous session storage/checkpoint writes cannot be guaranteed at exit.
+This fallback stores the identity owner and records, never credentials or message bodies.
+Normal runs await asynchronous persistence; output delivery is not required for persistence.
+
+Process observers exist only while runs are active. SIGTERM/SIGINT are observed only
+when the host already has a signal handler: adding Node's first signal handler would
+change default termination. uncaughtExceptionMonitor does not suppress termination.
+Unattributed process exceptions apply to all active runs and do not prove which plugin
+threw. No unhandledRejection handler is installed, to preserve host termination semantics.
+SIGKILL/OOM, termination before plugin invocation, unidentified host aborts and the old
+incident's lost error remain outside plugin visibility. A failed filesystem/store write
+cannot be promised durable; storage failures emit diagnostics and preserve the original
+run result/error. No signal handler waits for asynchronous writes or extends exit timers.
